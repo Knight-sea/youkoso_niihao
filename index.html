@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CoteOS — 統合管理システム</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <!-- TASKBAR -->
+  <header id="taskbar">
+    <div id="taskbar-left">
+      <span id="logo">COTE<span class="accent">OS</span></span>
+      <span id="breadcrumb"></span>
+    </div>
+
+    <div id="taskbar-center">
+      <button id="btn-prev-month" class="tb-btn">&#171; 前の月へ</button>
+      <span id="date-display">Year 1 · 4月</span>
+      <button id="btn-next-month" class="tb-btn">次の月へ &#187;</button>
+    </div>
+
+    <div id="taskbar-right">
+      <div id="slot-switcher">
+        <span class="slot-label">スロット：</span>
+        <div id="slot-buttons">
+          <button class="slot-btn active" data-slot="1">1</button>
+          <button class="slot-btn" data-slot="2">2</button>
+          <button class="slot-btn" data-slot="3">3</button>
+          <button class="slot-btn" data-slot="4">4</button>
+          <button class="slot-btn" data-slot="5">5</button>
+        </div>
+      </div>
+      <button id="btn-save" class="tb-btn accent-btn">セーブ</button>
+      <button id="btn-reset" class="tb-btn danger-btn">リセット</button>
+    </div>
+  </header>
+
+  <!-- MAIN CONTENT -->
+  <main id="app"></main>
+
+  <!-- MODAL OVERLAY -->
+  <div id="modal-overlay" class="hidden">
+    <div id="modal-box">
+      <button id="modal-close">✕</button>
+      <div id="modal-content"></div>
+    </div>
+  </div>
+
+  <!-- TOAST -->
+  <div id="toast"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
