@@ -3,56 +3,88 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Cote-OS v3.0 — 統合学校管理システム</title>
-  <link rel="icon" href="images/faviconA.ico">
+  <title>Cote-OS v3.1</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&family=Noto+Sans+JP:wght@300;400;500&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
 
-  <!-- ══════════ TASKBAR ══════════ -->
-  <header id="taskbar">
-    <div id="tb-left">
-      <span id="logo">COTE<span class="ac">OS</span> <span id="ver">v3</span></span>
-      <span id="breadcrumb"></span>
-    </div>
+<!-- ═══════════════════════════════════════════════════════════
+     TASKBAR
+═══════════════════════════════════════════════════════════ -->
+<header id="taskbar">
 
-    <div id="tb-center">
-      <button id="btn-prev" class="tb-btn">&#171;&nbsp;前月</button>
-      <div id="date-block">
-        <span id="date-display">Year 1 · 4月</span>
-        <span id="slot-display">スロット 1</span>
-      </div>
-      <button id="btn-next" class="tb-btn">次月&nbsp;&#187;</button>
-    </div>
-
-    <div id="tb-right">
-      <div id="slot-row">
-        <span class="tb-label">スロット：</span>
-        <button class="sl active" data-slot="1">1</button>
-        <button class="sl" data-slot="2">2</button>
-        <button class="sl" data-slot="3">3</button>
-        <button class="sl" data-slot="4">4</button>
-        <button class="sl" data-slot="5">5</button>
-      </div>
-      <button id="btn-save"  class="tb-btn ac-btn">セーブ</button>
-      <button id="btn-reset" class="tb-btn dn-btn">リセット</button>
-    </div>
-  </header>
-
-  <!-- ══════════ APP MOUNT ══════════ -->
-  <main id="app"></main>
-
-  <!-- ══════════ MODAL ══════════ -->
-  <div id="modal-overlay" class="hidden">
-    <div id="modal-box">
-      <button id="modal-close" aria-label="閉じる">✕</button>
-      <div id="modal-body"></div>
-    </div>
+  <!-- Left: Logo + breadcrumb -->
+  <div id="tb-left">
+    <span id="logo">COTE<span class="ac">OS</span></span>
+    <span id="ver">v3.1</span>
+    <nav id="breadcrumb" aria-label="パンくずリスト"></nav>
   </div>
 
-  <!-- ══════════ TOAST ══════════ -->
-  <div id="toast" role="status" aria-live="polite"></div>
+  <!-- Centre: time navigation -->
+  <div id="tb-center">
+    <button id="btn-prev" class="tb-btn" title="前月へ (Ctrl+Left)">&#171;&nbsp;前月</button>
+    <div id="date-block">
+      <span id="date-display" aria-live="polite">Year 1 · 4月</span>
+      <span id="slot-chip">スロット 1</span>
+    </div>
+    <button id="btn-next" class="tb-btn" title="次月へ (Ctrl+Right)">次月&nbsp;&#187;</button>
+  </div>
 
-  <script src="app.js"></script>
+  <!-- Right: slots / IO / save / reset -->
+  <div id="tb-right">
+
+    <div id="slot-row" role="group" aria-label="セーブスロット">
+      <span class="tb-lbl">スロット</span>
+      <button class="sl active" data-slot="1">1</button>
+      <button class="sl"        data-slot="2">2</button>
+      <button class="sl"        data-slot="3">3</button>
+      <button class="sl"        data-slot="4">4</button>
+      <button class="sl"        data-slot="5">5</button>
+    </div>
+
+    <span class="tb-divider" aria-hidden="true"></span>
+
+    <button id="btn-export" class="tb-btn io-btn" title="全スロットをJSONに書き出す">
+      ↓&nbsp;書き出し
+    </button>
+    <button id="btn-import" class="tb-btn io-btn" title="JSONからデータを読み込む">
+      ↑&nbsp;読み込み
+    </button>
+
+    <!-- invisible file picker triggered by import button -->
+    <input type="file" id="file-pick" accept=".json,application/json"
+           aria-hidden="true" tabindex="-1" />
+
+    <span class="tb-divider" aria-hidden="true"></span>
+
+    <button id="btn-save"  class="tb-btn ac-btn">セーブ</button>
+    <button id="btn-reset" class="tb-btn dn-btn" title="現在スロットをリセット">リセット</button>
+  </div>
+
+</header>
+
+<!-- ═══════════════════════════════════════════════════════════
+     MAIN SPA CONTAINER
+═══════════════════════════════════════════════════════════ -->
+<main id="app"></main>
+
+<!-- ═══════════════════════════════════════════════════════════
+     MODAL
+═══════════════════════════════════════════════════════════ -->
+<div id="modal-overlay" class="hidden" role="dialog" aria-modal="true">
+  <div id="modal-box">
+    <button id="modal-x" aria-label="閉じる">✕</button>
+    <div id="modal-body"></div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════
+     TOAST
+═══════════════════════════════════════════════════════════ -->
+<div id="toast" role="status" aria-live="polite"></div>
+
+<script src="app.js"></script>
 </body>
 </html>
