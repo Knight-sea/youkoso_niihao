@@ -486,7 +486,18 @@ input,select,textarea{font-family:var(--fm)}
 .prof-pp{font-family:var(--fd);font-size:1.2rem;font-weight:700;margin:6px 0 1px}
 .prof-pp.pos{color:var(--gn)} .prof-pp.neg{color:var(--rd)}
 .prof-pplbl{font-size:.58rem;color:var(--t3)}
-.prof-prot{font-family:var(--fd);font-size:.88rem;color:var(--yw);margin-top:5px}
+/* v3.2: protect points — faded sidebar display (no shield, de-emphasised) */
+.prof-prot-faded{
+  font-family:var(--fm);font-size:.75rem;
+  color:var(--t2);        /* one step dimmer than secondary text */
+  margin-top:4px;
+  letter-spacing:.03em
+}
+/* v3.2: faded form-row label for lower-priority fields (e.g. protect points) */
+.label-faded{
+  color:var(--t2) !important;  /* overrides .fr label which uses --t1 */
+  font-style:italic
+}
 .info-tbl{width:100%;border-collapse:collapse;margin-top:7px}
 .info-tbl td{padding:3px 0;border-bottom:1px solid var(--bd);font-size:.71rem}
 .info-tbl td:first-child{color:var(--t2);width:46%}

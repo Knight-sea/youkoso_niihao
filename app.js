@@ -1,5 +1,5 @@
 /* ================================================================
-   Cote-OS v3.1  ·  app.js
+   Cote-OS v3.2  ·  app.js
    ─────────────────────────────────────────────────────────────────
    Features (complete list):
    • 6 grades × 5 classes, dynamic roster (add / delete students)
@@ -10,9 +10,9 @@
    • Contract engine: PP gains / losses apply on month advance
    • Multi-select bulk PP on class page
    • Home-screen per-class PP distribution
-   • NEW v3.1: JSON export (all slots) + JSON import (FileReader)
-     – Human-readable keys in export (monthlyAmount, dateOfBirth…)
-     – Import validates, repairs duplicate IDs, cleans orphan contracts
+   • v3.1: JSON export (all slots) + JSON import (FileReader)
+   • v3.2: UI refinement — export/import moved to taskbar only;
+     protect points hidden when 0; faded protect label on profile
    ================================================================ */
 'use strict';
 
@@ -27,7 +27,7 @@ const MONTHS_JP   = ['1月','2月','3月','4月','5月','6月','7月','8月','9�
 const HISTORY_MAX = 60;
 const NUM_SLOTS   = 5;
 const TOP_N       = 100;          // ranking cut-off
-const APP_VER     = '3.1';
+const APP_VER     = '3.2';
 
 const slotKey = n => `CoteOS_v3_Slot${n}`;
 
@@ -696,8 +696,6 @@ function renderHome() {
       <span>${activeCount}名在籍</span>
       <div class="hm-right">
         <span class="hm-link" onclick="navigate('ranking',{},false)">🏆 ${JP.ranking} TOP${TOP_N}</span>
-        <span class="hm-io" onclick="exportAllSlots()">↓ 書き出し</span>
-        <span class="hm-io" onclick="triggerImportDialog()">↑ 読み込み</span>
       </div>
     </div>
     <div class="pg-hdr">
@@ -843,7 +841,7 @@ function renderGrade(grade) {
           <div class="kp-name">${esc(s.name)||'<span class="dim">(未記入)</span>'}</div>
           <div class="kp-stats">
             <div class="kp-stat"><span class="kv ${ppCol(s.privatePoints)}">${fmtPP(s.privatePoints)}</span><span class="kl">PP</span></div>
-            <div class="kp-stat"><span class="kv" style="color:var(--yw)">${s.protectPoints}</span><span class="kl">保護</span></div>
+            ${s.protectPoints > 0 ? `<div class="kp-stat"><span class="kv" style="color:var(--yw)">${s.protectPoints}</span><span class="kl">保護</span></div>` : ''}
           </div>
         </div>
       `;
@@ -1041,7 +1039,7 @@ function renderCards(students, canDel) {
         <div class="s-name">${esc(s.name)||'<span class="dim">(未記入)</span>'}</div>
         <div class="s-row">
           <div class="s-stat"><span class="sv ${ppCol(s.privatePoints)}">${fmtPP(s.privatePoints)}</span><span class="sl">PP</span></div>
-          <div class="s-stat"><span class="sv" style="color:var(--yw)">${s.protectPoints}</span><span class="sl">保護</span></div>
+          ${s.protectPoints > 0 ? `<div class="s-stat"><span class="sv" style="color:var(--yw)">${s.protectPoints}</span><span class="sl">保護</span></div>` : ''}
           <div class="s-stat"><span class="sv" style="color:var(--t1)">${s.gender==='M'?JP.male:JP.female}</span><span class="sl">性</span></div>
         </div>
         ${canDel&&!s.isExpelled?`<button class="s-del" onclick="event.stopPropagation();confirmDelete('${s.id}')">🗑</button>`:''}
@@ -1223,7 +1221,7 @@ function renderProfile(sid) {
         <span class="badge ${badgeCls}">${statusLabel}</span>
         <div class="prof-pp ${ppCls}">${s.privatePoints.toLocaleString()}</div>
         <div class="prof-pplbl">${JP.pp}</div>
-        <div class="prof-prot">🛡 ${s.protectPoints} ${JP.protect}</div>
+        <div class="prof-prot-faded">${s.protectPoints} ${JP.protect}</div>
         <table class="info-tbl">
           <tr><td>${JP.gender}</td><td>${s.gender==='M'?JP.male:JP.female}</td></tr>
           <tr><td>${JP.dob}</td><td>${s.dob||'未設定'}</td></tr>
@@ -1255,7 +1253,7 @@ function renderProfile(sid) {
           <div class="fr"><label>${JP.grade}</label><select class="fs" id="pf-grade">${gradeOpts}</select></div>
           <div class="fr"><label>${JP.cls} ID</label><select class="fs" id="pf-cls">${clsOpts}</select></div>
           <div class="fr"><label>${JP.pp}</label><input class="fi" id="pf-pp" type="number" value="${s.privatePoints}" /></div>
-          <div class="fr"><label>${JP.protect}</label><input class="fi" id="pf-prot" type="number" value="${s.protectPoints}" min="0" /></div>
+          <div class="fr"><label class="label-faded">${JP.protect}</label><input class="fi" id="pf-prot" type="number" value="${s.protectPoints}" min="0" /></div>
         </div>
 
         <div class="prof-sec">
