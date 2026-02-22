@@ -1,26 +1,26 @@
 <!DOCTYPE html>
-<html lang="ja">
+<html lang="ja" data-theme="classic">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Cote-OS v5.1</title>
+  <title>Cote-OS v5.3</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&family=Noto+Sans+JP:wght@300;400;500&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&family=Noto+Sans+JP:wght@300;400;500;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
 
-<!-- ═══════════════════════════════════════════════════════════
-     TASKBAR
-═══════════════════════════════════════════════════════════ -->
+<!-- TASKBAR: 3 non-overlapping flex zones. No position:absolute; buttons always hittable. -->
 <header id="taskbar">
 
+  <!-- LEFT: flex:1, content flush-left -->
   <div id="tb-left">
     <span id="logo">COTE<span class="ac">OS</span></span>
-    <span id="ver">v5.1</span>
+    <span id="ver">v5.3</span>
     <nav id="breadcrumb" aria-label="パンくずリスト"></nav>
   </div>
 
+  <!-- CENTER: flex:0 (shrink to content). Sits perfectly centered because both side zones are flex:1. -->
   <div id="tb-center">
     <button id="btn-prev" class="tb-btn" title="前月へ (Ctrl+Left)">&#171;&nbsp;前月</button>
     <div id="date-block">
@@ -30,29 +30,52 @@
     <button id="btn-next" class="tb-btn" title="次月へ (Ctrl+Right)">次月&nbsp;&#187;</button>
   </div>
 
+  <!-- RIGHT: flex:1, content flush-right -->
   <div id="tb-right">
-    <div id="slot-row" role="group" aria-label="セーブスロット">
-      <span class="tb-lbl">スロット</span>
-      <button class="sl active" data-slot="1">1</button>
-      <button class="sl"        data-slot="2">2</button>
-      <button class="sl"        data-slot="3">3</button>
-      <button class="sl"        data-slot="4">4</button>
-      <button class="sl"        data-slot="5">5</button>
-    </div>
+    <div id="gear-wrap">
+      <!-- Sliding tray — expands LEFT when .open -->
+      <div id="gear-tray" aria-hidden="true">
 
-    <span class="tb-divider" aria-hidden="true"></span>
+        <!-- Theme flyout -->
+        <div id="theme-wrap" class="gt-item-wrap">
+          <button id="btn-theme" class="gt-btn theme-btn" title="テーマ切替">🎨&nbsp;テーマ</button>
+          <div id="theme-flyout" class="gt-flyout" aria-hidden="true">
+            <button class="tf-opt" data-theme="classic">Classic</button>
+            <button class="tf-opt" data-theme="light">Light</button>
+            <button class="tf-opt" data-theme="dark">Dark</button>
+          </div>
+        </div>
 
-    <button id="btn-export" class="tb-btn io-btn" title="全スロットをJSONに書き出す">↓&nbsp;書き出し</button>
-    <button id="btn-import" class="tb-btn io-btn" title="JSONからデータを読み込む">↑&nbsp;読み込み</button>
+        <button class="gt-btn hist-btn" onclick="gearNav('history')" title="月次履歴">📋&nbsp;履歴</button>
+
+        <span class="gt-div"></span>
+
+        <div id="gt-slot-row" role="group" aria-label="セーブスロット">
+          <span class="gt-lbl">スロット</span>
+          <button class="sl" data-slot="1">1</button>
+          <button class="sl" data-slot="2">2</button>
+          <button class="sl" data-slot="3">3</button>
+          <button class="sl" data-slot="4">4</button>
+          <button class="sl" data-slot="5">5</button>
+        </div>
+
+        <span class="gt-div"></span>
+
+        <button id="btn-export" class="gt-btn io-btn" title="書き出し">↓&nbsp;書出</button>
+        <button id="btn-import" class="gt-btn io-btn" title="読み込み">↑&nbsp;読込</button>
+
+        <span class="gt-div"></span>
+
+        <button id="btn-save"  class="gt-btn ac-btn">セーブ</button>
+        <button id="btn-reset" class="gt-btn dn-btn">リセット</button>
+      </div><!-- /gear-tray -->
+
+      <button id="gear-btn" aria-label="設定メニュー" aria-expanded="false" title="設定">⚙</button>
+    </div><!-- /gear-wrap -->
 
     <input type="file" id="file-pick" accept=".json,application/json"
            aria-hidden="true" tabindex="-1" />
-
-    <span class="tb-divider" aria-hidden="true"></span>
-
-    <button id="btn-save"  class="tb-btn ac-btn">セーブ</button>
-    <button id="btn-reset" class="tb-btn dn-btn" title="現在スロットをリセット">リセット</button>
-  </div>
+  </div><!-- /tb-right -->
 
 </header>
 

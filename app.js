@@ -1,16 +1,18 @@
 /* ================================================================
-   Cote-OS v5.1  ·  app.js
+   Cote-OS v5.3  ·  app.js
    ─────────────────────────────────────────────────────────────────
-   Changes from v5.0:
-   • Precise ID logic: prefix = 7+(6-grade)+(year-1), padded 3 digits
-     + 4-digit sequence. Applied to initial generation, addStudent,
-     randomizer, and incoming students.
-   • s-card: compact outer (v4.0 footprint) + large internal fonts.
-     No delete button on card. PP unit "PP", PRP unit "PRP" in white.
-   • Bulk deletion in selection mode ("選択した生徒を削除" button).
-   • Profile delete button kept; sidebar PRP yellow only (form faded).
-   • Randomize uses navigateReplace (no navStack push).
-   • fmtPP: K / M / B / T.
+   Changes from v5.2:
+   • Taskbar fix: pure flex 3-zone (left flex:1 | center flex:0 |
+     right flex:1). No position:absolute. Buttons always hittable.
+   • Theme Engine: Classic / Light / Dark via CSS custom properties
+     on <html data-theme>. Saved to localStorage. Flyout in gear
+     tray drops down vertically below the 🎨 button.
+   • s-card v5.3: 3:2 column ratio. Name font 1.62rem (1.5× boost).
+     White "PP"/"PRP" unit text retained.
+   • Profile sidebar: student name 1.86rem (2.0× boost).
+   • History page kept (separate view via gear menu).
+   • ID logic: prefix = 7+(6-grade)+(year-1); seq reset per grade.
+   • Bulk Delete, fmtPP K/M/B/T, navigateReplace for randomise.
    ================================================================ */
 'use strict';
 
@@ -25,7 +27,8 @@ const MONTHS_JP   = ['1月','2月','3月','4月','5月','6月','7月','8月','9�
 const HISTORY_MAX = 60;
 const NUM_SLOTS   = 5;
 const TOP_N       = 100;
-const APP_VER     = '5.1';
+const APP_VER     = '5.3';
+const THEME_KEY   = 'CoteOS_theme';
 
 const slotKey = n => `CoteOS_v3_Slot${n}`;
 
@@ -41,12 +44,13 @@ const JP = {
   expel:'退学処分', reinstate:'復帰',
   graduates:'卒業生', incoming2:'入学予定',
   ranking:'ランキング',
+  history:'月次履歴',
   gradeN: g => `${g}年生`,
   clsDef: (g, r) => `${g}年${r}組`,
 };
 
 /* ──────────────────────────────────────────────────────────────────
-   RANDOMIZER DATA  (ported from generate_students.py)
+   RANDOMISER DATA
 ────────────────────────────────────────────────────────────────── */
 const SURNAMES = [
   "佐藤","鈴木","高橋","田中","渡辺","伊藤","山本","中村","小林","加藤",
@@ -63,7 +67,6 @@ const SURNAMES = [
   "北村","相沢","桑原","黒田","新井","宮田","山内","堀","野田","菅野",
   "川上","榎本","大島","飯田","岸","南","上野","泉","田口","高田",
 ];
-
 const MALE_NAMES = [
   "蒼","湊","蓮","陽翔","律","悠真","暖","颯","樹","翔",
   "大和","悠人","凛","碧","陽太","隼人","琉生","晴翔","光","仁",
@@ -78,7 +81,6 @@ const MALE_NAMES = [
   "優也","陽一","稜真","陽平","凱","寛大","堅太","達也","聖也","柊",
   "真斗","千尋","鷹","奏太","葵","光太郎","澪斗","虎太郎","司","朔",
 ];
-
 const FEMALE_NAMES = [
   "陽葵","凛","結菜","杏","莉子","美咲","葵","愛","心春","桜",
   "咲良","琴音","七海","芽依","彩花","結衣","梨花","菜々","遥","優花",
@@ -93,41 +95,32 @@ const FEMALE_NAMES = [
   "栞奈","悠里","光莉","美結","りん","詩乃","萌々","菊乃","波奈","颯香",
   "椎奈","絢音","珊瑚","麗那","このは","倖","妃奈","帆夏","乙葉","琴葉",
 ];
-
 const CLASS_STAT_CFG = {
-  0: { avg:[6,8],  rare:[4,12],  focus:['reasoning','memory','thinking'] },
-  1: { avg:[5,7],  rare:[4,10],  focus:['language','memory'] },
-  2: { avg:[4,6],  rare:[2,10],  focus:['physical','mental'] },
-  3: { avg:[5,5],  rare:[3,8],   focus:['physical','mental'] },
-  4: { avg:[1,6],  rare:[7,13],  focus:[] },
+  0:{ avg:[6,8],  rare:[4,12], focus:['reasoning','memory','thinking'] },
+  1:{ avg:[5,7],  rare:[4,10], focus:['language','memory'] },
+  2:{ avg:[4,6],  rare:[2,10], focus:['physical','mental'] },
+  3:{ avg:[5,5],  rare:[3,8],  focus:['physical','mental'] },
+  4:{ avg:[1,6],  rare:[7,13], focus:[] },
 };
-
 const PP_RANGE = {
-  0:[50000,100000], 1:[30000,80000], 2:[20000,60000], 3:[10000,50000], 4:[0,50000],
+  0:[50000,100000], 1:[30000,80000], 2:[20000,60000],
+  3:[10000,50000],  4:[0,50000],
 };
 
-function rndInt(lo, hi) { return Math.floor(Math.random() * (hi - lo + 1)) + lo; }
-function rndPick(arr)   { return arr[Math.floor(Math.random() * arr.length)]; }
-
-function genStat(classId, key) {
-  const cfg = CLASS_STAT_CFG[classId];
-  const isRare = Math.random() < 0.20;
-  const [lo, hi] = isRare ? cfg.rare : cfg.avg;
-  let value = lo === hi ? lo : rndInt(lo, hi);
-  if (cfg.focus.includes(key)) value = Math.min(15, value + 1);
-  return value;
+function rndInt(lo,hi){ return Math.floor(Math.random()*(hi-lo+1))+lo; }
+function rndPick(arr){ return arr[Math.floor(Math.random()*arr.length)]; }
+function genStat(cid,key){
+  const cfg=CLASS_STAT_CFG[cid]; const rare=Math.random()<0.20;
+  const [lo,hi]=rare?cfg.rare:cfg.avg; let v=lo===hi?lo:rndInt(lo,hi);
+  if(cfg.focus.includes(key)) v=Math.min(15,v+1); return v;
 }
-
-function genDOB(grade, systemYear) {
-  let year = 2010 + (6 - grade) + (systemYear - 1);
-  const month = rndInt(1, 12);
-  const day   = rndInt(1, 28);
-  if (month <= 3) year += 1;
-  return `${year}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+function genDOB(grade,sysYear){
+  let y=2010+(6-grade)+(sysYear-1); const m=rndInt(1,12),d=rndInt(1,28);
+  if(m<=3) y+=1;
+  return `${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
 }
-
-function genStudentName(gender) {
-  return rndPick(SURNAMES) + rndPick(gender === 'M' ? MALE_NAMES : FEMALE_NAMES);
+function genStudentName(gender){
+  return rndPick(SURNAMES)+rndPick(gender==='M'?MALE_NAMES:FEMALE_NAMES);
 }
 
 /* ──────────────────────────────────────────────────────────────────
@@ -139,168 +132,139 @@ let navStack    = [];
 let selectMode  = false;
 let selectedIds = new Set();
 
-/* ──────────────────────────────────────────────────────────────────
-   STATE FACTORY
-────────────────────────────────────────────────────────────────── */
-function newState() {
-  return { year: 1, month: 4, students: [], classes: [], history: [], nextId: 1 };
+function newState(){
+  return { year:1, month:4, students:[], classes:[], history:[], nextId:1 };
 }
 
 /* ──────────────────────────────────────────────────────────────────
-   STUDENT ID — v5.1 PRECISE LOGIC
-   Format: [3-digit prefix][4-digit sequence]
-   Prefix = 7 + (6 - grade) + (state.year - 1)   (numeric grade only)
-   Special grades (Incoming / Graduate) use prefix "000"
+   THEME ENGINE
 ────────────────────────────────────────────────────────────────── */
-function gradePrefix(grade) {
-  if (typeof grade !== 'number' || grade < 1 || grade > 6) return '000';
-  const raw = 7 + (6 - grade) + (state.year - 1);
-  return String(raw).padStart(3, '0');
+const THEMES = ['classic','light','dark'];
+
+function applyTheme(name){
+  if(!THEMES.includes(name)) name='classic';
+  document.documentElement.setAttribute('data-theme', name);
+  localStorage.setItem(THEME_KEY, name);
+  // Update active marker on flyout options
+  document.querySelectorAll('.tf-opt').forEach(b=>{
+    b.classList.toggle('active', b.dataset.theme===name);
+  });
 }
 
-function genStudentId(grade) {
-  const prefix = gradePrefix(grade);
-  const seq    = String(state.nextId).padStart(4, '0');
-  state.nextId++;
-  return prefix + seq;
+function loadTheme(){
+  const saved = localStorage.getItem(THEME_KEY);
+  applyTheme(saved||'classic');
 }
 
 /* ──────────────────────────────────────────────────────────────────
-   SMALL UTILITIES
+   STUDENT ID  — v5.1+ precise logic
+   Prefix = 7+(6-grade)+(state.year-1), padded 3 digits
+   Sequence resets to 0001 per grade in initial generation
 ────────────────────────────────────────────────────────────────── */
-function esc(s) {
-  return String(s ?? '')
-    .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+function gradePrefix(grade){
+  if(typeof grade!=='number'||grade<1||grade>6) return '000';
+  return String(7+(6-grade)+(state.year-1)).padStart(3,'0');
+}
+function genStudentId(grade){
+  const seq=String(state.nextId).padStart(4,'0'); state.nextId++;
+  return gradePrefix(grade)+seq;
+}
+
+/* ──────────────────────────────────────────────────────────────────
+   UTILITIES
+────────────────────────────────────────────────────────────────── */
+function esc(s){
+  return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;')
     .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
-function escA(s) { return String(s ?? '').replace(/"/g,'&quot;'); }
+function escA(s){ return String(s??'').replace(/"/g,'&quot;'); }
 
-function toast(msg, cls='', ms=2800) {
-  const el = document.getElementById('toast');
-  if (!el) return;
-  el.textContent = msg;
-  el.className = cls ? `on ${cls}` : 'on';
-  clearTimeout(toast._t);
-  toast._t = setTimeout(() => { el.className = ''; }, ms);
+function toast(msg,cls='',ms=2800){
+  const el=document.getElementById('toast'); if(!el) return;
+  el.textContent=msg; el.className=cls?`on ${cls}`:'on';
+  clearTimeout(toast._t); toast._t=setTimeout(()=>{ el.className=''; },ms);
 }
+function fmtDate(y,m){ return `Year ${y} · ${MONTHS_JP[m-1]}`; }
 
-function fmtDate(y, m) { return `Year ${y} · ${MONTHS_JP[m - 1]}`; }
-
-/* K / M / B / T */
-function fmtPP(v) {
-  const a = Math.abs(v);
-  if (a >= 1e12) return (v / 1e12).toFixed(1) + 'T';
-  if (a >= 1e9)  return (v / 1e9).toFixed(1) + 'B';
-  if (a >= 1e6)  return (v / 1e6).toFixed(1) + 'M';
-  if (a >= 1e3)  return (v / 1e3).toFixed(1) + 'K';
+function fmtPP(v){
+  const a=Math.abs(v);
+  if(a>=1e12) return (v/1e12).toFixed(1)+'T';
+  if(a>=1e9)  return (v/1e9).toFixed(1)+'B';
+  if(a>=1e6)  return (v/1e6).toFixed(1)+'M';
+  if(a>=1e3)  return (v/1e3).toFixed(1)+'K';
   return String(v);
 }
-function ppCol(v) { return v > 0 ? 'pos' : v < 0 ? 'neg' : 'neu'; }
+function ppCol(v){ return v>0?'pos':v<0?'neg':'neu'; }
 
 /* ──────────────────────────────────────────────────────────────────
    CLASS HELPERS
 ────────────────────────────────────────────────────────────────── */
-function getCls(grade, classId) {
-  return state.classes.find(c => c.grade === grade && c.classId === classId);
+function getCls(grade,classId){ return state.classes.find(c=>c.grade===grade&&c.classId===classId); }
+function getStudentsOf(grade,classId){ return state.students.filter(s=>s.grade===grade&&s.classId===classId); }
+function getRanked(grade){
+  return [...state.classes.filter(c=>c.grade===grade)]
+    .sort((a,b)=>b.classPoints!==a.classPoints?b.classPoints-a.classPoints:a.classId-b.classId);
 }
-function getStudentsOf(grade, classId) {
-  return state.students.filter(s => s.grade === grade && s.classId === classId);
+function rankOf(grade,classId){
+  const i=getRanked(grade).findIndex(c=>c.classId===classId);
+  return i>=0?RANK_LABELS[i]:'?';
 }
-function getRanked(grade) {
-  return [...state.classes.filter(c => c.grade === grade)]
-    .sort((a, b) => b.classPoints !== a.classPoints
-      ? b.classPoints - a.classPoints
-      : a.classId - b.classId);
-}
-function rankOf(grade, classId) {
-  const i = getRanked(grade).findIndex(c => c.classId === classId);
-  return i >= 0 ? RANK_LABELS[i] : '?';
-}
-function clsName(grade, classId) {
-  const c = getCls(grade, classId);
-  return c?.customName || JP.clsDef(grade, rankOf(grade, classId));
+function clsName(grade,classId){
+  const c=getCls(grade,classId); return c?.customName||JP.clsDef(grade,rankOf(grade,classId));
 }
 
 /* ──────────────────────────────────────────────────────────────────
    BLANK DATA GENERATORS
 ────────────────────────────────────────────────────────────────── */
-function blankStudent(grade, classId) {
-  const stats = Object.fromEntries(STATS_KEYS.map(k => [k, 1]));
-  return {
-    id: genStudentId(grade),
-    name: '', gender: 'M', dob: '',
-    grade, classId, stats,
-    specialAbility: '', privatePoints: 0, protectPoints: 0,
-    contracts: [], isExpelled: false,
-  };
+function blankStudent(grade,classId){
+  const stats=Object.fromEntries(STATS_KEYS.map(k=>[k,1]));
+  return { id:genStudentId(grade), name:'', gender:'M', dob:'', grade, classId, stats,
+           specialAbility:'', privatePoints:0, protectPoints:0, contracts:[], isExpelled:false };
 }
-function blankClass(grade, classId) {
-  return { grade, classId, classPoints: 0, customName: '' };
-}
+function blankClass(grade,classId){ return { grade,classId,classPoints:0,customName:'' }; }
 
-/* Initial generation: each grade gets its own sequence starting at 0001 */
-function generateInitialData() {
-  Object.assign(state, { students:[], classes:[], nextId:1, year:1, month:4, history:[] });
-  GRADES.forEach(g => {
-    CLASS_IDS.forEach(c => state.classes.push(blankClass(g, c)));
-  });
-  GRADES.forEach(g => {
-    state.nextId = 1;   // reset sequence for each grade → 0001..0200 per grade
-    CLASS_IDS.forEach(c => {
-      for (let i = 0; i < 40; i++) state.students.push(blankStudent(g, c));
+function generateInitialData(){
+  Object.assign(state,{students:[],classes:[],nextId:1,year:1,month:4,history:[]});
+  GRADES.forEach(g=>CLASS_IDS.forEach(c=>state.classes.push(blankClass(g,c))));
+  GRADES.forEach(g=>{
+    state.nextId=1;  // reset sequence per grade → 0001..0200 each
+    CLASS_IDS.forEach(c=>{
+      for(let i=0;i<40;i++) state.students.push(blankStudent(g,c));
     });
   });
-  // After generation, set nextId beyond any possible collision
-  state.nextId = 10000;
+  state.nextId=10000; // sentinel
 }
 
 /* ──────────────────────────────────────────────────────────────────
-   IN-APP GRADE RANDOMIZER
+   GRADE RANDOMISER
 ────────────────────────────────────────────────────────────────── */
-function randomizeGrade(grade) {
-  const sts = state.students.filter(s => s.grade === grade && !s.isExpelled);
-
-  const byClass = {};
-  CLASS_IDS.forEach(cid => { byClass[cid] = []; });
-  sts.forEach(s => { if (byClass[s.classId] !== undefined) byClass[s.classId].push(s); });
-
-  CLASS_IDS.forEach(classId => {
-    const group = byClass[classId];
-    const n = group.length;
-    const half = Math.floor(n / 2);
-    const genders = Array(half).fill('M').concat(Array(n - half).fill('F'));
-    for (let i = genders.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [genders[i], genders[j]] = [genders[j], genders[i]];
-    }
-    group.forEach((s, idx) => {
-      const gender = genders[idx] || 'M';
-      s.name    = genStudentName(gender);
-      s.gender  = gender;
-      s.dob     = genDOB(grade, state.year);
-      const [ppLo, ppHi] = PP_RANGE[classId] || [0, 50000];
-      s.privatePoints = rndInt(ppLo, ppHi);
-      STATS_KEYS.forEach(k => { s.stats[k] = genStat(classId, k); });
-      s.specialAbility = '';
+function randomizeGrade(grade){
+  const sts=state.students.filter(s=>s.grade===grade&&!s.isExpelled);
+  const byClass={}; CLASS_IDS.forEach(cid=>{byClass[cid]=[];});
+  sts.forEach(s=>{ if(byClass[s.classId]!==undefined) byClass[s.classId].push(s); });
+  CLASS_IDS.forEach(cid=>{
+    const grp=byClass[cid],n=grp.length,half=Math.floor(n/2);
+    const gend=Array(half).fill('M').concat(Array(n-half).fill('F'));
+    for(let i=gend.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[gend[i],gend[j]]=[gend[j],gend[i]];}
+    grp.forEach((s,idx)=>{
+      const gender=gend[idx]||'M';
+      s.name=genStudentName(gender); s.gender=gender; s.dob=genDOB(grade,state.year);
+      const [lo,hi]=PP_RANGE[cid]||[0,50000]; s.privatePoints=rndInt(lo,hi);
+      STATS_KEYS.forEach(k=>{s.stats[k]=genStat(cid,k);}); s.specialAbility='';
     });
   });
 }
 
 /* ──────────────────────────────────────────────────────────────────
-   GLOBAL PP RANKING
+   PP RANKING
 ────────────────────────────────────────────────────────────────── */
-function computeRanking() {
-  const sorted = [...state.students].sort((a, b) =>
-    b.privatePoints !== a.privatePoints
-      ? b.privatePoints - a.privatePoints
-      : (a.id < b.id ? -1 : 1)
-  );
-  const out = [];
-  for (let i = 0; i < sorted.length && out.length < TOP_N; i++) {
-    const rank = (i > 0 && sorted[i].privatePoints === sorted[i - 1].privatePoints)
-      ? out[out.length - 1].rank
-      : i + 1;
-    out.push({ rank, student: sorted[i] });
+function computeRanking(){
+  const sorted=[...state.students].sort((a,b)=>
+    b.privatePoints!==a.privatePoints?b.privatePoints-a.privatePoints:(a.id<b.id?-1:1));
+  const out=[];
+  for(let i=0;i<sorted.length&&out.length<TOP_N;i++){
+    const rank=(i>0&&sorted[i].privatePoints===sorted[i-1].privatePoints)?out[out.length-1].rank:i+1;
+    out.push({rank,student:sorted[i]});
   }
   return out;
 }
@@ -308,117 +272,81 @@ function computeRanking() {
 /* ──────────────────────────────────────────────────────────────────
    PERSISTENCE
 ────────────────────────────────────────────────────────────────── */
-function saveState(silent = false) {
-  try {
-    localStorage.setItem(slotKey(currentSlot), JSON.stringify(state));
+function saveState(silent=false){
+  try{
+    localStorage.setItem(slotKey(currentSlot),JSON.stringify(state));
     updateSlotButtons();
-    if (!silent) toast(`✓ スロット${currentSlot}にセーブしました`, 'ok');
-  } catch (e) {
-    toast('✗ セーブ失敗: ' + e.message, 'err');
-  }
+    if(!silent) toast(`✓ スロット${currentSlot}にセーブしました`,'ok');
+  } catch(e){ toast('✗ セーブ失敗: '+e.message,'err'); }
 }
-
-function loadSlot(n) {
-  const raw = localStorage.getItem(slotKey(n));
-  if (!raw) return false;
-  try { state = JSON.parse(raw); return true; }
-  catch (e) { console.warn('loadSlot', n, e); return false; }
+function loadSlot(n){
+  const raw=localStorage.getItem(slotKey(n)); if(!raw) return false;
+  try{ state=JSON.parse(raw); return true; }
+  catch(e){ console.warn('loadSlot',n,e); return false; }
 }
-
-function slotHasData(n) { return !!localStorage.getItem(slotKey(n)); }
-
-function switchSlot(n) {
-  if (n === currentSlot) return;
-  saveState(true);
-  state = null;
-  currentSlot = n;
-  selectMode  = false;
-  selectedIds = new Set();
-  navStack    = [];
-  if (!loadSlot(n)) { state = newState(); generateInitialData(); saveState(true); }
-  updateSlotButtons();
-  updateDateDisplay();
-  navigate('home', {}, true);
+function slotHasData(n){ return !!localStorage.getItem(slotKey(n)); }
+function switchSlot(n){
+  if(n===currentSlot) return;
+  saveState(true); state=null; currentSlot=n; selectMode=false; selectedIds=new Set(); navStack=[];
+  if(!loadSlot(n)){ state=newState(); generateInitialData(); saveState(true); }
+  updateSlotButtons(); updateDateDisplay(); navigate('home',{},true);
   toast(`スロット${n}に切り替えました`);
 }
-
-function resetSlot() {
+function resetSlot(){
   localStorage.removeItem(slotKey(currentSlot));
-  state = newState();
-  generateInitialData();
-  saveState(true);
+  state=newState(); generateInitialData(); saveState(true);
 }
-
-function updateSlotButtons() {
-  document.querySelectorAll('.sl').forEach(b => {
-    const n = +b.dataset.slot;
-    b.classList.toggle('active',   n === currentSlot);
-    b.classList.toggle('has-data', slotHasData(n));
+function updateSlotButtons(){
+  document.querySelectorAll('.sl').forEach(b=>{
+    const n=+b.dataset.slot;
+    b.classList.toggle('active',n===currentSlot);
+    b.classList.toggle('has-data',slotHasData(n));
   });
-  const chip = document.getElementById('slot-chip');
-  if (chip) chip.textContent = `スロット ${currentSlot}`;
+  const chip=document.getElementById('slot-chip');
+  if(chip) chip.textContent=`スロット ${currentSlot}`;
 }
 
 /* ──────────────────────────────────────────────────────────────────
    EXPORT
 ────────────────────────────────────────────────────────────────── */
-function exportAllSlots() {
+function exportAllSlots(){
   saveState(true);
-  const slots = {};
-  for (let n = 1; n <= NUM_SLOTS; n++) {
-    const raw = localStorage.getItem(slotKey(n));
-    if (!raw) { slots[n] = null; continue; }
-    try   { slots[n] = serializeSlot(JSON.parse(raw)); }
-    catch (e) { slots[n] = null; }
+  const slots={};
+  for(let n=1;n<=NUM_SLOTS;n++){
+    const raw=localStorage.getItem(slotKey(n)); if(!raw){slots[n]=null;continue;}
+    try{slots[n]=serializeSlot(JSON.parse(raw));}catch(e){slots[n]=null;}
   }
-  const payload = {
-    app: 'Cote-OS', version: APP_VER,
-    exportedAt: new Date().toISOString(),
-    description: 'Cote-OS バックアップ。各フィールドを直接編集して読み込み可能。',
-    slots,
-  };
-  const json  = JSON.stringify(payload, null, 2);
-  const stamp = datestamp();
-  const blob  = new Blob(['\uFEFF' + json], { type: 'application/json;charset=utf-8' });
-  const url   = URL.createObjectURL(blob);
-  const a     = Object.assign(document.createElement('a'), {
-    href: url, download: `cote_os_backup_${stamp}.json`,
-  });
+  const payload={app:'Cote-OS',version:APP_VER,exportedAt:new Date().toISOString(),
+    description:'Cote-OS バックアップ。各フィールドを直接編集して読み込み可能。',slots};
+  const stamp=datestamp();
+  const blob=new Blob(['\uFEFF'+JSON.stringify(payload,null,2)],{type:'application/json;charset=utf-8'});
+  const url=URL.createObjectURL(blob);
+  const a=Object.assign(document.createElement('a'),{href:url,download:`cote_os_backup_${stamp}.json`});
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
-  setTimeout(() => URL.revokeObjectURL(url), 15_000);
-  toast(`✓ 書き出し完了 — cote_os_backup_${stamp}.json`, 'io', 3500);
+  setTimeout(()=>URL.revokeObjectURL(url),15000);
+  toast(`✓ 書き出し完了 — cote_os_backup_${stamp}.json`,'io',3500);
 }
-
-function serializeSlot(s) {
+function serializeSlot(s){
   return {
-    year: s.year, month: s.month, nextId: s.nextId,
-    classes: s.classes.map(c => ({
-      grade: c.grade, classId: c.classId,
-      classPoints: c.classPoints, customName: c.customName || '',
+    year:s.year,month:s.month,nextId:s.nextId,
+    classes:s.classes.map(c=>({grade:c.grade,classId:c.classId,classPoints:c.classPoints,customName:c.customName||''})),
+    students:s.students.map(st=>({
+      id:st.id,name:st.name,gender:st.gender,dateOfBirth:st.dob,
+      grade:st.grade,classId:st.classId,privatePoints:st.privatePoints,protectPoints:st.protectPoints,
+      status:st.isExpelled?'expelled':st.grade==='Graduate'?'graduate':st.grade==='Incoming'?'incoming':'active',
+      specialAbility:st.specialAbility,
+      stats:Object.fromEntries(STATS_KEYS.map(k=>[k,st.stats[k]])),
+      contracts:st.contracts.map(c=>({targetId:c.targetId,monthlyAmount:c.amount})),
     })),
-    students: s.students.map(st => ({
-      id: st.id, name: st.name, gender: st.gender,
-      dateOfBirth: st.dob,
-      grade: st.grade, classId: st.classId,
-      privatePoints: st.privatePoints, protectPoints: st.protectPoints,
-      status: st.isExpelled ? 'expelled'
-              : st.grade === 'Graduate' ? 'graduate'
-              : st.grade === 'Incoming' ? 'incoming' : 'active',
-      specialAbility: st.specialAbility,
-      stats: Object.fromEntries(STATS_KEYS.map(k => [k, st.stats[k]])),
-      contracts: st.contracts.map(c => ({ targetId: c.targetId, monthlyAmount: c.amount })),
-    })),
-    historySnapshots: s.history.map(h => ({
-      year: h.year, month: h.month,
-      classPoints: h.classPoints, studentPP: h.studentPP, studentGrades: h.studentGrades,
-    })),
+    historySnapshots:s.history.map(h=>({year:h.year,month:h.month,
+      classPoints:h.classPoints,studentPP:h.studentPP,studentGrades:h.studentGrades})),
   };
 }
 
 /* ──────────────────────────────────────────────────────────────────
    IMPORT
 ────────────────────────────────────────────────────────────────── */
-function triggerImportDialog() {
+function triggerImportDialog(){
   openModal(`
     <div class="m-title">↑ データ読み込み</div>
     <div class="m-body">
@@ -435,279 +363,231 @@ function triggerImportDialog() {
     </div>
   `);
 }
-window.pickFile = function () { closeModal(); document.getElementById('file-pick').click(); };
+window.pickFile=function(){ closeModal(); document.getElementById('file-pick').click(); };
 
-function onFilePicked(file) {
-  if (!file) return;
-  if (file.type && !file.type.includes('json') && !file.name.endsWith('.json')) {
-    toast('✗ .json ファイルを選択してください', 'err'); return;
-  }
-  if (file.size > 50 * 1024 * 1024) { toast('✗ ファイルが大きすぎます (上限 50 MB)', 'err'); return; }
-  const reader = new FileReader();
-  reader.onload = e => {
-    try {
-      const text = e.target.result.replace(/^\uFEFF/, '');
-      validateAndImport(JSON.parse(text));
-    } catch (err) { toast('✗ JSON 解析失敗: ' + err.message, 'err', 4500); }
-  };
-  reader.onerror = () => toast('✗ ファイルの読み込みに失敗しました', 'err');
-  reader.readAsText(file, 'utf-8');
+function onFilePicked(file){
+  if(!file) return;
+  if(file.type&&!file.type.includes('json')&&!file.name.endsWith('.json')){ toast('✗ .json ファイルを選択してください','err'); return; }
+  if(file.size>50*1024*1024){ toast('✗ ファイルが大きすぎます (上限 50 MB)','err'); return; }
+  const reader=new FileReader();
+  reader.onload=e=>{ try{ validateAndImport(JSON.parse(e.target.result.replace(/^\uFEFF/,''))); }
+    catch(err){ toast('✗ JSON 解析失敗: '+err.message,'err',4500); } };
+  reader.onerror=()=>toast('✗ ファイルの読み込みに失敗しました','err');
+  reader.readAsText(file,'utf-8');
 }
-
-function validateAndImport(parsed) {
-  if (!parsed?.slots || typeof parsed.slots !== 'object') {
-    toast('✗ 無効なファイル形式です', 'err'); return;
+function validateAndImport(parsed){
+  if(!parsed?.slots||typeof parsed.slots!=='object'){ toast('✗ 無効なファイル形式です','err'); return; }
+  let restored=0;
+  for(let n=1;n<=NUM_SLOTS;n++){
+    const raw=parsed.slots[n]??parsed.slots[String(n)];
+    if(!raw){ localStorage.removeItem(slotKey(n)); continue; }
+    try{ const ss=deserializeSlot(raw); repairIntegrity(ss); localStorage.setItem(slotKey(n),JSON.stringify(ss)); restored++; }
+    catch(e){ console.warn('import slot',n,e); }
   }
-  let restored = 0;
-  for (let n = 1; n <= NUM_SLOTS; n++) {
-    const raw = parsed.slots[n] ?? parsed.slots[String(n)];
-    if (!raw) { localStorage.removeItem(slotKey(n)); continue; }
-    try {
-      const ss = deserializeSlot(raw);
-      repairIntegrity(ss);
-      localStorage.setItem(slotKey(n), JSON.stringify(ss));
-      restored++;
-    } catch (e) { console.warn('import slot', n, e); }
-  }
-  state = null; selectMode = false; selectedIds = new Set(); navStack = [];
-  if (!loadSlot(currentSlot)) { state = newState(); generateInitialData(); saveState(true); }
-  updateSlotButtons(); updateDateDisplay(); navigate('home', {}, true);
-  toast(`✓ 読み込み完了 — ${restored}スロットを復元しました`, 'io', 3500);
+  state=null; selectMode=false; selectedIds=new Set(); navStack=[];
+  if(!loadSlot(currentSlot)){ state=newState(); generateInitialData(); saveState(true); }
+  updateSlotButtons(); updateDateDisplay(); navigate('home',{},true);
+  toast(`✓ 読み込み完了 — ${restored}スロットを復元しました`,'io',3500);
 }
-
-function deserializeSlot(obj) {
-  const s = newState();
-  s.year   = typeof obj.year   === 'number' && obj.year   >= 1 ? obj.year   : 1;
-  s.month  = typeof obj.month  === 'number' && obj.month  >= 1 ? obj.month  : 4;
-  s.nextId = typeof obj.nextId === 'number' && obj.nextId >= 1 ? obj.nextId : 1;
-
-  s.classes = (obj.classes || []).map(c => ({
-    grade: c.grade,
-    classId:     typeof c.classId === 'number' ? c.classId : 0,
-    classPoints: typeof c.classPoints === 'number' ? c.classPoints : 0,
-    customName:  String(c.customName || ''),
-  }));
-
-  s.students = (obj.students || []).map(st => {
-    const expelled = st.isExpelled === true || st.status === 'expelled';
-    let grade = st.grade;
-    if (typeof grade === 'string' && /^\d+$/.test(grade)) grade = +grade;
-    return {
-      id:             String(st.id || ''),
-      name:           String(st.name || ''),
-      gender:         st.gender === 'F' ? 'F' : 'M',
-      dob:            String(st.dateOfBirth || st.dob || ''),
-      grade,
-      classId:        typeof st.classId === 'number' ? st.classId : 0,
-      privatePoints:  typeof st.privatePoints === 'number' ? st.privatePoints : 0,
-      protectPoints:  typeof st.protectPoints === 'number' ? st.protectPoints : 0,
-      isExpelled:     expelled,
-      specialAbility: String(st.specialAbility || ''),
-      stats:          Object.fromEntries(STATS_KEYS.map(k => [k, clampStat(st.stats?.[k])])),
-      contracts:      (st.contracts || []).map(c => ({
-        targetId: String(c.targetId || ''),
-        amount:   typeof (c.monthlyAmount ?? c.amount) === 'number' ? (c.monthlyAmount ?? c.amount) : 0,
-      })),
-    };
+function deserializeSlot(obj){
+  const s=newState();
+  s.year=typeof obj.year==='number'&&obj.year>=1?obj.year:1;
+  s.month=typeof obj.month==='number'&&obj.month>=1?obj.month:4;
+  s.nextId=typeof obj.nextId==='number'&&obj.nextId>=1?obj.nextId:1;
+  s.classes=(obj.classes||[]).map(c=>({grade:c.grade,classId:typeof c.classId==='number'?c.classId:0,
+    classPoints:typeof c.classPoints==='number'?c.classPoints:0,customName:String(c.customName||'')}));
+  s.students=(obj.students||[]).map(st=>{
+    const expelled=st.isExpelled===true||st.status==='expelled';
+    let grade=st.grade; if(typeof grade==='string'&&/^\d+$/.test(grade)) grade=+grade;
+    return { id:String(st.id||''),name:String(st.name||''),gender:st.gender==='F'?'F':'M',
+      dob:String(st.dateOfBirth||st.dob||''),grade,classId:typeof st.classId==='number'?st.classId:0,
+      privatePoints:typeof st.privatePoints==='number'?st.privatePoints:0,
+      protectPoints:typeof st.protectPoints==='number'?st.protectPoints:0,
+      isExpelled:expelled,specialAbility:String(st.specialAbility||''),
+      stats:Object.fromEntries(STATS_KEYS.map(k=>[k,clampStat(st.stats?.[k])])),
+      contracts:(st.contracts||[]).map(c=>({targetId:String(c.targetId||''),
+        amount:typeof(c.monthlyAmount??c.amount)==='number'?(c.monthlyAmount??c.amount):0})) };
   });
-
-  s.history = (obj.historySnapshots || obj.history || []).slice(0, HISTORY_MAX).map(h => ({
-    year: +h.year || 1, month: +h.month || 4,
-    classPoints:   Array.isArray(h.classPoints)   ? h.classPoints   : [],
-    studentPP:     Array.isArray(h.studentPP)     ? h.studentPP     : [],
-    studentGrades: Array.isArray(h.studentGrades) ? h.studentGrades : [],
+  s.history=(obj.historySnapshots||obj.history||[]).slice(0,HISTORY_MAX).map(h=>({
+    year:+h.year||1,month:+h.month||4,
+    classPoints:Array.isArray(h.classPoints)?h.classPoints:[],
+    studentPP:Array.isArray(h.studentPP)?h.studentPP:[],
+    studentGrades:Array.isArray(h.studentGrades)?h.studentGrades:[],
   }));
-
   return s;
 }
-
-function clampStat(v) {
-  const n = parseInt(v, 10);
-  return (!isNaN(n) && n >= 1 && n <= 15) ? n : 1;
-}
-
-function repairIntegrity(s) {
-  const seen = new Set();
-  s.students.forEach(st => {
-    if (!st.id || seen.has(st.id)) {
-      st.id = '000' + String(s.nextId).padStart(4, '0');
-      s.nextId++;
-    }
+function clampStat(v){ const n=parseInt(v,10); return(!isNaN(n)&&n>=1&&n<=15)?n:1; }
+function repairIntegrity(s){
+  const seen=new Set();
+  s.students.forEach(st=>{
+    if(!st.id||seen.has(st.id)){ st.id='000'+String(s.nextId).padStart(4,'0'); s.nextId++; }
     seen.add(st.id);
   });
-  s.students.forEach(st => {
-    const num = parseInt(st.id.slice(-4), 10);
-    if (!isNaN(num) && num >= s.nextId) s.nextId = num + 1;
-  });
-  const validIds = new Set(s.students.map(st => st.id));
-  s.students.forEach(st => {
-    st.contracts = st.contracts.filter(c => c.targetId && validIds.has(c.targetId) && c.targetId !== st.id);
-  });
+  s.students.forEach(st=>{ const n=parseInt(st.id.slice(-4),10); if(!isNaN(n)&&n>=s.nextId) s.nextId=n+1; });
+  const validIds=new Set(s.students.map(st=>st.id));
+  s.students.forEach(st=>{ st.contracts=st.contracts.filter(c=>c.targetId&&validIds.has(c.targetId)&&c.targetId!==st.id); });
 }
-
-function datestamp() {
-  const d = new Date();
-  return `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`;
+function datestamp(){
+  const d=new Date(); return `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`;
 }
 
 /* ──────────────────────────────────────────────────────────────────
    TIME LEAP
 ────────────────────────────────────────────────────────────────── */
-function contractSums(sid) {
-  const self = state.students.find(s => s.id === sid);
-  if (!self) return { gains: 0, losses: 0 };
-  const losses = self.contracts.reduce((acc, c) => acc + c.amount, 0);
-  let gains = 0;
-  state.students.forEach(s => s.contracts.forEach(c => { if (c.targetId === sid) gains += c.amount; }));
-  return { gains, losses };
+function contractSums(sid){
+  const self=state.students.find(s=>s.id===sid); if(!self) return{gains:0,losses:0};
+  const losses=self.contracts.reduce((a,c)=>a+c.amount,0);
+  let gains=0; state.students.forEach(s=>s.contracts.forEach(c=>{if(c.targetId===sid)gains+=c.amount;}));
+  return{gains,losses};
 }
-
-function snapHistory() {
-  state.history.unshift({
-    year: state.year, month: state.month,
-    classPoints:   state.classes.map(c  => ({ grade: c.grade, classId: c.classId, cp: c.classPoints })),
-    studentPP:     state.students.map(s => ({ id: s.id, pp: s.privatePoints })),
-    studentGrades: state.students.map(s => ({ id: s.id, grade: s.grade, classId: s.classId })),
+function snapHistory(){
+  state.history.unshift({year:state.year,month:state.month,
+    classPoints:state.classes.map(c=>({grade:c.grade,classId:c.classId,cp:c.classPoints})),
+    studentPP:state.students.map(s=>({id:s.id,pp:s.privatePoints})),
+    studentGrades:state.students.map(s=>({id:s.id,grade:s.grade,classId:s.classId})),
   });
-  if (state.history.length > HISTORY_MAX) state.history.pop();
+  if(state.history.length>HISTORY_MAX) state.history.pop();
 }
-
-function advanceMonth() {
-  snapHistory();
-  if (state.month === 3) doGradeUp();
-  state.students.forEach(s => {
-    const c = state.classes.find(x => x.grade === s.grade && x.classId === s.classId);
-    const { gains, losses } = contractSums(s.id);
-    s.privatePoints += (c ? c.classPoints * 100 : 0) + gains - losses;
+function advanceMonth(){
+  snapHistory(); if(state.month===3) doGradeUp();
+  state.students.forEach(s=>{
+    const c=state.classes.find(x=>x.grade===s.grade&&x.classId===s.classId);
+    const{gains,losses}=contractSums(s.id);
+    s.privatePoints+=(c?c.classPoints*100:0)+gains-losses;
   });
-  state.month++;
-  if (state.month > 12) { state.month = 1; state.year++; }
-  saveState(true); renderApp();
-  toast(`⏩ ${fmtDate(state.year, state.month)} へ進みました`);
+  state.month++; if(state.month>12){state.month=1;state.year++;}
+  saveState(true); renderApp(); toast(`⏩ ${fmtDate(state.year,state.month)} へ進みました`);
 }
-
-function doGradeUp() {
-  state.students.forEach(s => { if (s.grade === 6) s.grade = 'Graduate'; });
-  for (let g = 5; g >= 1; g--) state.students.forEach(s => { if (s.grade === g) s.grade = g + 1; });
-  state.students.forEach(s => { if (s.grade === 'Incoming') s.grade = 1; });
-  const kept = state.classes.filter(c => c.grade < 6).map(c => ({ ...c, grade: c.grade + 1 }));
-  CLASS_IDS.forEach(id => kept.push(blankClass(1, id)));
-  state.classes = kept;
+function doGradeUp(){
+  state.students.forEach(s=>{if(s.grade===6)s.grade='Graduate';});
+  for(let g=5;g>=1;g--) state.students.forEach(s=>{if(s.grade===g)s.grade=g+1;});
+  state.students.forEach(s=>{if(s.grade==='Incoming')s.grade=1;});
+  const kept=state.classes.filter(c=>c.grade<6).map(c=>({...c,grade:c.grade+1}));
+  CLASS_IDS.forEach(id=>kept.push(blankClass(1,id))); state.classes=kept;
 }
-
-function revertMonth() {
-  if (!state.history.length) { toast('✗ 履歴がありません', 'err'); return; }
-  const snap = state.history.shift();
-  if (state.month === 4) undoGradeUp(snap);
-  snap.studentPP.forEach(e => {
-    const s = state.students.find(t => t.id === e.id);
-    if (s) s.privatePoints = e.pp;
-  });
-  state.month--;
-  if (state.month < 1) { state.month = 12; state.year = Math.max(1, state.year - 1); }
-  snap.classPoints.forEach(e => {
-    const c = state.classes.find(x => x.grade === e.grade && x.classId === e.classId);
-    if (c) c.classPoints = e.cp;
-  });
-  saveState(true); renderApp();
-  toast(`⏪ ${fmtDate(state.year, state.month)} に戻しました`);
+function revertMonth(){
+  if(!state.history.length){toast('✗ 履歴がありません','err');return;}
+  const snap=state.history.shift();
+  if(state.month===4) undoGradeUp(snap);
+  snap.studentPP.forEach(e=>{const s=state.students.find(t=>t.id===e.id);if(s)s.privatePoints=e.pp;});
+  state.month--; if(state.month<1){state.month=12;state.year=Math.max(1,state.year-1);}
+  snap.classPoints.forEach(e=>{const c=state.classes.find(x=>x.grade===e.grade&&x.classId===e.classId);if(c)c.classPoints=e.cp;});
+  saveState(true); renderApp(); toast(`⏪ ${fmtDate(state.year,state.month)} に戻しました`);
 }
-
-function undoGradeUp(snap) {
-  snap.studentGrades.forEach(e => {
-    const s = state.students.find(t => t.id === e.id);
-    if (s) { s.grade = e.grade; s.classId = e.classId; }
-  });
-  state.classes = snap.classPoints.map(e => {
-    const ex = state.classes.find(c => c.grade === e.grade && c.classId === e.classId);
-    return ex ? { ...ex, grade: e.grade, classId: e.classId, classPoints: e.cp } : blankClass(e.grade, e.classId);
+function undoGradeUp(snap){
+  snap.studentGrades.forEach(e=>{const s=state.students.find(t=>t.id===e.id);if(s){s.grade=e.grade;s.classId=e.classId;}});
+  state.classes=snap.classPoints.map(e=>{
+    const ex=state.classes.find(c=>c.grade===e.grade&&c.classId===e.classId);
+    return ex?{...ex,grade:e.grade,classId:e.classId,classPoints:e.cp}:blankClass(e.grade,e.classId);
   });
 }
 
 /* ──────────────────────────────────────────────────────────────────
+   GEAR MENU
+────────────────────────────────────────────────────────────────── */
+let gearOpen=false;
+let themeFlyOpen=false;
+
+function toggleGear(){
+  gearOpen=!gearOpen;
+  const btn=document.getElementById('gear-btn');
+  const tray=document.getElementById('gear-tray');
+  btn?.classList.toggle('open',gearOpen);
+  tray?.classList.toggle('open',gearOpen);
+  tray?.setAttribute('aria-hidden',String(!gearOpen));
+  btn?.setAttribute('aria-expanded',String(gearOpen));
+  if(!gearOpen) closeThemeFly();
+}
+function closeGear(){
+  if(!gearOpen) return; gearOpen=false;
+  document.getElementById('gear-btn')?.classList.remove('open');
+  const tray=document.getElementById('gear-tray');
+  tray?.classList.remove('open'); tray?.setAttribute('aria-hidden','true');
+  document.getElementById('gear-btn')?.setAttribute('aria-expanded','false');
+  closeThemeFly();
+}
+function toggleThemeFly(e){
+  e.stopPropagation();
+  themeFlyOpen=!themeFlyOpen;
+  const fly=document.getElementById('theme-flyout');
+  const btn=document.getElementById('btn-theme');
+  fly?.classList.toggle('open',themeFlyOpen);
+  fly?.setAttribute('aria-hidden',String(!themeFlyOpen));
+  btn?.classList.toggle('open',themeFlyOpen);
+}
+function closeThemeFly(){
+  if(!themeFlyOpen) return; themeFlyOpen=false;
+  document.getElementById('theme-flyout')?.classList.remove('open');
+  document.getElementById('btn-theme')?.classList.remove('open');
+}
+
+window.gearNav=function(page){ closeGear(); navigate(page,{},false); };
+
+/* ──────────────────────────────────────────────────────────────────
    NAVIGATION
 ────────────────────────────────────────────────────────────────── */
-function navigate(page, params={}, reset=false) {
-  if (reset) navStack = [];
-  navStack.push({ page, params });
-  renderPage(page, params);
-  updateBreadcrumb();
+function navigate(page,params={},reset=false){
+  if(reset) navStack=[];
+  navStack.push({page,params});
+  renderPage(page,params); updateBreadcrumb();
 }
-
-/* Replace top of navStack without pushing — used by randomize */
-function navigateReplace(page, params={}) {
-  if (navStack.length > 0) navStack[navStack.length - 1] = { page, params };
-  else navStack.push({ page, params });
-  renderPage(page, params);
-  updateBreadcrumb();
+function navigateReplace(page,params={}){
+  if(navStack.length>0) navStack[navStack.length-1]={page,params};
+  else navStack.push({page,params});
+  renderPage(page,params); updateBreadcrumb();
 }
-
-function goBack() {
-  if (navStack.length <= 1) return;
-  navStack.pop();
-  selectMode = false; selectedIds = new Set();
-  const t = navStack[navStack.length - 1];
-  renderPage(t.page, t.params); updateBreadcrumb();
+function goBack(){
+  if(navStack.length<=1) return;
+  navStack.pop(); selectMode=false; selectedIds=new Set();
+  const t=navStack[navStack.length-1]; renderPage(t.page,t.params); updateBreadcrumb();
 }
-
-window.navTo = function (i) {
-  navStack = navStack.slice(0, i + 1);
-  selectMode = false; selectedIds = new Set();
-  const t = navStack[navStack.length - 1];
-  renderPage(t.page, t.params); updateBreadcrumb();
+window.navTo=function(i){
+  navStack=navStack.slice(0,i+1); selectMode=false; selectedIds=new Set();
+  const t=navStack[navStack.length-1]; renderPage(t.page,t.params); updateBreadcrumb();
 };
-
-function pageLabel(n) {
-  switch (n.page) {
+function pageLabel(n){
+  switch(n.page){
     case 'home':      return 'ホーム';
     case 'grade':     return JP.gradeN(n.params.grade);
-    case 'class':     return clsName(n.params.grade, n.params.classId);
+    case 'class':     return clsName(n.params.grade,n.params.classId);
     case 'graduates': return JP.graduates;
     case 'incoming':  return JP.incoming2;
     case 'ranking':   return JP.ranking;
-    case 'profile': {
-      const s = state.students.find(x => x.id === n.params.sid);
-      return s ? (s.name || s.id) : 'プロフィール';
-    }
+    case 'history':   return JP.history;
+    case 'profile':   { const s=state.students.find(x=>x.id===n.params.sid); return s?(s.name||s.id):'プロフィール'; }
     default: return n.page;
   }
 }
-
-function updateBreadcrumb() {
-  const el = document.getElementById('breadcrumb');
-  if (!el) return;
-  el.innerHTML = navStack.map((n, i) =>
-    i === navStack.length - 1
-      ? `<span>${pageLabel(n)}</span>`
-      : `<a onclick="navTo(${i})">${pageLabel(n)}</a>`
+function updateBreadcrumb(){
+  const el=document.getElementById('breadcrumb'); if(!el) return;
+  el.innerHTML=navStack.map((n,i)=>
+    i===navStack.length-1?`<span>${pageLabel(n)}</span>`:`<a onclick="navTo(${i})">${pageLabel(n)}</a>`
   ).join('<span class="bc-sep">›</span>');
 }
 
 /* ──────────────────────────────────────────────────────────────────
    RENDER ENGINE
 ────────────────────────────────────────────────────────────────── */
-function renderApp() {
+function renderApp(){
   updateDateDisplay();
-  const cur = navStack[navStack.length - 1];
-  if (cur) renderPage(cur.page, cur.params); else navigate('home', {}, true);
+  const cur=navStack[navStack.length-1];
+  if(cur) renderPage(cur.page,cur.params); else navigate('home',{},true);
 }
-
-function updateDateDisplay() {
-  const el = document.getElementById('date-display');
-  if (el) el.textContent = fmtDate(state.year, state.month);
+function updateDateDisplay(){
+  const el=document.getElementById('date-display'); if(el) el.textContent=fmtDate(state.year,state.month);
 }
-
-function renderPage(page, params) {
-  const app = document.getElementById('app');
-  switch (page) {
-    case 'home':      app.innerHTML = renderHome(); break;
-    case 'grade':     app.innerHTML = renderGrade(params.grade); break;
-    case 'class':     app.innerHTML = renderClass(params.grade, params.classId); break;
-    case 'profile':   app.innerHTML = renderProfile(params.sid); break;
-    case 'graduates': app.innerHTML = renderSpecial('Graduate'); break;
-    case 'incoming':  app.innerHTML = renderSpecial('Incoming'); break;
-    case 'ranking':   app.innerHTML = renderRankingPage(); break;
-    default: app.innerHTML = `<p style="color:var(--rd)">ページが見つかりません</p>`;
+function renderPage(page,params){
+  const app=document.getElementById('app');
+  switch(page){
+    case 'home':      app.innerHTML=renderHome(); break;
+    case 'grade':     app.innerHTML=renderGrade(params.grade); break;
+    case 'class':     app.innerHTML=renderClass(params.grade,params.classId); break;
+    case 'profile':   app.innerHTML=renderProfile(params.sid); break;
+    case 'graduates': app.innerHTML=renderSpecial('Graduate'); break;
+    case 'incoming':  app.innerHTML=renderSpecial('Incoming'); break;
+    case 'ranking':   app.innerHTML=renderRankingPage(); break;
+    case 'history':   app.innerHTML=renderHistory(); break;
+    default: app.innerHTML=`<p style="color:var(--rd)">ページが見つかりません</p>`;
   }
   afterRender();
 }
@@ -715,15 +595,15 @@ function renderPage(page, params) {
 /* ──────────────────────────────────────────────────────────────────
    HOME PAGE
 ────────────────────────────────────────────────────────────────── */
-function renderHome() {
-  const activeCount = state.students.filter(s => typeof s.grade === 'number').length;
-  const grads       = state.students.filter(s => s.grade === 'Graduate').length;
-  const inc         = state.students.filter(s => s.grade === 'Incoming').length;
+function renderHome(){
+  const activeCount=state.students.filter(s=>typeof s.grade==='number').length;
+  const grads=state.students.filter(s=>s.grade==='Graduate').length;
+  const inc=state.students.filter(s=>s.grade==='Incoming').length;
 
-  let h = `
+  let h=`
     <div class="home-bar">
       <span class="hm-slot">スロット ${currentSlot}</span>
-      <span>${fmtDate(state.year, state.month)}</span>
+      <span>${fmtDate(state.year,state.month)}</span>
       <span>${activeCount}名在籍</span>
       <div class="hm-right">
         <span class="hm-link" onclick="navigate('ranking',{},false)">🏆 ${JP.ranking} TOP${TOP_N}</span>
@@ -735,9 +615,9 @@ function renderHome() {
     </div>
   `;
 
-  GRADES.forEach(grade => {
-    const ranked = getRanked(grade);
-    h += `
+  GRADES.forEach(grade=>{
+    const ranked=getRanked(grade);
+    h+=`
       <div class="grade-block">
         <div class="grade-hdr" onclick="navigate('grade',{grade:${grade}},false)">
           <span class="grade-lbl">${JP.gradeN(grade)}</span>
@@ -745,10 +625,9 @@ function renderHome() {
         </div>
         <div class="cls-strip">
     `;
-    ranked.forEach((cls, ri) => {
-      const rank = RANK_LABELS[ri];
-      const nm   = clsName(grade, cls.classId);
-      h += `
+    ranked.forEach((cls,ri)=>{
+      const rank=RANK_LABELS[ri], nm=clsName(grade,cls.classId);
+      h+=`
         <div class="cls-mini" onclick="navigate('class',{grade:${grade},classId:${cls.classId}},false)">
           <span class="mini-rank r${rank}">${rank}</span>
           <div class="mini-name">${esc(nm)}</div>
@@ -758,13 +637,12 @@ function renderHome() {
             <input class="dist-inp" type="number" id="di-${grade}-${cls.classId}" placeholder="PP" />
             <button class="dist-btn" onclick="homeDistPP(${grade},${cls.classId})">配布</button>
           </div>
-        </div>
-      `;
+        </div>`;
     });
-    h += `</div></div>`;
+    h+=`</div></div>`;
   });
 
-  h += `
+  h+=`
     <div class="sp-tiles">
       <div class="sp-tile" style="border-color:var(--yw)" onclick="navigate('graduates',{},false)">
         <div class="sp-cnt" style="color:var(--yw)">${grads}</div>
@@ -774,74 +652,86 @@ function renderHome() {
         <div class="sp-cnt" style="color:var(--ac)">${inc}</div>
         <div class="sp-lbl">${JP.incoming2}</div>
       </div>
-    </div>
-  `;
-
-  if (state.history.length) {
-    h += `
-      <div class="hist-panel mt12">
-        <div class="sec-ttl">最近の履歴 (${state.history.length}件)</div>
-        <table class="hist-tbl">
-          <thead><tr><th>日付</th><th>スナップショット</th></tr></thead>
-          <tbody>
-            ${state.history.slice(0, 8).map(s =>
-              `<tr><td>${fmtDate(s.year, s.month)}</td><td>${s.classPoints.length}クラス記録</td></tr>`
-            ).join('')}
-          </tbody>
-        </table>
-      </div>
-    `;
-  }
+    </div>`;
   return h;
 }
 
-window.homeDistPP = function (grade, classId) {
-  const inp = document.getElementById(`di-${grade}-${classId}`);
-  const amt = parseInt(inp?.value);
-  if (isNaN(amt)) { toast('✗ 有効な数値を入力してください', 'err'); return; }
-  const nm  = clsName(grade, classId);
-  const cnt = getStudentsOf(grade, classId).filter(s => !s.isExpelled).length;
+window.homeDistPP=function(grade,classId){
+  const inp=document.getElementById(`di-${grade}-${classId}`);
+  const amt=parseInt(inp?.value);
+  if(isNaN(amt)){toast('✗ 有効な数値を入力してください','err');return;}
+  const nm=clsName(grade,classId);
+  const cnt=getStudentsOf(grade,classId).filter(s=>!s.isExpelled).length;
   openModal(`
     <div class="m-title">クラス全員にPP配布</div>
     <div class="m-body">
       <p><strong style="color:var(--ac)">${esc(nm)}</strong> の全生徒 (${cnt}名) に<br>
-         <strong style="color:${amt >= 0 ? 'var(--gn)' : 'var(--rd)'}">${amt >= 0 ? '+' : ''}${amt.toLocaleString()} PP</strong>
-         を配布しますか？</p>
+         <strong style="color:${amt>=0?'var(--gn)':'var(--rd)'}">
+           ${amt>=0?'+':''}${amt.toLocaleString()} PP</strong> を配布しますか？</p>
       <div class="btn-row">
         <button class="btn btn-ac" onclick="execHomeDist(${grade},${classId},${amt})">実行</button>
         <button class="btn" onclick="closeModal()">キャンセル</button>
       </div>
-    </div>
-  `);
+    </div>`);
+};
+window.execHomeDist=function(grade,classId,amt){
+  getStudentsOf(grade,classId).filter(s=>!s.isExpelled).forEach(s=>{s.privatePoints+=amt;});
+  closeModal(); saveState(true); renderApp();
+  toast(`✓ PP配布完了 (${amt>=0?'+':''}${amt.toLocaleString()})`,'ok');
 };
 
-window.execHomeDist = function (grade, classId, amt) {
-  getStudentsOf(grade, classId).filter(s => !s.isExpelled).forEach(s => { s.privatePoints += amt; });
-  closeModal(); saveState(true); renderApp();
-  toast(`✓ PP配布完了 (${amt >= 0 ? '+' : ''}${amt.toLocaleString()})`, 'ok');
-};
+/* ──────────────────────────────────────────────────────────────────
+   HISTORY PAGE
+────────────────────────────────────────────────────────────────── */
+function renderHistory(){
+  const snaps=state.history;
+  let h=`
+    <button class="back-btn" onclick="goBack()">◀ 戻る</button>
+    <div class="pg-hdr">
+      <span class="pg-title">📋 ${JP.history}</span>
+      <span class="pg-sub">${snaps.length} / ${HISTORY_MAX} スナップショット</span>
+    </div>`;
+  if(!snaps.length){ h+=`<div class="hist-empty">月を進めると履歴が記録されます。</div>`; return h; }
+  h+=`<div class="hist-pg-grid">`;
+  snaps.forEach((snap,idx)=>{
+    const cpRows=(snap.classPoints||[]).slice(0,10).map(e=>{
+      const cls=state.classes.find(c=>c.grade===e.grade&&c.classId===e.classId);
+      const nm=cls?.customName||JP.clsDef(e.grade,RANK_LABELS[e.classId]||'?');
+      return `<div class="hist-cp-row"><span class="hist-cp-nm">${esc(nm)}</span><span class="hist-cp-val">${(e.cp||0).toLocaleString()} CP</span></div>`;
+    }).join('');
+    const more=(snap.classPoints||[]).length>10?`<div class="dim" style="font-size:.62rem;margin-top:3px">+${snap.classPoints.length-10}クラス…</div>`:'';
+    h+=`
+      <div class="hist-snap">
+        <div class="hist-snap-hdr">
+          <span class="hist-snap-date">${fmtDate(snap.year,snap.month)}</span>
+          <span class="hist-snap-cnt">#${snaps.length-idx}</span>
+        </div>
+        <div class="hist-cp-list">${cpRows}${more}</div>
+      </div>`;
+  });
+  h+=`</div>`;
+  return h;
+}
 
 /* ──────────────────────────────────────────────────────────────────
    GRADE PAGE
 ────────────────────────────────────────────────────────────────── */
-function renderGrade(grade) {
-  const ranked = getRanked(grade);
-  let h = `
+function renderGrade(grade){
+  const ranked=getRanked(grade);
+  let h=`
     <button class="back-btn" onclick="goBack()">◀ 戻る</button>
     <div class="grade-pg-hdr">
       <div class="grade-pg-hdr-left">
         <span class="pg-title">${JP.gradeN(grade)}</span>
-        <span class="pg-sub">クラス順位 · ${fmtDate(state.year, state.month)}</span>
+        <span class="pg-sub">クラス順位 · ${fmtDate(state.year,state.month)}</span>
       </div>
       <button class="btn btn-yw" onclick="confirmRandomizeGrade(${grade})">🎲 ランダム生成</button>
-    </div>
-  `;
-  ranked.forEach((cls, ri) => {
-    const rank = RANK_LABELS[ri];
-    const nm   = clsName(grade, cls.classId);
-    const sts  = getStudentsOf(grade, cls.classId).filter(s => !s.isExpelled);
-    const kp   = sts.slice(0, 5);
-    h += `
+    </div>`;
+  ranked.forEach((cls,ri)=>{
+    const rank=RANK_LABELS[ri], nm=clsName(grade,cls.classId);
+    const sts=getStudentsOf(grade,cls.classId).filter(s=>!s.isExpelled);
+    const kp=sts.slice(0,5);
+    h+=`
       <div class="cls-row bl${rank}">
         <div class="cls-row-hdr" onclick="navigate('class',{grade:${grade},classId:${cls.classId}},false)">
           <div class="cls-rnk-lg r${rank}">${rank}</div>
@@ -852,64 +742,55 @@ function renderGrade(grade) {
           <div></div>
           <div class="cls-rmeta">${sts.length}名 ▶ クラスへ</div>
         </div>
-        <div class="kp-strip">
-    `;
-    if (!kp.length) h += `<span class="dim" style="padding:8px;font-size:.7rem">生徒なし</span>`;
-    kp.forEach(s => {
-      h += `
+        <div class="kp-strip">`;
+    if(!kp.length) h+=`<span class="dim" style="padding:8px;font-size:.7rem">生徒なし</span>`;
+    kp.forEach(s=>{
+      h+=`
         <div class="kp-card" onclick="navigate('profile',{sid:'${s.id}'},false)">
           <div class="kp-card-top">
             <div class="kp-name">${esc(s.name)||'<span class="dim">(未記入)</span>'}</div>
             <div class="kp-right">
               <span class="kp-pp-val ${ppCol(s.privatePoints)}">${fmtPP(s.privatePoints)}<span style="color:#fff;font-size:.58rem;margin-left:2px;opacity:.82">PP</span></span>
-              ${s.protectPoints > 0 ? `<span class="kp-prp-val">${s.protectPoints}<span style="color:#fff;font-size:.58rem;margin-left:2px;opacity:.82">PRP</span></span>` : ''}
+              ${s.protectPoints>0?`<span class="kp-prp-val">${s.protectPoints}<span style="color:#fff;font-size:.58rem;margin-left:2px;opacity:.82">PRP</span></span>`:''}
             </div>
           </div>
-        </div>
-      `;
+        </div>`;
     });
-    h += `</div></div>`;
+    h+=`</div></div>`;
   });
   return h;
 }
 
-window.confirmRandomizeGrade = function (grade) {
-  const total = state.students.filter(s => s.grade === grade && !s.isExpelled).length;
+window.confirmRandomizeGrade=function(grade){
+  const total=state.students.filter(s=>s.grade===grade&&!s.isExpelled).length;
   openModal(`
     <div class="m-title">🎲 ${JP.gradeN(grade)} ランダム生成</div>
     <div class="m-body">
       <p><strong style="color:var(--yw)">${JP.gradeN(grade)}</strong> の在籍生徒
          <strong style="color:var(--ac)">${total}名</strong> の<br>
          氏名・性別・生年月日・PP・能力値をランダムに再生成します。<br>
-         <span class="dim" style="font-size:.75rem">特殊能力はリセットされます。この操作は取り消せません。</span></p>
+         <span class="dim" style="font-size:.75rem">特殊能力はリセットされます。</span></p>
       <div class="btn-row">
         <button class="btn btn-yw" onclick="execRandomizeGrade(${grade})">実行</button>
         <button class="btn" onclick="closeModal()">キャンセル</button>
       </div>
-    </div>
-  `);
+    </div>`);
 };
-
-/* Uses navigateReplace — no new navStack entry */
-window.execRandomizeGrade = function (grade) {
-  randomizeGrade(grade);
-  closeModal();
-  saveState(true);
-  navigateReplace('grade', { grade });
-  toast(`✓ ${JP.gradeN(grade)} ランダム生成完了`, 'ok', 3000);
+window.execRandomizeGrade=function(grade){
+  randomizeGrade(grade); closeModal(); saveState(true);
+  navigateReplace('grade',{grade});
+  toast(`✓ ${JP.gradeN(grade)} ランダム生成完了`,'ok',3000);
 };
 
 /* ──────────────────────────────────────────────────────────────────
    CLASS PAGE
 ────────────────────────────────────────────────────────────────── */
-function renderClass(grade, classId) {
-  const cls    = getCls(grade, classId);
-  const rank   = rankOf(grade, classId);
-  const nm     = clsName(grade, classId);
-  const active = getStudentsOf(grade, classId).filter(s => !s.isExpelled);
-  const expl   = getStudentsOf(grade, classId).filter(s => s.isExpelled);
+function renderClass(grade,classId){
+  const cls=getCls(grade,classId), rank=rankOf(grade,classId), nm=clsName(grade,classId);
+  const active=getStudentsOf(grade,classId).filter(s=>!s.isExpelled);
+  const expl=getStudentsOf(grade,classId).filter(s=>s.isExpelled);
 
-  let h = `
+  let h=`
     <button class="back-btn" onclick="goBack()">◀ 戻る</button>
     <div class="cls-pg-top">
       <div class="cls-pg-left">
@@ -940,14 +821,14 @@ function renderClass(grade, classId) {
       <button class="btn btn-sm ${selectMode?'btn-yw':''}" onclick="toggleSel(${grade},${classId})">
         ${selectMode?'✓ ':''}選択モード
       </button>
-      ${selectMode ? `
+      ${selectMode?`
         <button class="btn btn-sm" onclick="selAll(${grade},${classId})">全選択</button>
         <button class="btn btn-sm" onclick="deselAll(${grade},${classId})">解除</button>
         <span class="bulk-cnt">${selectedIds.size}名選択中</span>
         <input type="number" class="fi bulk-inp" id="blk-pp" placeholder="PP量" style="width:90px" />
         <button class="btn btn-sm btn-ac" onclick="applyBulk(${grade},${classId})">PP付与</button>
         <button class="btn btn-sm btn-dn" onclick="confirmBulkDelete(${grade},${classId})">選択した生徒を削除</button>
-      ` : ''}
+      `:''}
     </div>
 
     <div class="srch-row">
@@ -957,152 +838,116 @@ function renderClass(grade, classId) {
 
     <div class="s-grid ${selectMode?'sel-mode':''}">
       ${renderCards(active)}
-    </div>
-  `;
+    </div>`;
 
-  if (expl.length) {
-    h += `
-      <div class="alt-hdr"><span>退学処分 (${expl.length}名)</span><hr /></div>
-      <div class="s-grid">${renderCards(expl)}</div>
-    `;
+  if(expl.length){
+    h+=`<div class="alt-hdr"><span>退学処分 (${expl.length}名)</span><hr /></div>
+        <div class="s-grid">${renderCards(expl)}</div>`;
   }
   return h;
 }
 
-/* v5.1 s-card: compact outer, large internal fonts, no delete button on card */
-function renderCards(students) {
-  if (!students.length)
+/* s-card renderer — v5.3 layout (3:2 grid, 1.62rem name) */
+function renderCards(students){
+  if(!students.length)
     return `<div class="dim" style="grid-column:1/-1;padding:8px;font-size:.7rem">生徒なし</div>`;
-  return students.map(s => {
-    const sel    = selectedIds.has(s.id);
-    const hasPrp = s.protectPoints > 0;
+  return students.map(s=>{
+    const sel=selectedIds.has(s.id), hasPrp=s.protectPoints>0;
     return `
       <div class="s-card ${s.isExpelled?'expelled':''} ${sel?'selected':''}"
            data-name="${escA(s.name.toLowerCase())}"
            onclick="cardClick('${s.id}')">
         <div class="s-chk">${sel?'✓':''}</div>
-
         <div class="s-top-left">
           <span class="s-sid">${s.id}</span>
           <span class="s-gender">${s.gender==='M'?JP.male:JP.female}</span>
         </div>
         <div class="s-top-right">
-          ${hasPrp ? `<span class="s-prp-val">${s.protectPoints}<span class="s-prp-unit">PRP</span></span>` : ''}
+          ${hasPrp?`<span class="s-prp-val">${s.protectPoints}<span class="s-prp-unit">PRP</span></span>`:''}
         </div>
-
         <div class="s-bot-left">
           <div class="s-name">${esc(s.name)||'<span class="dim">(未記入)</span>'}</div>
         </div>
         <div class="s-bot-right">
           <span class="s-pp-val ${ppCol(s.privatePoints)}">${fmtPP(s.privatePoints)}<span class="s-pp-unit">PP</span></span>
         </div>
-      </div>
-    `;
+      </div>`;
   }).join('');
 }
 
-window.cardClick = function (sid) {
-  if (selectMode) {
-    selectedIds.has(sid) ? selectedIds.delete(sid) : selectedIds.add(sid);
-    const c = navStack[navStack.length - 1];
-    if (c) renderPage(c.page, c.params);
-  } else {
-    navigate('profile', { sid }, false);
-  }
+window.cardClick=function(sid){
+  if(selectMode){ selectedIds.has(sid)?selectedIds.delete(sid):selectedIds.add(sid);
+    const c=navStack[navStack.length-1]; if(c) renderPage(c.page,c.params);
+  } else navigate('profile',{sid},false);
 };
+window.toggleSel=(g,c)=>{selectMode=!selectMode;selectedIds=new Set();renderPage('class',{grade:g,classId:c});};
+window.selAll=(g,c)=>{getStudentsOf(g,c).filter(s=>!s.isExpelled).forEach(s=>selectedIds.add(s.id));renderPage('class',{grade:g,classId:c});};
+window.deselAll=(g,c)=>{selectedIds=new Set();renderPage('class',{grade:g,classId:c});};
 
-window.toggleSel  = (g, c) => { selectMode = !selectMode; selectedIds = new Set(); renderPage('class',{grade:g,classId:c}); };
-window.selAll     = (g, c) => { getStudentsOf(g,c).filter(s=>!s.isExpelled).forEach(s=>selectedIds.add(s.id)); renderPage('class',{grade:g,classId:c}); };
-window.deselAll   = (g, c) => { selectedIds = new Set(); renderPage('class',{grade:g,classId:c}); };
-
-window.applyBulk = function (grade, classId) {
-  const amt = parseInt(document.getElementById('blk-pp')?.value);
-  if (isNaN(amt)) { toast('✗ 有効な数値を入力してください','err'); return; }
-  if (!selectedIds.size) { toast('✗ 生徒が選択されていません','err'); return; }
+window.applyBulk=function(grade,classId){
+  const amt=parseInt(document.getElementById('blk-pp')?.value);
+  if(isNaN(amt)){toast('✗ 有効な数値を入力してください','err');return;}
+  if(!selectedIds.size){toast('✗ 生徒が選択されていません','err');return;}
   openModal(`
     <div class="m-title">一括PP操作</div>
     <div class="m-body">
       <p>選択中の<strong style="color:var(--ac)">${selectedIds.size}名</strong>に<br>
-         <strong style="color:${amt>=0?'var(--gn)':'var(--rd)'}">${amt>=0?'+':''}${amt.toLocaleString()} PP</strong>
-         を付与しますか？</p>
+         <strong style="color:${amt>=0?'var(--gn)':'var(--rd)'}">
+           ${amt>=0?'+':''}${amt.toLocaleString()} PP</strong> を付与しますか？</p>
       <div class="btn-row">
         <button class="btn btn-ac" onclick="execBulk(${grade},${classId},${amt})">実行</button>
         <button class="btn" onclick="closeModal()">キャンセル</button>
       </div>
-    </div>
-  `);
+    </div>`);
 };
-
-window.execBulk = function (grade, classId, amt) {
-  let n = 0;
-  selectedIds.forEach(id => { const s=state.students.find(x=>x.id===id); if(s){s.privatePoints+=amt;n++;} });
+window.execBulk=function(grade,classId,amt){
+  let n=0; selectedIds.forEach(id=>{const s=state.students.find(x=>x.id===id);if(s){s.privatePoints+=amt;n++;}});
   selectedIds=new Set(); selectMode=false;
   closeModal(); saveState(true); renderPage('class',{grade,classId});
   toast(`✓ ${n}名に ${amt>=0?'+':''}${amt.toLocaleString()} PP を付与`,'ok');
 };
-
-/* v5.1: Bulk deletion */
-window.confirmBulkDelete = function (grade, classId) {
-  const n = selectedIds.size;
-  if (!n) { toast('✗ 生徒が選択されていません','err'); return; }
+window.confirmBulkDelete=function(grade,classId){
+  const n=selectedIds.size; if(!n){toast('✗ 生徒が選択されていません','err');return;}
   openModal(`
     <div class="m-title">選択した生徒を削除</div>
     <div class="m-body">
-      <p>選択中の<strong style="color:var(--rd)">${n}名</strong>を<br>
-         完全に削除しますか？<br>
+      <p>選択中の<strong style="color:var(--rd)">${n}名</strong>を完全に削除しますか？<br>
          <span class="dim" style="font-size:.75rem">この操作は取り消せません。コントラクトも削除されます。</span></p>
       <div class="btn-row">
         <button class="btn btn-dn" onclick="execBulkDelete(${grade},${classId})">削除実行</button>
         <button class="btn" onclick="closeModal()">キャンセル</button>
       </div>
-    </div>
-  `);
+    </div>`);
 };
-
-window.execBulkDelete = function (grade, classId) {
-  const toDelete = new Set(selectedIds);
-  state.students = state.students.filter(s => !toDelete.has(s.id));
-  state.students.forEach(s => {
-    s.contracts = s.contracts.filter(c => !toDelete.has(c.targetId));
-  });
-  selectedIds = new Set(); selectMode = false;
+window.execBulkDelete=function(grade,classId){
+  const del=new Set(selectedIds);
+  state.students=state.students.filter(s=>!del.has(s.id));
+  state.students.forEach(s=>{s.contracts=s.contracts.filter(c=>!del.has(c.targetId));});
+  selectedIds=new Set(); selectMode=false;
   closeModal(); saveState(true); renderPage('class',{grade,classId});
-  toast(`✓ ${toDelete.size}名を削除しました`,'ok');
+  toast(`✓ ${del.size}名を削除しました`,'ok');
 };
-
-window.filterStudents = function () {
-  const q = (document.getElementById('s-search')?.value||'').toLowerCase();
-  document.querySelectorAll('.s-card[data-name]').forEach(c => {
-    c.style.display = c.dataset.name.includes(q) ? '' : 'none';
+window.filterStudents=function(){
+  const q=(document.getElementById('s-search')?.value||'').toLowerCase();
+  document.querySelectorAll('.s-card[data-name]').forEach(c=>{
+    c.style.display=c.dataset.name.includes(q)?'':'none';
   });
 };
-
-window.saveClsName = function (grade, classId) {
-  const v = document.getElementById('cls-nm-inp')?.value?.trim()||'';
-  const c = getCls(grade, classId);
-  if (c) c.customName = v;
-  saveState(true); renderApp();
-  toast('✓ クラス名を変更しました','ok');
+window.saveClsName=function(grade,classId){
+  const v=document.getElementById('cls-nm-inp')?.value?.trim()||'';
+  const c=getCls(grade,classId); if(c) c.customName=v;
+  saveState(true); renderApp(); toast('✓ クラス名を変更しました','ok');
 };
-window.setCP = function (grade, classId) {
-  const v = parseInt(document.getElementById('cp-inp')?.value);
-  if (isNaN(v)) return;
-  const c = getCls(grade, classId);
-  if (c) { c.classPoints = v; saveState(true); renderApp(); }
+window.setCP=function(grade,classId){
+  const v=parseInt(document.getElementById('cp-inp')?.value); if(isNaN(v)) return;
+  const c=getCls(grade,classId); if(c){c.classPoints=v;saveState(true);renderApp();}
 };
-window.adjCP = function (grade, classId, d) {
-  const c = getCls(grade, classId);
-  if (c) {
-    c.classPoints += d;
-    const el = document.getElementById('cp-inp');
-    if (el) el.value = c.classPoints;
-    saveState(true); renderApp();
-  }
+window.adjCP=function(grade,classId,d){
+  const c=getCls(grade,classId);
+  if(c){c.classPoints+=d;const el=document.getElementById('cp-inp');if(el)el.value=c.classPoints;saveState(true);renderApp();}
 };
-
-window.addStudent = function (grade, classId) {
-  const s = blankStudent(grade, classId);
-  state.students.push(s);
+window.addStudent=function(grade,classId){
+  const s=blankStudent(grade,classId); state.students.push(s);
   saveState(true); renderPage('class',{grade,classId});
   toast(`✓ 生徒を追加しました (${s.id})`,'ok');
 };
@@ -1110,81 +955,58 @@ window.addStudent = function (grade, classId) {
 /* ──────────────────────────────────────────────────────────────────
    PROFILE PAGE
 ────────────────────────────────────────────────────────────────── */
-function renderProfile(sid) {
-  const s = state.students.find(x=>x.id===sid);
-  if (!s) return `<p style="color:var(--rd)">生徒が見つかりません</p>`;
+function renderProfile(sid){
+  const s=state.students.find(x=>x.id===sid);
+  if(!s) return `<p style="color:var(--rd)">生徒が見つかりません</p>`;
 
-  const ppCls      = s.privatePoints >= 0 ? 'pos' : 'neg';
-  const statusLabel = s.isExpelled ? JP.expelled
-                    : s.grade==='Graduate' ? JP.graduate
-                    : s.grade==='Incoming' ? JP.incoming : JP.active;
-  const badgeCls   = s.isExpelled ? 'bd-ex'
-                   : s.grade==='Graduate' ? 'bd-gr'
-                   : s.grade==='Incoming' ? 'bd-ic' : 'bd-in';
-  const gradeDisp  = typeof s.grade==='number' ? JP.gradeN(s.grade) : statusLabel;
-  const clsDisp    = typeof s.grade==='number' ? clsName(s.grade, s.classId) : '―';
-  const hasProt    = s.protectPoints > 0;
+  const ppCls=s.privatePoints>=0?'pos':'neg';
+  const statusLabel=s.isExpelled?JP.expelled:s.grade==='Graduate'?JP.graduate:s.grade==='Incoming'?JP.incoming:JP.active;
+  const badgeCls=s.isExpelled?'bd-ex':s.grade==='Graduate'?'bd-gr':s.grade==='Incoming'?'bd-ic':'bd-in';
+  const gradeDisp=typeof s.grade==='number'?JP.gradeN(s.grade):statusLabel;
+  const clsDisp=typeof s.grade==='number'?clsName(s.grade,s.classId):'―';
+  const hasProt=s.protectPoints>0;
 
-  const bars = STATS_KEYS.map(k => {
-    const v = s.stats[k] || 1;
-    return `
-      <div class="sb-row">
-        <span class="sb-lbl">${JP[k]}</span>
-        <div class="sb-track"><div class="sb-fill" style="width:${((v-1)/14)*100}%"></div></div>
-        <span class="sb-val">${v}</span>
-      </div>`;
+  const bars=STATS_KEYS.map(k=>{
+    const v=s.stats[k]||1;
+    return `<div class="sb-row">
+      <span class="sb-lbl">${JP[k]}</span>
+      <div class="sb-track"><div class="sb-fill" style="width:${((v-1)/14)*100}%"></div></div>
+      <span class="sb-val">${v}</span>
+    </div>`;
   }).join('');
 
-  const gradeOpts = [
-    ...GRADES.map(g => `<option value="${g}" ${s.grade===g?'selected':''}>${JP.gradeN(g)}</option>`),
+  const gradeOpts=[
+    ...GRADES.map(g=>`<option value="${g}" ${s.grade===g?'selected':''}>${JP.gradeN(g)}</option>`),
     `<option value="Graduate" ${s.grade==='Graduate'?'selected':''}>卒業生</option>`,
     `<option value="Incoming" ${s.grade==='Incoming'?'selected':''}>入学予定</option>`,
   ].join('');
+  const clsOpts=CLASS_IDS.map(id=>`<option value="${id}" ${s.classId===id?'selected':''}>${id}</option>`).join('');
 
-  const clsOpts = CLASS_IDS.map(id =>
-    `<option value="${id}" ${s.classId===id?'selected':''}>${id}</option>`
-  ).join('');
-
-  const ctrOut = s.contracts.length
-    ? s.contracts.map((c,i) => {
-        const t  = state.students.find(x=>x.id===c.targetId);
-        const tn = t ? (t.name||t.id) : `[不明 ${c.targetId}]`;
-        return `
-          <div class="ctr-item">
-            <span>→ ${esc(tn)}</span>
-            <span class="ctr-amt">${c.amount.toLocaleString()} PP/月</span>
-            <button class="ctr-del" onclick="rmContract('${sid}',${i})">✕</button>
-          </div>`;
+  const ctrOut=s.contracts.length
+    ?s.contracts.map((c,i)=>{
+        const t=state.students.find(x=>x.id===c.targetId), tn=t?(t.name||t.id):`[不明 ${c.targetId}]`;
+        return `<div class="ctr-item"><span>→ ${esc(tn)}</span><span class="ctr-amt">${c.amount.toLocaleString()} PP/月</span><button class="ctr-del" onclick="rmContract('${sid}',${i})">✕</button></div>`;
       }).join('')
-    : `<div class="dim" style="font-size:.71rem">送信契約なし</div>`;
+    :`<div class="dim" style="font-size:.71rem">送信契約なし</div>`;
 
-  const ctrIn = [];
-  state.students.forEach(o => o.contracts.forEach(c => { if (c.targetId===sid) ctrIn.push({from:o.name||o.id,amt:c.amount}); }));
-  const ctrInHtml = ctrIn.length
-    ? ctrIn.map(c => `
-        <div class="ctr-item">
-          <span>← ${esc(c.from)}</span>
-          <span class="ctr-amt pos">+${c.amt.toLocaleString()} PP/月</span>
-        </div>`).join('')
-    : `<div class="dim" style="font-size:.71rem">受信契約なし</div>`;
+  const ctrIn=[];
+  state.students.forEach(o=>o.contracts.forEach(c=>{if(c.targetId===sid)ctrIn.push({from:o.name||o.id,amt:c.amount});}));
+  const ctrInHtml=ctrIn.length
+    ?ctrIn.map(c=>`<div class="ctr-item"><span>← ${esc(c.from)}</span><span class="ctr-amt pos">+${c.amt.toLocaleString()} PP/月</span></div>`).join('')
+    :`<div class="dim" style="font-size:.71rem">受信契約なし</div>`;
 
   return `
     <button class="back-btn" onclick="goBack()">◀ 戻る</button>
     <div id="prof-wrap">
-
-      <!-- ── Sidebar ── -->
       <div class="prof-side">
         <div class="prof-name">${esc(s.name)||'(未記入)'}</div>
         <div class="prof-sid">${s.id}</div>
         <span class="badge ${badgeCls}">${statusLabel}</span>
         <div class="prof-pp ${ppCls}">${s.privatePoints.toLocaleString()}</div>
         <div class="prof-pplbl">${JP.pp}</div>
-
-        <!-- Sidebar PRP — yellow when > 0 -->
         <div class="prof-prot${hasProt?' active':''}">
           ${s.protectPoints} ${JP.protect}
         </div>
-
         <table class="info-tbl">
           <tr><td>${JP.gender}</td><td>${s.gender==='M'?JP.male:JP.female}</td></tr>
           <tr><td>${JP.dob}</td><td>${s.dob||'未設定'}</td></tr>
@@ -1193,43 +1015,29 @@ function renderProfile(sid) {
         </table>
         <div class="sec-ttl mt8">能力プロフィール</div>
         <div class="sb-grid">${bars}</div>
-
         <div style="margin-top:12px">
           ${s.isExpelled
-            ? `<button class="btn-expel" style="border-color:var(--gn);color:var(--gn)" onclick="reinstateStudent('${sid}')">↩ ${JP.reinstate}</button>`
-            : `<button class="btn-expel" onclick="confirmExpel('${sid}')">${JP.expel}</button>`}
+            ?`<button class="btn-expel" style="border-color:var(--gn);color:var(--gn)" onclick="reinstateStudent('${sid}')">↩ ${JP.reinstate}</button>`
+            :`<button class="btn-expel" onclick="confirmExpel('${sid}')">${JP.expel}</button>`}
         </div>
-
-        <!-- Delete button at bottom of sidebar -->
         <button class="btn-del-student" onclick="confirmDeleteFromProfile('${sid}')">🗑 生徒を削除</button>
       </div>
 
-      <!-- ── Edit form ── -->
       <div class="prof-main">
-
         <div class="prof-sec">
           <div class="sec-ttl">基本情報</div>
-          <div class="fr"><label>${JP.name}</label>
-            <input class="fi" id="pf-name" value="${escA(s.name)}" placeholder="(未記入)" /></div>
+          <div class="fr"><label>${JP.name}</label><input class="fi" id="pf-name" value="${escA(s.name)}" placeholder="(未記入)" /></div>
           <div class="fr"><label>${JP.gender}</label>
             <select class="fs" id="pf-gender">
               <option value="M" ${s.gender==='M'?'selected':''}>男性</option>
               <option value="F" ${s.gender==='F'?'selected':''}>女性</option>
             </select>
           </div>
-          <div class="fr"><label>${JP.dob}</label>
-            <input class="fi" id="pf-dob" type="date" value="${s.dob||''}" /></div>
-          <div class="fr"><label>${JP.grade}</label>
-            <select class="fs" id="pf-grade">${gradeOpts}</select></div>
-          <div class="fr"><label>${JP.cls} ID</label>
-            <select class="fs" id="pf-cls">${clsOpts}</select></div>
-          <div class="fr"><label>${JP.pp}</label>
-            <input class="fi" id="pf-pp" type="number" value="${s.privatePoints}" /></div>
-          <!-- Protect label stays faded (never yellow) in form -->
-          <div class="fr">
-            <label class="label-faded">${JP.protect}</label>
-            <input class="fi" id="pf-prot" type="number" value="${s.protectPoints}" min="0" />
-          </div>
+          <div class="fr"><label>${JP.dob}</label><input class="fi" id="pf-dob" type="date" value="${s.dob||''}" /></div>
+          <div class="fr"><label>${JP.grade}</label><select class="fs" id="pf-grade">${gradeOpts}</select></div>
+          <div class="fr"><label>${JP.cls} ID</label><select class="fs" id="pf-cls">${clsOpts}</select></div>
+          <div class="fr"><label>${JP.pp}</label><input class="fi" id="pf-pp" type="number" value="${s.privatePoints}" /></div>
+          <div class="fr"><label class="label-faded">${JP.protect}</label><input class="fi" id="pf-prot" type="number" value="${s.protectPoints}" min="0" /></div>
         </div>
 
         <div class="prof-sec">
@@ -1269,84 +1077,62 @@ function renderProfile(sid) {
 
         <button class="btn-save-prof" onclick="saveProfile('${sid}')">✓ プロフィールを保存</button>
       </div>
-
-    </div>
-  `;
+    </div>`;
 }
 
-window.saveProfile = function (sid) {
-  const s = state.students.find(x=>x.id===sid);
-  if (!s) return;
-  s.name   = document.getElementById('pf-name')?.value?.trim()||'';
-  s.gender = document.getElementById('pf-gender')?.value||'M';
-  s.dob    = document.getElementById('pf-dob')?.value||'';
-  const gv = document.getElementById('pf-grade')?.value;
-  s.grade  = isNaN(+gv) ? gv : +gv;
-  s.classId= +(document.getElementById('pf-cls')?.value)||0;
-  const ppv = parseInt(document.getElementById('pf-pp')?.value);
-  if (!isNaN(ppv)) s.privatePoints = ppv;
-  const prv = parseInt(document.getElementById('pf-prot')?.value);
-  if (!isNaN(prv)) s.protectPoints = Math.max(0, prv);
-  s.specialAbility = document.getElementById('pf-sa')?.value||'';
-  STATS_KEYS.forEach(k => { const e=document.getElementById(`st-${k}`); if(e) s.stats[k]=+e.value; });
-  saveState(true); renderApp();
-  toast('✓ プロフィールを保存しました：'+(s.name||s.id),'ok');
+window.saveProfile=function(sid){
+  const s=state.students.find(x=>x.id===sid); if(!s) return;
+  s.name=document.getElementById('pf-name')?.value?.trim()||'';
+  s.gender=document.getElementById('pf-gender')?.value||'M';
+  s.dob=document.getElementById('pf-dob')?.value||'';
+  const gv=document.getElementById('pf-grade')?.value; s.grade=isNaN(+gv)?gv:+gv;
+  s.classId=+(document.getElementById('pf-cls')?.value)||0;
+  const ppv=parseInt(document.getElementById('pf-pp')?.value); if(!isNaN(ppv)) s.privatePoints=ppv;
+  const prv=parseInt(document.getElementById('pf-prot')?.value); if(!isNaN(prv)) s.protectPoints=Math.max(0,prv);
+  s.specialAbility=document.getElementById('pf-sa')?.value||'';
+  STATS_KEYS.forEach(k=>{const e=document.getElementById(`st-${k}`);if(e)s.stats[k]=+e.value;});
+  saveState(true); renderApp(); toast('✓ プロフィールを保存しました：'+(s.name||s.id),'ok');
 };
-
-window.rmContract = function (sid, idx) {
-  const s = state.students.find(x=>x.id===sid);
-  if (s) s.contracts.splice(idx,1);
+window.rmContract=function(sid,idx){
+  const s=state.students.find(x=>x.id===sid); if(s) s.contracts.splice(idx,1);
   saveState(true); navigate('profile',{sid},false); updateBreadcrumb();
   toast('✓ コントラクトを削除しました','ok');
 };
-
-window.addContract = function (sid) {
-  const s = state.students.find(x=>x.id===sid);
-  if (!s) return;
-  const ti  = document.getElementById('ct-tgt')?.value?.trim();
-  const amt = parseInt(document.getElementById('ct-amt')?.value);
-  if (!ti||isNaN(amt)||amt<=0) { toast('✗ 入力が無効です','err'); return; }
-  let t = state.students.find(x=>x.id===ti);
-  if (!t) t = state.students.find(x=>x.name.toLowerCase().includes(ti.toLowerCase()));
-  if (!t) { toast('✗ 生徒が見つかりません','err'); return; }
-  if (t.id===sid) { toast('✗ 自分自身にコントラクトできません','err'); return; }
-  s.contracts.push({targetId:t.id, amount:amt});
+window.addContract=function(sid){
+  const s=state.students.find(x=>x.id===sid); if(!s) return;
+  const ti=document.getElementById('ct-tgt')?.value?.trim();
+  const amt=parseInt(document.getElementById('ct-amt')?.value);
+  if(!ti||isNaN(amt)||amt<=0){toast('✗ 入力が無効です','err');return;}
+  let t=state.students.find(x=>x.id===ti);
+  if(!t) t=state.students.find(x=>x.name.toLowerCase().includes(ti.toLowerCase()));
+  if(!t){toast('✗ 生徒が見つかりません','err');return;}
+  if(t.id===sid){toast('✗ 自分自身にコントラクトできません','err');return;}
+  s.contracts.push({targetId:t.id,amount:amt});
   saveState(true); navigate('profile',{sid},false); updateBreadcrumb();
   toast(`✓ コントラクト設定 → ${t.name||t.id}: ${amt} PP/月`,'ok');
 };
-
-window.confirmExpel = function (sid) {
-  const s = state.students.find(x=>x.id===sid);
-  if (!s) return;
+window.confirmExpel=function(sid){
+  const s=state.students.find(x=>x.id===sid); if(!s) return;
   openModal(`
     <div class="m-title">退学確認</div>
     <div class="m-body">
-      <p><strong>${esc(s.name)||s.id}</strong> を退学処分にしますか？<br><br>コントラクトは継続されます。</p>
+      <p><strong>${esc(s.name)||s.id}</strong> を退学処分にしますか？</p>
       <div class="btn-row">
         <button class="btn btn-dn" onclick="expelStudent('${sid}')">退学実行</button>
         <button class="btn" onclick="closeModal()">キャンセル</button>
       </div>
-    </div>
-  `);
+    </div>`);
 };
-
-window.expelStudent = function (sid) {
-  const s = state.students.find(x=>x.id===sid);
-  if (s) s.isExpelled = true;
-  closeModal(); saveState(true); goBack();
-  toast('⚠ 退学処分：'+(s?.name||sid),'warn');
+window.expelStudent=function(sid){
+  const s=state.students.find(x=>x.id===sid); if(s) s.isExpelled=true;
+  closeModal(); saveState(true); goBack(); toast('⚠ 退学処分：'+(s?.name||sid),'warn');
 };
-
-window.reinstateStudent = function (sid) {
-  const s = state.students.find(x=>x.id===sid);
-  if (s) s.isExpelled = false;
-  saveState(true); renderApp();
-  toast('✓ 復帰：'+(s?.name||sid),'ok');
+window.reinstateStudent=function(sid){
+  const s=state.students.find(x=>x.id===sid); if(s) s.isExpelled=false;
+  saveState(true); renderApp(); toast('✓ 復帰：'+(s?.name||sid),'ok');
 };
-
-window.confirmDeleteFromProfile = function (sid) {
-  const s = state.students.find(x=>x.id===sid);
-  if (!s) return;
+window.confirmDeleteFromProfile=function(sid){
+  const s=state.students.find(x=>x.id===sid); if(!s) return;
   openModal(`
     <div class="m-title">生徒削除確認</div>
     <div class="m-body">
@@ -1356,74 +1142,56 @@ window.confirmDeleteFromProfile = function (sid) {
         <button class="btn btn-dn" onclick="deleteStudentFromProfile('${sid}')">削除実行</button>
         <button class="btn" onclick="closeModal()">キャンセル</button>
       </div>
-    </div>
-  `);
+    </div>`);
 };
-
-window.deleteStudentFromProfile = function (sid) {
-  const s = state.students.find(x=>x.id===sid);
-  const grade   = s?.grade;
-  const classId = s?.classId;
-  state.students = state.students.filter(x=>x.id!==sid);
-  state.students.forEach(x=>{ x.contracts = x.contracts.filter(c=>c.targetId!==sid); });
-  selectedIds.delete(sid);
-  closeModal();
-  saveState(true);
-  // Pop profile entry, navigate to class
-  if (navStack.length > 1) navStack.pop();
-  if (typeof grade === 'number') {
-    if (navStack.length > 0 && navStack[navStack.length-1].page === 'class') {
-      renderPage('class', { grade, classId }); updateBreadcrumb();
-    } else {
-      navigate('class', { grade, classId }, false);
-    }
-  } else {
-    renderApp();
-  }
+window.deleteStudentFromProfile=function(sid){
+  const s=state.students.find(x=>x.id===sid);
+  const grade=s?.grade, classId=s?.classId;
+  state.students=state.students.filter(x=>x.id!==sid);
+  state.students.forEach(x=>{x.contracts=x.contracts.filter(c=>c.targetId!==sid);});
+  selectedIds.delete(sid); closeModal(); saveState(true);
+  if(navStack.length>1) navStack.pop();
+  if(typeof grade==='number'){
+    if(navStack.length>0&&navStack[navStack.length-1].page==='class'){renderPage('class',{grade,classId});updateBreadcrumb();}
+    else navigate('class',{grade,classId},false);
+  } else renderApp();
   toast('✓ 生徒を削除しました','ok');
 };
 
 /* ──────────────────────────────────────────────────────────────────
    RANKING PAGE
 ────────────────────────────────────────────────────────────────── */
-function renderRankingPage() {
-  const ranked = computeRanking();
-  let h = `
+function renderRankingPage(){
+  const ranked=computeRanking();
+  let h=`
     <button class="back-btn" onclick="goBack()">◀ 戻る</button>
     <div class="pg-hdr">
       <span class="pg-title">🏆 ${JP.ranking} TOP ${TOP_N}</span>
-      <span class="pg-sub">全生徒PP降順 · 標準競技順位方式 (同PP=同順位)</span>
+      <span class="pg-sub">全生徒PP降順 · 同PP=同順位</span>
     </div>
     <div class="rnk-wrap">
       <table class="rnk-tbl">
         <thead><tr>
-          <th style="text-align:right">順位</th>
-          <th>氏名</th><th>学年 / クラス</th><th>ID</th>
-          <th style="text-align:right">PP</th>
-        </tr></thead>
-        <tbody>
-  `;
-  if (!ranked.length)
-    h += `<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--t3)">データなし</td></tr>`;
-  ranked.forEach(({rank,student:s}) => {
-    const gd = typeof s.grade==='number' ? JP.gradeN(s.grade) : (s.grade==='Graduate'?'卒業生':'入学予定');
-    const cd = typeof s.grade==='number' ? clsName(s.grade,s.classId) : '―';
-    h += `
-      <tr>
-        <td class="rn ${rank<=3?'top3':''}">${rank}</td>
-        <td class="rk-nm" onclick="navigate('profile',{sid:'${s.id}'},false)">
-          ${esc(s.name)||'<span class="dim">(未記入)</span>'}
-        </td>
-        <td style="font-size:.7rem;color:var(--t1)">${gd} / ${esc(cd)}</td>
-        <td style="font-size:.62rem;color:var(--t3)">${s.id}</td>
-        <td class="rk-pp ${s.privatePoints<0?'neg':''}">${s.privatePoints.toLocaleString()}</td>
-      </tr>`;
+          <th style="text-align:right">順位</th><th>氏名</th>
+          <th>学年 / クラス</th><th>ID</th><th style="text-align:right">PP</th>
+        </tr></thead><tbody>`;
+  if(!ranked.length) h+=`<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--t3)">データなし</td></tr>`;
+  ranked.forEach(({rank,student:s})=>{
+    const gd=typeof s.grade==='number'?JP.gradeN(s.grade):(s.grade==='Graduate'?'卒業生':'入学予定');
+    const cd=typeof s.grade==='number'?clsName(s.grade,s.classId):'―';
+    h+=`<tr>
+      <td class="rn ${rank<=3?'top3':''}">${rank}</td>
+      <td class="rk-nm" onclick="navigate('profile',{sid:'${s.id}'},false)">${esc(s.name)||'<span class="dim">(未記入)</span>'}</td>
+      <td style="font-size:.7rem;color:var(--t1)">${gd} / ${esc(cd)}</td>
+      <td style="font-size:.62rem;color:var(--t3)">${s.id}</td>
+      <td class="rk-pp ${s.privatePoints<0?'neg':''}">${s.privatePoints.toLocaleString()}</td>
+    </tr>`;
   });
-  h += `</tbody></table></div>`;
-  if (ranked.length) {
-    const medals = ['🥇','🥈','🥉'];
-    h += `<div class="medal-row">
-      ${ranked.slice(0,Math.min(3,ranked.length)).map(({rank,student:s},i) => `
+  h+=`</tbody></table></div>`;
+  if(ranked.length){
+    const medals=['🥇','🥈','🥉'];
+    h+=`<div class="medal-row">
+      ${ranked.slice(0,Math.min(3,ranked.length)).map(({rank,student:s},i)=>`
         <div class="medal-card">
           <div class="medal-rnk">${medals[i]} 第${rank}位</div>
           <div class="medal-name">${esc(s.name)||'(未記入)'}</div>
@@ -1435,15 +1203,15 @@ function renderRankingPage() {
 }
 
 /* ──────────────────────────────────────────────────────────────────
-   SPECIAL PAGES  (Graduates / Incoming)
+   SPECIAL PAGES (Graduates / Incoming)
 ────────────────────────────────────────────────────────────────── */
-function renderSpecial(gradeType) {
-  const isGrad = gradeType === 'Graduate';
-  const sts    = state.students.filter(s => s.grade === gradeType);
-  const title  = isGrad ? JP.graduates : JP.incoming2;
-  const col    = isGrad ? 'var(--yw)' : 'var(--ac)';
+function renderSpecial(gradeType){
+  const isGrad=gradeType==='Graduate';
+  const sts=state.students.filter(s=>s.grade===gradeType);
+  const title=isGrad?JP.graduates:JP.incoming2;
+  const col=isGrad?'var(--yw)':'var(--ac)';
 
-  let h = `
+  let h=`
     <button class="back-btn" onclick="goBack()">◀ 戻る</button>
     <div class="pg-hdr">
       <span class="pg-title" style="color:${col}">${title}</span>
@@ -1453,13 +1221,11 @@ function renderSpecial(gradeType) {
       <input class="fi" id="s-search" placeholder="生徒を検索..." oninput="filterStudents()" />
       ${!isGrad?`<button class="btn btn-sm" onclick="addIncoming()">＋ 追加</button>`:''}
     </div>
-    <div class="s-grid">
-  `;
-  if (!sts.length)
-    h += `<div class="dim" style="grid-column:1/-1;padding:20px;text-align:center">生徒なし</div>`;
-  sts.forEach(s => {
-    const hasPrp = s.protectPoints > 0;
-    h += `
+    <div class="s-grid">`;
+  if(!sts.length) h+=`<div class="dim" style="grid-column:1/-1;padding:20px;text-align:center">生徒なし</div>`;
+  sts.forEach(s=>{
+    const hasPrp=s.protectPoints>0;
+    h+=`
       <div class="s-card ${s.isExpelled?'expelled':''}"
            data-name="${escA(s.name.toLowerCase())}"
            onclick="navigate('profile',{sid:'${s.id}'},false)">
@@ -1468,7 +1234,7 @@ function renderSpecial(gradeType) {
           <span class="s-gender">${s.gender==='M'?JP.male:JP.female}</span>
         </div>
         <div class="s-top-right">
-          ${hasPrp ? `<span class="s-prp-val">${s.protectPoints}<span class="s-prp-unit">PRP</span></span>` : ''}
+          ${hasPrp?`<span class="s-prp-val">${s.protectPoints}<span class="s-prp-unit">PRP</span></span>`:''}
         </div>
         <div class="s-bot-left">
           <div class="s-name">${esc(s.name)||'<span class="dim">(未記入)</span>'}</div>
@@ -1478,52 +1244,71 @@ function renderSpecial(gradeType) {
         </div>
       </div>`;
   });
-  return h + '</div>';
+  return h+'</div>';
 }
-
-window.addIncoming = function () {
-  const s = blankStudent('Incoming', 0);
-  state.students.push(s);
-  saveState(true); renderApp();
-  toast('✓ 入学予定を追加しました: '+s.id,'ok');
+window.addIncoming=function(){
+  const s=blankStudent('Incoming',0); state.students.push(s);
+  saveState(true); renderApp(); toast('✓ 入学予定を追加しました: '+s.id,'ok');
 };
 
 /* ──────────────────────────────────────────────────────────────────
    MODAL
 ────────────────────────────────────────────────────────────────── */
-function openModal(html) {
-  document.getElementById('modal-body').innerHTML = html;
+function openModal(html){
+  document.getElementById('modal-body').innerHTML=html;
   document.getElementById('modal-overlay').classList.remove('hidden');
 }
-window.closeModal = function () {
-  document.getElementById('modal-overlay').classList.add('hidden');
-};
+window.closeModal=function(){ document.getElementById('modal-overlay').classList.add('hidden'); };
 
 /* ──────────────────────────────────────────────────────────────────
    POST-RENDER HOOKS
 ────────────────────────────────────────────────────────────────── */
-function afterRender() {
-  const ta = document.getElementById('pf-sa');
-  const ct = document.getElementById('sa-ct');
-  if (ta && ct) ta.addEventListener('input', () => { ct.textContent = ta.value.length + '/300'; });
+function afterRender(){
+  const ta=document.getElementById('pf-sa'), ct=document.getElementById('sa-ct');
+  if(ta&&ct) ta.addEventListener('input',()=>{ct.textContent=ta.value.length+'/300';});
 }
 
 /* ──────────────────────────────────────────────────────────────────
-   GLOBAL EVENT BINDINGS
+   EVENT BINDINGS
 ────────────────────────────────────────────────────────────────── */
-function bindEvents() {
+function bindEvents(){
+  /* Time nav — always bound to their IDs; safe because zones don't overlap */
   document.getElementById('btn-prev').addEventListener('click', revertMonth);
   document.getElementById('btn-next').addEventListener('click', advanceMonth);
 
-  document.addEventListener('keydown', e => {
-    if (!e.ctrlKey) return;
-    if (e.key === 'ArrowLeft')  { e.preventDefault(); revertMonth(); }
-    if (e.key === 'ArrowRight') { e.preventDefault(); advanceMonth(); }
-    if (e.key === 's')          { e.preventDefault(); saveState(); }
+  document.addEventListener('keydown', e=>{
+    if(!e.ctrlKey) return;
+    if(e.key==='ArrowLeft'){e.preventDefault();revertMonth();}
+    if(e.key==='ArrowRight'){e.preventDefault();advanceMonth();}
+    if(e.key==='s'){e.preventDefault();saveState();}
   });
 
-  document.getElementById('btn-save').addEventListener('click', () => saveState());
-  document.getElementById('btn-reset').addEventListener('click', () => {
+  /* Gear toggle */
+  document.getElementById('gear-btn').addEventListener('click', e=>{
+    e.stopPropagation(); toggleGear();
+  });
+
+  /* Close gear when clicking outside */
+  document.addEventListener('click', e=>{
+    const wrap=document.getElementById('gear-wrap');
+    if(wrap&&!wrap.contains(e.target)) closeGear();
+  });
+
+  /* Theme flyout */
+  document.getElementById('btn-theme').addEventListener('click', toggleThemeFly);
+  document.querySelectorAll('.tf-opt').forEach(b=>{
+    b.addEventListener('click', e=>{
+      e.stopPropagation();
+      applyTheme(b.dataset.theme);
+      closeThemeFly(); closeGear();
+      toast(`テーマ: ${b.dataset.theme}`);
+    });
+  });
+
+  /* Save / Reset */
+  document.getElementById('btn-save').addEventListener('click', ()=>{ closeGear(); saveState(); });
+  document.getElementById('btn-reset').addEventListener('click', ()=>{
+    closeGear();
     openModal(`
       <div class="m-title">スロット${currentSlot} リセット確認</div>
       <div class="m-body">
@@ -1534,33 +1319,36 @@ function bindEvents() {
           <button class="btn btn-dn" onclick="doReset()">リセット実行</button>
           <button class="btn" onclick="closeModal()">キャンセル</button>
         </div>
-      </div>
-    `);
+      </div>`);
   });
 
-  document.getElementById('btn-export').addEventListener('click', exportAllSlots);
-  document.getElementById('btn-import').addEventListener('click', triggerImportDialog);
-  document.getElementById('file-pick').addEventListener('change', function () {
-    onFilePicked(this.files[0]); this.value = '';
+  /* Export / Import */
+  document.getElementById('btn-export').addEventListener('click',()=>{ closeGear(); exportAllSlots(); });
+  document.getElementById('btn-import').addEventListener('click',()=>{ closeGear(); triggerImportDialog(); });
+  document.getElementById('file-pick').addEventListener('change', function(){
+    onFilePicked(this.files[0]); this.value='';
   });
 
-  document.querySelectorAll('.sl').forEach(b =>
-    b.addEventListener('click', () => { const n=+b.dataset.slot; if(n!==currentSlot) switchSlot(n); })
-  );
+  /* Slot buttons */
+  document.querySelectorAll('.sl').forEach(b=>{
+    b.addEventListener('click', ()=>{
+      const n=+b.dataset.slot; if(n!==currentSlot) switchSlot(n); closeGear();
+    });
+  });
 
+  /* Modal close */
   document.getElementById('modal-x').addEventListener('click', closeModal);
-  document.getElementById('modal-overlay').addEventListener('click', e => {
-    if (e.target.id==='modal-overlay') closeModal();
+  document.getElementById('modal-overlay').addEventListener('click', e=>{
+    if(e.target.id==='modal-overlay') closeModal();
   });
 }
 
-window.doReset = function () {
-  closeModal(); resetSlot();
-  selectMode=false; selectedIds=new Set(); navStack=[];
-  navigate('home',{},true);
-  toast(`✓ スロット${currentSlot} リセット完了`,'ok');
+window.doReset=function(){
+  closeModal(); resetSlot(); selectMode=false; selectedIds=new Set(); navStack=[];
+  navigate('home',{},true); toast(`✓ スロット${currentSlot} リセット完了`,'ok');
 };
 
+/* Global references */
 window.navigate            = navigate;
 window.navigateBack        = goBack;
 window.exportAllSlots      = exportAllSlots;
@@ -1569,42 +1357,26 @@ window.triggerImportDialog = triggerImportDialog;
 /* ──────────────────────────────────────────────────────────────────
    BOOT
 ────────────────────────────────────────────────────────────────── */
-function showLoader(msg) {
-  const el = document.createElement('div');
-  el.id = 'loading';
-  el.innerHTML = `
-    <div class="ld-logo">COTE-OS</div>
-    <div class="ld-txt">${msg}</div>
-    <div class="ld-sub">しばらくお待ちください...</div>
-  `;
-  document.body.appendChild(el);
-  return el;
+function showLoader(msg){
+  const el=document.createElement('div'); el.id='loading';
+  el.innerHTML=`<div class="ld-logo">COTE-OS</div><div class="ld-txt">${msg}</div><div class="ld-sub">しばらくお待ちください...</div>`;
+  document.body.appendChild(el); return el;
 }
-
-function boot() {
-  const ok = loadSlot(currentSlot);
-  if (!ok || !state?.students?.length) {
-    const ld = showLoader('1,200名の初期データを生成中...');
-    setTimeout(() => {
-      state = newState();
-      generateInitialData();
-      saveState(true);
-      ld.remove();
-      finishBoot();
-    }, 80);
-  } else {
-    finishBoot();
-  }
+function boot(){
+  loadTheme();  // apply saved theme before any render
+  const ok=loadSlot(currentSlot);
+  if(!ok||!state?.students?.length){
+    const ld=showLoader('1,200名の初期データを生成中...');
+    setTimeout(()=>{ state=newState(); generateInitialData(); saveState(true); ld.remove(); finishBoot(); },80);
+  } else finishBoot();
 }
-
-function finishBoot() {
+function finishBoot(){
   bindEvents();
   updateSlotButtons();
   updateDateDisplay();
-  navigate('home', {}, true);
+  navigate('home',{},true);
 }
-
-if (document.readyState === 'loading')
-  document.addEventListener('DOMContentLoaded', boot);
+if(document.readyState==='loading')
+  document.addEventListener('DOMContentLoaded',boot);
 else
   boot();
