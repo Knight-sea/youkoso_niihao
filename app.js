@@ -1,18 +1,17 @@
 /* ================================================================
-   Cote-OS v5.3  ·  app.js
+   Cote-OS v6.1  ·  app.js
    ─────────────────────────────────────────────────────────────────
-   Changes from v5.2:
-   • Taskbar fix: pure flex 3-zone (left flex:1 | center flex:0 |
-     right flex:1). No position:absolute. Buttons always hittable.
-   • Theme Engine: Classic / Light / Dark via CSS custom properties
-     on <html data-theme>. Saved to localStorage. Flyout in gear
-     tray drops down vertically below the 🎨 button.
-   • s-card v5.3: 3:2 column ratio. Name font 1.62rem (1.5× boost).
-     White "PP"/"PRP" unit text retained.
-   • Profile sidebar: student name 1.86rem (2.0× boost).
-   • History page kept (separate view via gear menu).
-   • ID logic: prefix = 7+(6-grade)+(year-1); seq reset per grade.
-   • Bulk Delete, fmtPP K/M/B/T, navigateReplace for randomise.
+   Changes vs v6.0:
+   • New dedicated "classRanking" page (renderClassRankingPage)
+   • Home screen: Class Ranking table removed; two nav buttons added
+     (ランキングTOP100 + クラスランキング) in home-bar
+   • Grade page: kp slice fixed to 5 students per class strip
+   • Class page bulk actions:
+     - PP input value preserved on select/deselect (stored in module var)
+     - PP付与 / PP剥奪 execute immediately (no confirm modal)
+     - Delete button renamed "選択した生徒を削除"
+   • Navigation: pageLabel + renderPage wired for classRanking
+   • APP_VER bumped to 6.1
    ================================================================ */
 'use strict';
 
@@ -27,7 +26,7 @@ const MONTHS_JP   = ['1月','2月','3月','4月','5月','6月','7月','8月','9�
 const HISTORY_MAX = 60;
 const NUM_SLOTS   = 5;
 const TOP_N       = 100;
-const APP_VER     = '5.3';
+const APP_VER     = '6.1';
 const THEME_KEY   = 'CoteOS_theme';
 
 const slotKey = n => `CoteOS_v3_Slot${n}`;
@@ -43,16 +42,16 @@ const JP = {
   male:'男', female:'女',
   expel:'退学処分', reinstate:'復帰',
   graduates:'卒業生', incoming2:'入学予定',
-  ranking:'ランキング',
-  history:'月次履歴',
+  ranking:'ランキング', history:'月次履歴',
   gradeN: g => `${g}年生`,
   clsDef: (g, r) => `${g}年${r}組`,
 };
 
 /* ──────────────────────────────────────────────────────────────────
-   RANDOMISER DATA
+   RANDOMISER DATA — ×5 expanded name arrays
 ────────────────────────────────────────────────────────────────── */
 const SURNAMES = [
+  /* Top 130 — v5.4 originals */
   "佐藤","鈴木","高橋","田中","渡辺","伊藤","山本","中村","小林","加藤",
   "吉田","山田","佐々木","山口","松本","井上","木村","林","斎藤","清水",
   "山崎","池田","橋本","阿部","森","石川","前田","藤田","小川","岡田",
@@ -66,8 +65,43 @@ const SURNAMES = [
   "岩田","水野","沢田","中井","福島","辻","大西","浜田","西田","松岡",
   "北村","相沢","桑原","黒田","新井","宮田","山内","堀","野田","菅野",
   "川上","榎本","大島","飯田","岸","南","上野","泉","田口","高田",
+  /* Extended batch A */
+  "白石","大谷","西山","西川","神田","岡崎","五十嵐","熊谢","野中","松浦",
+  "伏見","川村","徳田","橘","比企","東","新谷","滝沢","津田","工藤",
+  "波多野","志村","根本","関口","瀬戸","畑","神谷","保坂","奥田","深沢",
+  "二宮","三好","菱田","品川","八木","千代","磯部","上原","奥村","黒岩",
+  "小山","吉原","沖","花田","本田","長嶋","平田","橋爪","荒木","久米",
+  "下村","横田","片岡","尾崎","角田","内山","和泉","三宅","萩原","立花",
+  "荒井","入江","大塩","羽田","久野","清田","曽根","湯浅","西本","宮下",
+  "矢野","平井","吉野","細川","木下","杉田","高山","田畑","丸岡","竹田",
+  "飯島","上杉","小松","秋山","笠原","大石","島村","奥山","古屋","長野",
+  "矢島","酒井","桑田","富田","浅野","海老原","真田","岩崎","稲垣","浜口",
+  /* Extended batch B */
+  "原口","松下","樋口","山崎","野村","三田","椎名","石黒","市原","藤沢",
+  "冨田","嶋田","水口","池上","宇野","城戸","木田","西岡","越智","砂田",
+  "飯塚","泉谷","赤坂","角谷","別府","深田","粟田","玉置","松永","宮島",
+  "向井","大倉","赤井","浜崎","戸田","国分","竹山","黒沢","川崎","高田",
+  "宮地","福井","東野","稲田","今村","小泉","松村","西澤","篠田","富山",
+  "津川","北島","澤田","坂口","塚田","富永","安部","矢口","天野","萩野",
+  "中本","福本","笹田","尾野","平松","野上","内海","横尾","手塚","岡部",
+  "石倉","杉浦","山ノ内","板垣","蒲田","奥野","永井","古賀","渡部","川端",
+  "黒田","柳澤","岩本","沢村","三上","長沢","奥田","大村","千田","坂田",
+  "幸田","大沼","西本","今泉","竹中","橋口","薄田","塩谷","大久保","小泉",
+  /* Extended batch C */
+  "香西","児玉","高村","折戸","末廣","光永","住田","蒔田","村瀬","横路",
+  "田代","中尾","仁村","荒川","小倉","松岡","御手洗","石坂","上島","田原",
+  "藪田","宇佐美","奥田","川畑","宮内","白川","西田","高岡","太刀川","三谷",
+  "近松","藤川","成瀬","福永","宮里","有村","久田","根岸","長尾","岸本",
+  "下田","牧野","植田","原田","伊勢","千田","後藤","西廣","山室","佐田",
+  "竹腰","恩田","笠間","大橋","遠山","石部","牛島","石丸","神崎","浅川",
+  "中谷","小澤","宮沢","阿部","田嶋","川本","鏡","伊原","前原","山地",
+  "塩田","上田","国本","長井","江川","佐古","赤羽","森口","桂","細野",
+  "石橋","外山","長浜","松尾","宇田","竹ノ内","浅田","玉田","岩瀬","藤野",
+  "仲田","清野","境","矢吹","丸岡","杉野","荒城","大川","渡里","曲木",
 ];
+
 const MALE_NAMES = [
+  /* v5.4 originals (120) */
   "蒼","湊","蓮","陽翔","律","悠真","暖","颯","樹","翔",
   "大和","悠人","凛","碧","陽太","隼人","琉生","晴翔","光","仁",
   "誠","剛","健太","雄大","勇気","拓海","直樹","慎也","雅人","洸",
@@ -80,8 +114,43 @@ const MALE_NAMES = [
   "泰輝","真尋","善","悠雅","克哉","光輝","心音","歩夢","朋也","晴",
   "優也","陽一","稜真","陽平","凱","寛大","堅太","達也","聖也","柊",
   "真斗","千尋","鷹","奏太","葵","光太郎","澪斗","虎太郎","司","朔",
+  /* Extended batch A */
+  "太陽","遼太","勇斗","輝","英治","健","勇","拓也","大介","裕也",
+  "浩二","俊太","貴大","和也","一郎","二郎","三郎","哲也","和輝","竜",
+  "雅也","一輝","祐介","翔太","清志","道明","篤","功","洋介","典彦",
+  "克己","正吾","渚","宙","玄","空太","武志","輝人","広大","信也",
+  "颯人","漣","柊斗","奏人","律希","結人","亮","武","豊","誠一",
+  "勝己","寿","誠也","永人","将平","亘","尚也","峻","将之","怜",
+  "真人","敦","昌幸","哲也","和博","俊哉","一希","玄暉","真輝","颯也",
+  "泰雅","隆太","怜司","晴貴","悠誠","力也","孝之","大賀","一颯","蒼士",
+  "真吾","晃司","清人","尚志","海","玄之介","碧人","泰成","大智","武蔵",
+  "巧","虎","幸人","秋人","草太","峰","龍","剣","悠弥","大輔",
+  /* Extended batch B */
+  "晴也","輝也","寛","大海","夏生","柳生","京介","瞬","武人","晋也",
+  "諒","圭","亮介","一生","秀平","礼人","旅人","心","文也","翔平",
+  "嵐","光平","旭","逸平","隼斗","凜","悠生","明，","大河","蓮太",
+  "楓斗","桐人","光一","竜也","悠哉","怜央","朝陽","玲人","秀哉","剛士",
+  "大翔","翔也","紘人","一陽","健人","海人","彩人","奈緒人","風","渦",
+  "朔太","葵音","弥人","奏輝","晴大","光翔","優斗","嵩人","柊也","遼大",
+  "龍誠","成輝","弘樹","友輝","晶","大成","悠輝","光昇","明斗","颯真",
+  "天斗","輝琉","純","和樹","晴彦","哲人","文斗","利樹","勢月","蒼真",
+  "尊","廣介","絵人","晶大","基輝","聖","岳","心陽","泰一","秀平",
+  "泰樹","明輝","寿輝","成人","光太","達輝","仁也","悠成","綾人","蒼輝",
+  /* Extended batch C */
+  "凱翔","輝士","剣人","直哉","柔","優汰","恵悟","強","義輝","倫太郎",
+  "誠之","泰二","竜斗","太一","一太","裕太","竜也","真那","大悟","優佑",
+  "勉","哲朗","啓太","輝也","正輝","頼人","昇","功己","知也","和平",
+  "浩平","雄一","英樹","守","克輝","仁","圭汰","直人","朋輝","嵐士",
+  "湧士","颯介","巴人","昴輝","惺","清蔵","清","基","晃太","渓",
+  "悠斗","皐月","天","空音","岳人","晴斗","佑輝","蒼汰","靖人","玲太",
+  "海翔","哲太","直也","侑人","凛汰","怜也","悠大","晴輝","誠翔","太志",
+  "颯雅","雄飛","大央","玄太","優仁","絃","紅士","悠士","大心","愛士",
+  "瞬太","幸太","勇汰","将輝","海音","洸斗","弓人","輝音","光義","凛人",
+  "快人","純之介","輝斗","真輝","秋士","心太","龍輝","淳士","綾斗","光弦",
 ];
+
 const FEMALE_NAMES = [
+  /* v5.4 originals (120) */
   "陽葵","凛","結菜","杏","莉子","美咲","葵","愛","心春","桜",
   "咲良","琴音","七海","芽依","彩花","結衣","梨花","菜々","遥","優花",
   "日向","夏希","明日香","絵里","奈々","千夏","楓","瑠璃","優奈","美羽",
@@ -94,7 +163,41 @@ const FEMALE_NAMES = [
   "千紘","乃愛","玲奈","ひより","実来","真彩","花恋","朝日奈","みう","奈央",
   "栞奈","悠里","光莉","美結","りん","詩乃","萌々","菊乃","波奈","颯香",
   "椎奈","絢音","珊瑚","麗那","このは","倖","妃奈","帆夏","乙葉","琴葉",
+  /* Extended batch A */
+  "里奈","知佳","亜沙子","麻理","友里","真紀","瑠菜","綾","永遠","七星",
+  "夢花","柚","香","夢奈","涼","真由","桂","千里","里帆","はな",
+  "みな","彩","夏音","愛里","瑛","薫","日奈","睦","ゆい","まい",
+  "なつ","ひな","さくら","みき","あゆ","ゆか","あい","まな","りか","もも",
+  "はる","ゆず","かな","のあ","みゆ","えり","あみ","ふゆ","さら","ゆき",
+  "桜花","友香","真帆","千鶴","里美","美乃","和奏","彩音","佳音","理音",
+  "春奈","星奈","美晴","日和","柚乃","恋奈","萌音","心乃","凜奈","奏乃",
+  "愛奈","里音","詩音","夢乃","桜奈","麻奈","光奈","彩奈","花奈","紗奈",
+  "美南","真奈","菜奈","友奈","佑奈","咲奈","和奈","陽奈","香奈","菜奈",
+  "茉奈","葵奈","七奈","莉奈","美奈","涼奈","優奈","夏奈","遥奈","晴奈",
+  /* Extended batch B */
+  "栞","泉","暖","茉莉","胡桃","柊葉","紫苑","月","夕","星花",
+  "菖蒲","藤花","山吹","杜若","緑","翠","碧空","虹","彩虹","萌黄",
+  "春霞","秋霜","冬夜","夏宵","朝凪","夕凪","暮里","暁音","宵音","夜音",
+  "芽吹","青葉","若葉","新葉","双葉","小葉","一葉","千葉","万葉","彩葉",
+  "朱夏","白秋","玄冬","黎明","曙","暁","夕暮","薄暮","宵闇","黎",
+  "雪花","雪音","雪菜","雪奈","雪乃","雪絵","雪佳","雪菊","雪実","雪珠",
+  "咲花","咲希","咲音","咲乃","咲奈","咲菜","咲季","咲紀","咲恵","咲実",
+  "花音","花奏","花恋","花菜","花澄","花穂","花純","花子","花菊","花絵",
+  "美空","美海","美湖","美川","美滝","美波","美桜","美香","美音","美凛",
+  "幸菜","幸穂","幸恵","幸絵","幸美","幸子","幸乃","幸音","幸花","幸葉",
+  /* Extended batch C */
+  "妙","千代","喜久","弥生","卯月","皐","文","武","葛","諾",
+  "綾香","綾音","綾乃","綾菜","綾花","綾奈","綾子","綾帆","綾佳","綾美",
+  "穂乃果","穂奈美","穂波","穂音","穂花","穂葉","穂香","穂菜","穂美","穂実",
+  "菜緒","菜月","菜音","菜乃","菜穂","菜波","菜摘","菜那","菜帆","菜恵",
+  "怜奈","怜花","怜菜","怜佳","怜音","怜乃","怜美","怜菊","怜珠","怜子",
+  "凛花","凛音","凛乃","凛菜","凛佳","凛美","凛珠","凛香","凛穂","凛葉",
+  "紗月","紗希","紗音","紗乃","紗菜","紗花","紗奈","紗美","紗香","紗葉",
+  "舞","舞花","舞音","舞菜","舞香","舞奈","舞佳","舞葉","舞夏","舞乃",
+  "歌","歌花","歌音","歌菜","歌乃","歌奈","歌美","歌帆","歌月","歌晴",
+  "奏花","奏音","奏菜","奏乃","奏佳","奏香","奏美","奏葉","奏月","奏晴",
 ];
+
 const CLASS_STAT_CFG = {
   0:{ avg:[6,8],  rare:[4,12], focus:['reasoning','memory','thinking'] },
   1:{ avg:[5,7],  rare:[4,10], focus:['language','memory'] },
@@ -110,7 +213,7 @@ const PP_RANGE = {
 function rndInt(lo,hi){ return Math.floor(Math.random()*(hi-lo+1))+lo; }
 function rndPick(arr){ return arr[Math.floor(Math.random()*arr.length)]; }
 function genStat(cid,key){
-  const cfg=CLASS_STAT_CFG[cid]; const rare=Math.random()<0.20;
+  const cfg=CLASS_STAT_CFG[cid], rare=Math.random()<0.20;
   const [lo,hi]=rare?cfg.rare:cfg.avg; let v=lo===hi?lo:rndInt(lo,hi);
   if(cfg.focus.includes(key)) v=Math.min(15,v+1); return v;
 }
@@ -131,6 +234,7 @@ let state       = null;
 let navStack    = [];
 let selectMode  = false;
 let selectedIds = new Set();
+let bulkPPValue = '';   /* v6.1: persists PP量 input across sel/desel renders */
 
 function newState(){
   return { year:1, month:4, students:[], classes:[], history:[], nextId:1 };
@@ -145,29 +249,34 @@ function applyTheme(name){
   if(!THEMES.includes(name)) name='classic';
   document.documentElement.setAttribute('data-theme', name);
   localStorage.setItem(THEME_KEY, name);
-  // Update active marker on flyout options
   document.querySelectorAll('.tf-opt').forEach(b=>{
     b.classList.toggle('active', b.dataset.theme===name);
   });
 }
-
 function loadTheme(){
-  const saved = localStorage.getItem(THEME_KEY);
-  applyTheme(saved||'classic');
+  applyTheme(localStorage.getItem(THEME_KEY)||'classic');
 }
 
 /* ──────────────────────────────────────────────────────────────────
-   STUDENT ID  — v5.1+ precise logic
-   Prefix = 7+(6-grade)+(state.year-1), padded 3 digits
-   Sequence resets to 0001 per grade in initial generation
+   STUDENT ID
 ────────────────────────────────────────────────────────────────── */
 function gradePrefix(grade){
   if(typeof grade!=='number'||grade<1||grade>6) return '000';
   return String(7+(6-grade)+(state.year-1)).padStart(3,'0');
 }
 function genStudentId(grade){
-  const seq=String(state.nextId).padStart(4,'0'); state.nextId++;
-  return gradePrefix(grade)+seq;
+  const pfx=gradePrefix(grade);
+  // find all used sequence numbers for this grade's prefix
+  const used=new Set(
+    state.students
+      .filter(s=>typeof s.grade==='number'&&s.grade===grade&&s.id&&s.id.startsWith(pfx))
+      .map(s=>parseInt(s.id.slice(-4),10))
+      .filter(n=>!isNaN(n))
+  );
+  let seq=1;
+  while(used.has(seq)) seq++;
+  if(seq>9999){seq=state.nextId++;} // fallback
+  return pfx+String(seq).padStart(4,'0');
 }
 
 /* ──────────────────────────────────────────────────────────────────
@@ -210,7 +319,9 @@ function rankOf(grade,classId){
   return i>=0?RANK_LABELS[i]:'?';
 }
 function clsName(grade,classId){
-  const c=getCls(grade,classId); return c?.customName||JP.clsDef(grade,rankOf(grade,classId));
+  const c=getCls(grade,classId);
+  if(!c) return JP.clsDef(grade,rankOf(grade,classId));
+  return c.customName||c.name||JP.clsDef(grade,rankOf(grade,classId));
 }
 
 /* ──────────────────────────────────────────────────────────────────
@@ -221,18 +332,24 @@ function blankStudent(grade,classId){
   return { id:genStudentId(grade), name:'', gender:'M', dob:'', grade, classId, stats,
            specialAbility:'', privatePoints:0, protectPoints:0, contracts:[], isExpelled:false };
 }
-function blankClass(grade,classId){ return { grade,classId,classPoints:0,customName:'' }; }
+function blankClass(grade,classId,rankLabel){
+  const name=rankLabel?JP.clsDef(grade,rankLabel):'';
+  return { grade,classId,classPoints:0,customName:'',name };
+}
 
 function generateInitialData(){
   Object.assign(state,{students:[],classes:[],nextId:1,year:1,month:4,history:[]});
-  GRADES.forEach(g=>CLASS_IDS.forEach(c=>state.classes.push(blankClass(g,c))));
+  // Classes are created in order A-E per grade (classId 0=A,1=B,...4=E by default)
+  GRADES.forEach(g=>CLASS_IDS.forEach(c=>{
+    state.classes.push(blankClass(g,c,RANK_LABELS[c]));
+  }));
   GRADES.forEach(g=>{
-    state.nextId=1;  // reset sequence per grade → 0001..0200 each
+    state.nextId=1;
     CLASS_IDS.forEach(c=>{
       for(let i=0;i<40;i++) state.students.push(blankStudent(g,c));
     });
   });
-  state.nextId=10000; // sentinel
+  state.nextId=10000;
 }
 
 /* ──────────────────────────────────────────────────────────────────
@@ -270,8 +387,13 @@ function computeRanking(){
 }
 
 /* ──────────────────────────────────────────────────────────────────
-   PERSISTENCE
+   CLASS PP RANKING
 ────────────────────────────────────────────────────────────────── */
+function computeClassRanking(){
+  return [...state.classes]
+    .sort((a,b)=>b.classPoints!==a.classPoints?b.classPoints-a.classPoints:
+      (a.grade!==b.grade?a.grade-b.grade:a.classId-b.classId));
+}
 function saveState(silent=false){
   try{
     localStorage.setItem(slotKey(currentSlot),JSON.stringify(state));
@@ -329,7 +451,7 @@ function exportAllSlots(){
 function serializeSlot(s){
   return {
     year:s.year,month:s.month,nextId:s.nextId,
-    classes:s.classes.map(c=>({grade:c.grade,classId:c.classId,classPoints:c.classPoints,customName:c.customName||''})),
+    classes:s.classes.map(c=>({grade:c.grade,classId:c.classId,classPoints:c.classPoints,customName:c.customName||'',name:c.name||''})),
     students:s.students.map(st=>({
       id:st.id,name:st.name,gender:st.gender,dateOfBirth:st.dob,
       grade:st.grade,classId:st.classId,privatePoints:st.privatePoints,protectPoints:st.protectPoints,
@@ -395,7 +517,9 @@ function deserializeSlot(obj){
   s.month=typeof obj.month==='number'&&obj.month>=1?obj.month:4;
   s.nextId=typeof obj.nextId==='number'&&obj.nextId>=1?obj.nextId:1;
   s.classes=(obj.classes||[]).map(c=>({grade:c.grade,classId:typeof c.classId==='number'?c.classId:0,
-    classPoints:typeof c.classPoints==='number'?c.classPoints:0,customName:String(c.customName||'')}));
+    classPoints:typeof c.classPoints==='number'?c.classPoints:0,
+    customName:String(c.customName||''),
+    name:String(c.name||JP.clsDef(c.grade,RANK_LABELS[typeof c.classId==='number'?c.classId:0]||'A'))}));
   s.students=(obj.students||[]).map(st=>{
     const expelled=st.isExpelled===true||st.status==='expelled';
     let grade=st.grade; if(typeof grade==='string'&&/^\d+$/.test(grade)) grade=+grade;
@@ -428,7 +552,8 @@ function repairIntegrity(s){
   s.students.forEach(st=>{ st.contracts=st.contracts.filter(c=>c.targetId&&validIds.has(c.targetId)&&c.targetId!==st.id); });
 }
 function datestamp(){
-  const d=new Date(); return `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`;
+  const d=new Date();
+  return `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`;
 }
 
 /* ──────────────────────────────────────────────────────────────────
@@ -483,10 +608,11 @@ function undoGradeUp(snap){
 }
 
 /* ──────────────────────────────────────────────────────────────────
-   GEAR MENU
+   GEAR MENU — v5.4/5.5 rules:
+   Only #gear-btn toggles. Internal clicks stopPropagation.
 ────────────────────────────────────────────────────────────────── */
-let gearOpen=false;
-let themeFlyOpen=false;
+let gearOpen     = false;
+let themeFlyOpen = false;
 
 function toggleGear(){
   gearOpen=!gearOpen;
@@ -499,10 +625,12 @@ function toggleGear(){
   if(!gearOpen) closeThemeFly();
 }
 function closeGear(){
-  if(!gearOpen) return; gearOpen=false;
+  if(!gearOpen) return;
+  gearOpen=false;
   document.getElementById('gear-btn')?.classList.remove('open');
   const tray=document.getElementById('gear-tray');
-  tray?.classList.remove('open'); tray?.setAttribute('aria-hidden','true');
+  tray?.classList.remove('open');
+  tray?.setAttribute('aria-hidden','true');
   document.getElementById('gear-btn')?.setAttribute('aria-expanded','false');
   closeThemeFly();
 }
@@ -516,12 +644,11 @@ function toggleThemeFly(e){
   btn?.classList.toggle('open',themeFlyOpen);
 }
 function closeThemeFly(){
-  if(!themeFlyOpen) return; themeFlyOpen=false;
+  if(!themeFlyOpen) return;
+  themeFlyOpen=false;
   document.getElementById('theme-flyout')?.classList.remove('open');
   document.getElementById('btn-theme')?.classList.remove('open');
 }
-
-window.gearNav=function(page){ closeGear(); navigate(page,{},false); };
 
 /* ──────────────────────────────────────────────────────────────────
    NAVIGATION
@@ -536,6 +663,14 @@ function navigateReplace(page,params={}){
   else navStack.push({page,params});
   renderPage(page,params); updateBreadcrumb();
 }
+function navigateSafe(page,params={}){
+  const top=navStack[navStack.length-1];
+  if(top&&top.page===page) { navigateReplace(page,params); }
+  else { navigate(page,params,false); }
+}
+window.gearNav=function(page){
+  navigateSafe(page,{});
+};
 function goBack(){
   if(navStack.length<=1) return;
   navStack.pop(); selectMode=false; selectedIds=new Set();
@@ -547,13 +682,14 @@ window.navTo=function(i){
 };
 function pageLabel(n){
   switch(n.page){
-    case 'home':      return 'ホーム';
-    case 'grade':     return JP.gradeN(n.params.grade);
-    case 'class':     return clsName(n.params.grade,n.params.classId);
-    case 'graduates': return JP.graduates;
-    case 'incoming':  return JP.incoming2;
-    case 'ranking':   return JP.ranking;
-    case 'history':   return JP.history;
+    case 'home':         return 'ホーム';
+    case 'grade':        return JP.gradeN(n.params.grade);
+    case 'class':        return clsName(n.params.grade,n.params.classId);
+    case 'graduates':    return JP.graduates;
+    case 'incoming':     return JP.incoming2;
+    case 'ranking':      return JP.ranking;
+    case 'classRanking': return 'クラスランキング';
+    case 'history':      return JP.history;
     case 'profile':   { const s=state.students.find(x=>x.id===n.params.sid); return s?(s.name||s.id):'プロフィール'; }
     default: return n.page;
   }
@@ -579,14 +715,15 @@ function updateDateDisplay(){
 function renderPage(page,params){
   const app=document.getElementById('app');
   switch(page){
-    case 'home':      app.innerHTML=renderHome(); break;
-    case 'grade':     app.innerHTML=renderGrade(params.grade); break;
-    case 'class':     app.innerHTML=renderClass(params.grade,params.classId); break;
-    case 'profile':   app.innerHTML=renderProfile(params.sid); break;
-    case 'graduates': app.innerHTML=renderSpecial('Graduate'); break;
-    case 'incoming':  app.innerHTML=renderSpecial('Incoming'); break;
-    case 'ranking':   app.innerHTML=renderRankingPage(); break;
-    case 'history':   app.innerHTML=renderHistory(); break;
+    case 'home':         app.innerHTML=renderHome(); break;
+    case 'grade':        app.innerHTML=renderGrade(params.grade); break;
+    case 'class':        app.innerHTML=renderClass(params.grade,params.classId); break;
+    case 'profile':      app.innerHTML=renderProfile(params.sid); break;
+    case 'graduates':    app.innerHTML=renderSpecial('Graduate'); break;
+    case 'incoming':     app.innerHTML=renderSpecial('Incoming'); break;
+    case 'ranking':      app.innerHTML=renderRankingPage(); break;
+    case 'classRanking': app.innerHTML=renderClassRankingPage(); break;
+    case 'history':      app.innerHTML=renderHistory(); break;
     default: app.innerHTML=`<p style="color:var(--rd)">ページが見つかりません</p>`;
   }
   afterRender();
@@ -607,6 +744,7 @@ function renderHome(){
       <span>${activeCount}名在籍</span>
       <div class="hm-right">
         <span class="hm-link" onclick="navigate('ranking',{},false)">🏆 ${JP.ranking} TOP${TOP_N}</span>
+        <span class="hm-link hm-link-cls" onclick="navigate('classRanking',{},false)">🏫 クラスランキング</span>
       </div>
     </div>
     <div class="pg-hdr">
@@ -623,8 +761,7 @@ function renderHome(){
           <span class="grade-lbl">${JP.gradeN(grade)}</span>
           <span class="grade-hint">▶ 詳細を見る</span>
         </div>
-        <div class="cls-strip">
-    `;
+        <div class="cls-strip">`;
     ranked.forEach((cls,ri)=>{
       const rank=RANK_LABELS[ri], nm=clsName(grade,cls.classId);
       h+=`
@@ -653,6 +790,7 @@ function renderHome(){
         <div class="sp-lbl">${JP.incoming2}</div>
       </div>
     </div>`;
+
   return h;
 }
 
@@ -714,7 +852,9 @@ function renderHistory(){
 }
 
 /* ──────────────────────────────────────────────────────────────────
-   GRADE PAGE
+   GRADE PAGE — v5.5
+   kp-strip layout: horizontal scroll (v5.3 style restored).
+   kp-card: [Name flex:1] [PP] [PRP if >0]
 ────────────────────────────────────────────────────────────────── */
 function renderGrade(grade){
   const ranked=getRanked(grade);
@@ -730,7 +870,7 @@ function renderGrade(grade){
   ranked.forEach((cls,ri)=>{
     const rank=RANK_LABELS[ri], nm=clsName(grade,cls.classId);
     const sts=getStudentsOf(grade,cls.classId).filter(s=>!s.isExpelled);
-    const kp=sts.slice(0,5);
+    const kp=sts.slice(0,5);  /* v6.1: show up to 5 students per strip */
     h+=`
       <div class="cls-row bl${rank}">
         <div class="cls-row-hdr" onclick="navigate('class',{grade:${grade},classId:${cls.classId}},false)">
@@ -743,19 +883,18 @@ function renderGrade(grade){
           <div class="cls-rmeta">${sts.length}名 ▶ クラスへ</div>
         </div>
         <div class="kp-strip">`;
-    if(!kp.length) h+=`<span class="dim" style="padding:8px;font-size:.7rem">生徒なし</span>`;
-    kp.forEach(s=>{
-      h+=`
-        <div class="kp-card" onclick="navigate('profile',{sid:'${s.id}'},false)">
-          <div class="kp-card-top">
+    if(!kp.length){
+      h+=`<span class="dim" style="padding:8px 12px;font-size:.7rem;align-self:center">生徒なし</span>`;
+    } else {
+      kp.forEach(s=>{
+        h+=`
+          <div class="kp-card" onclick="navigate('profile',{sid:'${s.id}'},false)">
             <div class="kp-name">${esc(s.name)||'<span class="dim">(未記入)</span>'}</div>
-            <div class="kp-right">
-              <span class="kp-pp-val ${ppCol(s.privatePoints)}">${fmtPP(s.privatePoints)}<span style="color:#fff;font-size:.58rem;margin-left:2px;opacity:.82">PP</span></span>
-              ${s.protectPoints>0?`<span class="kp-prp-val">${s.protectPoints}<span style="color:#fff;font-size:.58rem;margin-left:2px;opacity:.82">PRP</span></span>`:''}
-            </div>
-          </div>
-        </div>`;
-    });
+            <span class="kp-pp-val ${ppCol(s.privatePoints)}">${fmtPP(s.privatePoints)}<span style="color:#fff;font-size:.58rem;margin-left:2px;opacity:.8">PP</span></span>
+            ${s.protectPoints>0?`<span class="kp-prp-val">${s.protectPoints}<span style="color:#fff;font-size:.58rem;margin-left:2px;opacity:.8">PRP</span></span>`:''}
+          </div>`;
+      });
+    }
     h+=`</div></div>`;
   });
   return h;
@@ -783,7 +922,11 @@ window.execRandomizeGrade=function(grade){
 };
 
 /* ──────────────────────────────────────────────────────────────────
-   CLASS PAGE
+   CLASS PAGE — v5.5
+   Bulk bar changes:
+   • "解除" → "全解除"
+   • New "PP剥奪" button (shares same amount input with "PP付与")
+   • Both buttons use id="blk-pp" input
 ────────────────────────────────────────────────────────────────── */
 function renderClass(grade,classId){
   const cls=getCls(grade,classId), rank=rankOf(grade,classId), nm=clsName(grade,classId);
@@ -823,10 +966,13 @@ function renderClass(grade,classId){
       </button>
       ${selectMode?`
         <button class="btn btn-sm" onclick="selAll(${grade},${classId})">全選択</button>
-        <button class="btn btn-sm" onclick="deselAll(${grade},${classId})">解除</button>
+        <button class="btn btn-sm" onclick="deselAll(${grade},${classId})">全解除</button>
         <span class="bulk-cnt">${selectedIds.size}名選択中</span>
-        <input type="number" class="fi bulk-inp" id="blk-pp" placeholder="PP量" style="width:90px" />
-        <button class="btn btn-sm btn-ac" onclick="applyBulk(${grade},${classId})">PP付与</button>
+        <input type="number" class="fi bulk-inp" id="blk-pp" placeholder="PP量" min="0"
+               value="${escA(String(bulkPPValue))}"
+               oninput="bulkPPValue=this.value" />
+        <button class="btn btn-sm btn-ac" onclick="applyBulkGive(${grade},${classId})">PP付与</button>
+        <button class="btn btn-sm btn-ac" onclick="applyBulkSeize(${grade},${classId})">PP剥奪</button>
         <button class="btn btn-sm btn-dn" onclick="confirmBulkDelete(${grade},${classId})">選択した生徒を削除</button>
       `:''}
     </div>
@@ -847,7 +993,7 @@ function renderClass(grade,classId){
   return h;
 }
 
-/* s-card renderer — v5.3 layout (3:2 grid, 1.62rem name) */
+/* s-card renderer */
 function renderCards(students){
   if(!students.length)
     return `<div class="dim" style="grid-column:1/-1;padding:8px;font-size:.7rem">生徒なし</div>`;
@@ -876,36 +1022,60 @@ function renderCards(students){
 }
 
 window.cardClick=function(sid){
-  if(selectMode){ selectedIds.has(sid)?selectedIds.delete(sid):selectedIds.add(sid);
+  if(selectMode){
+    /* Capture current input value before re-render */
+    const inp=document.getElementById('blk-pp');
+    if(inp) bulkPPValue=inp.value;
+    selectedIds.has(sid)?selectedIds.delete(sid):selectedIds.add(sid);
     const c=navStack[navStack.length-1]; if(c) renderPage(c.page,c.params);
   } else navigate('profile',{sid},false);
 };
-window.toggleSel=(g,c)=>{selectMode=!selectMode;selectedIds=new Set();renderPage('class',{grade:g,classId:c});};
-window.selAll=(g,c)=>{getStudentsOf(g,c).filter(s=>!s.isExpelled).forEach(s=>selectedIds.add(s.id));renderPage('class',{grade:g,classId:c});};
-window.deselAll=(g,c)=>{selectedIds=new Set();renderPage('class',{grade:g,classId:c});};
+window.toggleSel=(g,c)=>{
+  selectMode=!selectMode;
+  selectedIds=new Set();
+  if(!selectMode) bulkPPValue=''; /* clear persisted value when exiting select mode */
+  renderPage('class',{grade:g,classId:c});
+};
+window.selAll=(g,c)=>{
+  const inp=document.getElementById('blk-pp'); if(inp) bulkPPValue=inp.value;
+  getStudentsOf(g,c).filter(s=>!s.isExpelled).forEach(s=>selectedIds.add(s.id));
+  renderPage('class',{grade:g,classId:c});
+};
+window.deselAll=(g,c)=>{
+  const inp=document.getElementById('blk-pp'); if(inp) bulkPPValue=inp.value;
+  selectedIds=new Set();
+  renderPage('class',{grade:g,classId:c});
+};
 
-window.applyBulk=function(grade,classId){
-  const amt=parseInt(document.getElementById('blk-pp')?.value);
-  if(isNaN(amt)){toast('✗ 有効な数値を入力してください','err');return;}
+/* ── PP付与 (give) — adds amount immediately, no confirm modal ── */
+window.applyBulkGive=function(grade,classId){
+  const inp=document.getElementById('blk-pp');
+  if(inp) bulkPPValue=inp.value;
+  const amt=parseInt(bulkPPValue);
+  if(isNaN(amt)||amt<0){toast('✗ 0以上の数値を入力してください','err');return;}
   if(!selectedIds.size){toast('✗ 生徒が選択されていません','err');return;}
-  openModal(`
-    <div class="m-title">一括PP操作</div>
-    <div class="m-body">
-      <p>選択中の<strong style="color:var(--ac)">${selectedIds.size}名</strong>に<br>
-         <strong style="color:${amt>=0?'var(--gn)':'var(--rd)'}">
-           ${amt>=0?'+':''}${amt.toLocaleString()} PP</strong> を付与しますか？</p>
-      <div class="btn-row">
-        <button class="btn btn-ac" onclick="execBulk(${grade},${classId},${amt})">実行</button>
-        <button class="btn" onclick="closeModal()">キャンセル</button>
-      </div>
-    </div>`);
-};
-window.execBulk=function(grade,classId,amt){
   let n=0; selectedIds.forEach(id=>{const s=state.students.find(x=>x.id===id);if(s){s.privatePoints+=amt;n++;}});
-  selectedIds=new Set(); selectMode=false;
-  closeModal(); saveState(true); renderPage('class',{grade,classId});
-  toast(`✓ ${n}名に ${amt>=0?'+':''}${amt.toLocaleString()} PP を付与`,'ok');
+  selectedIds=new Set(); selectMode=false; bulkPPValue='';
+  saveState(true); renderPage('class',{grade,classId});
+  toast(`✓ ${n}名に +${amt.toLocaleString()} PP を付与`,'ok');
 };
+
+/* ── PP剥奪 (seize) — subtracts amount immediately, clamps at 0, no confirm modal ── */
+window.applyBulkSeize=function(grade,classId){
+  const inp=document.getElementById('blk-pp');
+  if(inp) bulkPPValue=inp.value;
+  const amt=parseInt(bulkPPValue);
+  if(isNaN(amt)||amt<0){toast('✗ 0以上の数値を入力してください','err');return;}
+  if(!selectedIds.size){toast('✗ 生徒が選択されていません','err');return;}
+  let n=0; selectedIds.forEach(id=>{
+    const s=state.students.find(x=>x.id===id);
+    if(s){ s.privatePoints=Math.max(0, s.privatePoints-amt); n++; }
+  });
+  selectedIds=new Set(); selectMode=false; bulkPPValue='';
+  saveState(true); renderPage('class',{grade,classId});
+  toast(`✓ ${n}名から ${amt.toLocaleString()} PP を剥奪`,'warn');
+};
+
 window.confirmBulkDelete=function(grade,classId){
   const n=selectedIds.size; if(!n){toast('✗ 生徒が選択されていません','err');return;}
   openModal(`
@@ -923,7 +1093,7 @@ window.execBulkDelete=function(grade,classId){
   const del=new Set(selectedIds);
   state.students=state.students.filter(s=>!del.has(s.id));
   state.students.forEach(s=>{s.contracts=s.contracts.filter(c=>!del.has(c.targetId));});
-  selectedIds=new Set(); selectMode=false;
+  selectedIds=new Set(); selectMode=false; bulkPPValue='';
   closeModal(); saveState(true); renderPage('class',{grade,classId});
   toast(`✓ ${del.size}名を削除しました`,'ok');
 };
@@ -1004,10 +1174,8 @@ function renderProfile(sid){
         <span class="badge ${badgeCls}">${statusLabel}</span>
         <div class="prof-pp ${ppCls}">${s.privatePoints.toLocaleString()}</div>
         <div class="prof-pplbl">${JP.pp}</div>
-        <div class="prof-prot${hasProt?' active':''}">
-          ${s.protectPoints} ${JP.protect}
-        </div>
         <table class="info-tbl">
+          <tr><td>${JP.protect}</td><td class="${hasProt?'pos':'dim'}">${s.protectPoints} PRP</td></tr>
           <tr><td>${JP.gender}</td><td>${s.gender==='M'?JP.male:JP.female}</td></tr>
           <tr><td>${JP.dob}</td><td>${s.dob||'未設定'}</td></tr>
           <tr><td>${JP.grade}</td><td>${gradeDisp}</td></tr>
@@ -1172,9 +1340,13 @@ function renderRankingPage(){
     <div class="rnk-wrap">
       <table class="rnk-tbl">
         <thead><tr>
-          <th style="text-align:right">順位</th><th>氏名</th>
-          <th>学年 / クラス</th><th>ID</th><th style="text-align:right">PP</th>
-        </tr></thead><tbody>`;
+          <th style="text-align:right">順位</th>
+          <th>氏名</th>
+          <th>学年 / クラス</th>
+          <th>ID</th>
+          <th style="text-align:right">PP</th>
+        </tr></thead>
+        <tbody>`;
   if(!ranked.length) h+=`<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--t3)">データなし</td></tr>`;
   ranked.forEach(({rank,student:s})=>{
     const gd=typeof s.grade==='number'?JP.gradeN(s.grade):(s.grade==='Graduate'?'卒業生':'入学予定');
@@ -1199,6 +1371,76 @@ function renderRankingPage(){
         </div>`).join('')}
     </div>`;
   }
+  return h;
+}
+
+/* ──────────────────────────────────────────────────────────────────
+   CLASS RANKING PAGE — v6.1
+   Full-page view of all 30 classes sorted by CP descending.
+────────────────────────────────────────────────────────────────── */
+function renderClassRankingPage(){
+  const clsRanked=computeClassRanking();
+  const medals=['🥇','🥈','🥉'];
+
+  /* Build proper rank numbers (ties share same rank) */
+  const rows=[];
+  let lastCP=null, lastRank=1;
+  clsRanked.forEach((cls,i)=>{
+    const rank=(i===0)?1:(cls.classPoints===lastCP?lastRank:i+1);
+    lastCP=cls.classPoints; lastRank=rank;
+    rows.push({rank,cls});
+  });
+
+  let h=`
+    <button class="back-btn" onclick="goBack()">◀ 戻る</button>
+    <div class="pg-hdr">
+      <span class="pg-title">🏫 クラスランキング</span>
+      <span class="pg-sub">全30クラス CP降順 · 同CP=同順位</span>
+    </div>`;
+
+  /* Top-3 medal cards */
+  if(rows.length){
+    h+=`<div class="medal-row">`;
+    rows.slice(0,Math.min(3,rows.length)).forEach(({rank,cls},i)=>{
+      const nm=clsName(cls.grade,cls.classId);
+      const rnk=rankOf(cls.grade,cls.classId);
+      h+=`
+        <div class="medal-card">
+          <div class="medal-rnk">${medals[i]} 第${rank}位</div>
+          <div class="medal-name" style="font-family:var(--fj)">${esc(nm)}</div>
+          <div style="font-size:.67rem;color:var(--t2);margin-bottom:2px">${JP.gradeN(cls.grade)} &nbsp;<span class="r${rnk}" style="font-family:var(--fd);font-weight:700">${rnk}組</span></div>
+          <div class="medal-pp">${cls.classPoints.toLocaleString()} CP</div>
+        </div>`;
+    });
+    h+=`</div>`;
+  }
+
+  h+=`
+    <div class="rnk-wrap" style="margin-top:10px">
+      <table class="cls-rnk-tbl">
+        <thead><tr>
+          <th style="text-align:right;min-width:44px">順位</th>
+          <th>クラス名</th>
+          <th>学年</th>
+          <th>クラス内順位</th>
+          <th style="text-align:right">CP</th>
+        </tr></thead>
+        <tbody>`;
+  if(!rows.length){
+    h+=`<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--t3)">データなし</td></tr>`;
+  }
+  rows.forEach(({rank,cls})=>{
+    const nm=clsName(cls.grade,cls.classId);
+    const rnk=rankOf(cls.grade,cls.classId);
+    h+=`<tr>
+      <td class="rn ${rank<=3?'top3':''}">${rank}</td>
+      <td class="rk-nm" onclick="navigate('class',{grade:${cls.grade},classId:${cls.classId}},false)">${esc(nm)}</td>
+      <td style="font-size:.7rem;color:var(--t1)">${JP.gradeN(cls.grade)}</td>
+      <td><span class="r${rnk}" style="font-family:var(--fd);font-size:.8rem;font-weight:700">${rnk}</span></td>
+      <td class="rk-cp">${cls.classPoints.toLocaleString()}</td>
+    </tr>`;
+  });
+  h+=`</tbody></table></div>`;
   return h;
 }
 
@@ -1261,21 +1503,22 @@ function openModal(html){
 window.closeModal=function(){ document.getElementById('modal-overlay').classList.add('hidden'); };
 
 /* ──────────────────────────────────────────────────────────────────
-   POST-RENDER HOOKS
+   POST-RENDER
 ────────────────────────────────────────────────────────────────── */
 function afterRender(){
   const ta=document.getElementById('pf-sa'), ct=document.getElementById('sa-ct');
-  if(ta&&ct) ta.addEventListener('input',()=>{ct.textContent=ta.value.length+'/300';});
+  if(ta&&ct) ta.addEventListener('input',()=>{ ct.textContent=ta.value.length+'/300'; });
 }
 
 /* ──────────────────────────────────────────────────────────────────
-   EVENT BINDINGS
+   EVENT BINDINGS — v5.5
+   Gear tray never closes on internal clicks.
+   Only #gear-btn toggles the tray.
 ────────────────────────────────────────────────────────────────── */
 function bindEvents(){
-  /* Time nav — always bound to their IDs; safe because zones don't overlap */
+  /* Time navigation */
   document.getElementById('btn-prev').addEventListener('click', revertMonth);
   document.getElementById('btn-next').addEventListener('click', advanceMonth);
-
   document.addEventListener('keydown', e=>{
     if(!e.ctrlKey) return;
     if(e.key==='ArrowLeft'){e.preventDefault();revertMonth();}
@@ -1283,32 +1526,44 @@ function bindEvents(){
     if(e.key==='s'){e.preventDefault();saveState();}
   });
 
-  /* Gear toggle */
+  /* Gear toggle — ONLY this opens/closes */
   document.getElementById('gear-btn').addEventListener('click', e=>{
     e.stopPropagation(); toggleGear();
   });
 
-  /* Close gear when clicking outside */
+  /* Close when clicking outside gear-wrap */
   document.addEventListener('click', e=>{
     const wrap=document.getElementById('gear-wrap');
     if(wrap&&!wrap.contains(e.target)) closeGear();
   });
 
+  /* Tray swallows its own clicks so the document handler ignores them */
+  document.getElementById('gear-tray').addEventListener('click', e=>{
+    e.stopPropagation();
+  });
+
+  /* History — no tray close */
+  document.getElementById('btn-history').addEventListener('click', e=>{
+    e.stopPropagation(); navigateSafe('history',{});
+  });
+
   /* Theme flyout */
-  document.getElementById('btn-theme').addEventListener('click', toggleThemeFly);
+  document.getElementById('btn-theme').addEventListener('click', e=>{
+    e.stopPropagation(); toggleThemeFly(e);
+  });
   document.querySelectorAll('.tf-opt').forEach(b=>{
     b.addEventListener('click', e=>{
-      e.stopPropagation();
-      applyTheme(b.dataset.theme);
-      closeThemeFly(); closeGear();
+      e.stopPropagation(); applyTheme(b.dataset.theme); closeThemeFly();
       toast(`テーマ: ${b.dataset.theme}`);
     });
   });
 
   /* Save / Reset */
-  document.getElementById('btn-save').addEventListener('click', ()=>{ closeGear(); saveState(); });
-  document.getElementById('btn-reset').addEventListener('click', ()=>{
-    closeGear();
+  document.getElementById('btn-save').addEventListener('click', e=>{
+    e.stopPropagation(); saveState();
+  });
+  document.getElementById('btn-reset').addEventListener('click', e=>{
+    e.stopPropagation();
     openModal(`
       <div class="m-title">スロット${currentSlot} リセット確認</div>
       <div class="m-body">
@@ -1323,16 +1578,21 @@ function bindEvents(){
   });
 
   /* Export / Import */
-  document.getElementById('btn-export').addEventListener('click',()=>{ closeGear(); exportAllSlots(); });
-  document.getElementById('btn-import').addEventListener('click',()=>{ closeGear(); triggerImportDialog(); });
+  document.getElementById('btn-export').addEventListener('click', e=>{
+    e.stopPropagation(); exportAllSlots();
+  });
+  document.getElementById('btn-import').addEventListener('click', e=>{
+    e.stopPropagation(); triggerImportDialog();
+  });
   document.getElementById('file-pick').addEventListener('change', function(){
     onFilePicked(this.files[0]); this.value='';
   });
 
-  /* Slot buttons */
+  /* Slot switcher */
   document.querySelectorAll('.sl').forEach(b=>{
-    b.addEventListener('click', ()=>{
-      const n=+b.dataset.slot; if(n!==currentSlot) switchSlot(n); closeGear();
+    b.addEventListener('click', e=>{
+      e.stopPropagation();
+      const n=+b.dataset.slot; if(n!==currentSlot) switchSlot(n);
     });
   });
 
@@ -1363,7 +1623,7 @@ function showLoader(msg){
   document.body.appendChild(el); return el;
 }
 function boot(){
-  loadTheme();  // apply saved theme before any render
+  loadTheme();
   const ok=loadSlot(currentSlot);
   if(!ok||!state?.students?.length){
     const ld=showLoader('1,200名の初期データを生成中...');
@@ -1376,7 +1636,8 @@ function finishBoot(){
   updateDateDisplay();
   navigate('home',{},true);
 }
+
 if(document.readyState==='loading')
-  document.addEventListener('DOMContentLoaded',boot);
+  document.addEventListener('DOMContentLoaded', boot);
 else
   boot();
