@@ -1,17 +1,13 @@
 /* ================================================================
-   Cote-OS v6.1  ·  app.js
+   Cote-OS v6.2  ·  app.js
    ─────────────────────────────────────────────────────────────────
-   Changes vs v6.0:
-   • New dedicated "classRanking" page (renderClassRankingPage)
-   • Home screen: Class Ranking table removed; two nav buttons added
-     (ランキングTOP100 + クラスランキング) in home-bar
-   • Grade page: kp slice fixed to 5 students per class strip
-   • Class page bulk actions:
-     - PP input value preserved on select/deselect (stored in module var)
-     - PP付与 / PP剥奪 execute immediately (no confirm modal)
-     - Delete button renamed "選択した生徒を削除"
-   • Navigation: pageLabel + renderPage wired for classRanking
-   • APP_VER bumped to 6.1
+   Changes vs v6.1:
+   • Class page: PP付与/PP剥奪 preserve selectMode + selectedIds
+   • Ranking TOP100: podium moved to top, grade+class shown on cards
+   • Static class names applied to ALL grades 1-6, doGradeUp fixed
+   • Profile sidebar: protect points restored to v5.5 .prof-prot div
+   • Profile main basic-info: protect points label/input use .fr style
+   • APP_VER bumped to 6.2
    ================================================================ */
 'use strict';
 
@@ -26,7 +22,7 @@ const MONTHS_JP   = ['1月','2月','3月','4月','5月','6月','7月','8月','9�
 const HISTORY_MAX = 60;
 const NUM_SLOTS   = 5;
 const TOP_N       = 100;
-const APP_VER     = '6.1';
+const APP_VER     = '6.2';
 const THEME_KEY   = 'CoteOS_theme';
 
 const slotKey = n => `CoteOS_v3_Slot${n}`;
@@ -587,8 +583,18 @@ function doGradeUp(){
   state.students.forEach(s=>{if(s.grade===6)s.grade='Graduate';});
   for(let g=5;g>=1;g--) state.students.forEach(s=>{if(s.grade===g)s.grade=g+1;});
   state.students.forEach(s=>{if(s.grade==='Incoming')s.grade=1;});
-  const kept=state.classes.filter(c=>c.grade<6).map(c=>({...c,grade:c.grade+1}));
-  CLASS_IDS.forEach(id=>kept.push(blankClass(1,id))); state.classes=kept;
+  /* Promote classes grades 1-5 → 2-6, preserving static name and customName.
+     If a carried class lacks a static name, assign one now for the new grade. */
+  const kept=state.classes.filter(c=>c.grade<6).map(c=>{
+    const newGrade=c.grade+1;
+    const nm=c.name||JP.clsDef(c.grade,RANK_LABELS[c.classId]||'A');
+    /* Re-derive static name for the new grade if no customName is set */
+    const newStaticName=c.customName?c.name:JP.clsDef(newGrade,RANK_LABELS[c.classId]||'A');
+    return {...c,grade:newGrade,name:newStaticName};
+  });
+  /* Fresh grade-1 classes with static names locked in */
+  CLASS_IDS.forEach(id=>kept.push(blankClass(1,id,RANK_LABELS[id])));
+  state.classes=kept;
 }
 function revertMonth(){
   if(!state.history.length){toast('✗ 履歴がありません','err');return;}
@@ -1047,7 +1053,7 @@ window.deselAll=(g,c)=>{
   renderPage('class',{grade:g,classId:c});
 };
 
-/* ── PP付与 (give) — adds amount immediately, no confirm modal ── */
+/* ── PP付与 (give) — adds amount immediately; keeps selectMode active ── */
 window.applyBulkGive=function(grade,classId){
   const inp=document.getElementById('blk-pp');
   if(inp) bulkPPValue=inp.value;
@@ -1055,12 +1061,12 @@ window.applyBulkGive=function(grade,classId){
   if(isNaN(amt)||amt<0){toast('✗ 0以上の数値を入力してください','err');return;}
   if(!selectedIds.size){toast('✗ 生徒が選択されていません','err');return;}
   let n=0; selectedIds.forEach(id=>{const s=state.students.find(x=>x.id===id);if(s){s.privatePoints+=amt;n++;}});
-  selectedIds=new Set(); selectMode=false; bulkPPValue='';
+  /* v6.2: stay in select mode — do NOT reset selectMode/selectedIds/bulkPPValue */
   saveState(true); renderPage('class',{grade,classId});
   toast(`✓ ${n}名に +${amt.toLocaleString()} PP を付与`,'ok');
 };
 
-/* ── PP剥奪 (seize) — subtracts amount immediately, clamps at 0, no confirm modal ── */
+/* ── PP剥奪 (seize) — subtracts immediately, clamps at 0; keeps selectMode active ── */
 window.applyBulkSeize=function(grade,classId){
   const inp=document.getElementById('blk-pp');
   if(inp) bulkPPValue=inp.value;
@@ -1071,7 +1077,7 @@ window.applyBulkSeize=function(grade,classId){
     const s=state.students.find(x=>x.id===id);
     if(s){ s.privatePoints=Math.max(0, s.privatePoints-amt); n++; }
   });
-  selectedIds=new Set(); selectMode=false; bulkPPValue='';
+  /* v6.2: stay in select mode — do NOT reset selectMode/selectedIds/bulkPPValue */
   saveState(true); renderPage('class',{grade,classId});
   toast(`✓ ${n}名から ${amt.toLocaleString()} PP を剥奪`,'warn');
 };
@@ -1174,8 +1180,10 @@ function renderProfile(sid){
         <span class="badge ${badgeCls}">${statusLabel}</span>
         <div class="prof-pp ${ppCls}">${s.privatePoints.toLocaleString()}</div>
         <div class="prof-pplbl">${JP.pp}</div>
+        <div class="prof-prot${hasProt?' active':''}">
+          ${s.protectPoints}<span class="prof-prot-unit"> ${JP.protect}</span>
+        </div>
         <table class="info-tbl">
-          <tr><td>${JP.protect}</td><td class="${hasProt?'pos':'dim'}">${s.protectPoints} PRP</td></tr>
           <tr><td>${JP.gender}</td><td>${s.gender==='M'?JP.male:JP.female}</td></tr>
           <tr><td>${JP.dob}</td><td>${s.dob||'未設定'}</td></tr>
           <tr><td>${JP.grade}</td><td>${gradeDisp}</td></tr>
@@ -1205,7 +1213,7 @@ function renderProfile(sid){
           <div class="fr"><label>${JP.grade}</label><select class="fs" id="pf-grade">${gradeOpts}</select></div>
           <div class="fr"><label>${JP.cls} ID</label><select class="fs" id="pf-cls">${clsOpts}</select></div>
           <div class="fr"><label>${JP.pp}</label><input class="fi" id="pf-pp" type="number" value="${s.privatePoints}" /></div>
-          <div class="fr"><label class="label-faded">${JP.protect}</label><input class="fi" id="pf-prot" type="number" value="${s.protectPoints}" min="0" /></div>
+          <div class="fr"><label>${JP.protect}</label><input class="fi" id="pf-prot" type="number" value="${s.protectPoints}" min="0" /></div>
         </div>
 
         <div class="prof-sec">
@@ -1327,17 +1335,41 @@ window.deleteStudentFromProfile=function(sid){
 };
 
 /* ──────────────────────────────────────────────────────────────────
-   RANKING PAGE
+   RANKING PAGE — v6.2
+   Podium (TOP 3) rendered first at the top with grade + class name.
+   Full table follows below.
 ────────────────────────────────────────────────────────────────── */
 function renderRankingPage(){
   const ranked=computeRanking();
+  const medals=['🥇','🥈','🥉'];
+
   let h=`
     <button class="back-btn" onclick="goBack()">◀ 戻る</button>
     <div class="pg-hdr">
       <span class="pg-title">🏆 ${JP.ranking} TOP ${TOP_N}</span>
       <span class="pg-sub">全生徒PP降順 · 同PP=同順位</span>
-    </div>
-    <div class="rnk-wrap">
+    </div>`;
+
+  /* ── Podium: TOP 3 at the top ── */
+  if(ranked.length){
+    h+=`<div class="medal-row">`;
+    ranked.slice(0,Math.min(3,ranked.length)).forEach(({rank,student:s},i)=>{
+      const gd=typeof s.grade==='number'?JP.gradeN(s.grade):(s.grade==='Graduate'?'卒業生':'入学予定');
+      const cd=typeof s.grade==='number'?clsName(s.grade,s.classId):'―';
+      h+=`
+        <div class="medal-card" style="cursor:pointer" onclick="navigate('profile',{sid:'${s.id}'},false)">
+          <div class="medal-rnk">${medals[i]} 第${rank}位</div>
+          <div class="medal-name">${esc(s.name)||'(未記入)'}</div>
+          <div class="medal-sub">${gd} &nbsp;${esc(cd)}</div>
+          <div class="medal-pp">${s.privatePoints.toLocaleString()} PP</div>
+        </div>`;
+    });
+    h+=`</div>`;
+  }
+
+  /* ── Full table ── */
+  h+=`
+    <div class="rnk-wrap" style="margin-top:10px">
       <table class="rnk-tbl">
         <thead><tr>
           <th style="text-align:right">順位</th>
@@ -1360,17 +1392,6 @@ function renderRankingPage(){
     </tr>`;
   });
   h+=`</tbody></table></div>`;
-  if(ranked.length){
-    const medals=['🥇','🥈','🥉'];
-    h+=`<div class="medal-row">
-      ${ranked.slice(0,Math.min(3,ranked.length)).map(({rank,student:s},i)=>`
-        <div class="medal-card">
-          <div class="medal-rnk">${medals[i]} 第${rank}位</div>
-          <div class="medal-name">${esc(s.name)||'(未記入)'}</div>
-          <div class="medal-pp">${s.privatePoints.toLocaleString()} PP</div>
-        </div>`).join('')}
-    </div>`;
-  }
   return h;
 }
 

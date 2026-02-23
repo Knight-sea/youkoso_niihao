@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════════════
-   Cote-OS v6.1  ·  Stylesheet
+   Cote-OS v6.2  ·  Stylesheet
    Themes: classic | light | dark
    Fixes vs v5.3:
    • Gear tray uses overflow:visible so theme flyout is not clipped
@@ -377,7 +377,7 @@ input,select,textarea{font-family:var(--fm)}
   padding:1px 8px;font-family:var(--fd);font-size:.62rem;letter-spacing:.1em;
 }
 .hm-right{margin-left:auto;display:flex;gap:10px}
-.hm-link{cursor:pointer;color:var(--yw)}
+.hm-link{cursor:pointer;color:var(--ac)}
 .hm-link:hover{text-decoration:underline}
 .hm-link-cls{color:var(--ac)}
 .hm-link-cls:hover{text-decoration:underline}
@@ -679,8 +679,6 @@ input,select,textarea{font-family:var(--fm)}
 .prof-pp.pos{color:var(--gn)}
 .prof-pp.neg{color:var(--rd)}
 .prof-pplbl{font-size:.58rem;color:var(--t3)}
-.prof-prot{font-family:var(--fm);font-size:.75rem;color:var(--t2);margin-top:4px;letter-spacing:.03em}
-.prof-prot.active{color:var(--yw)}
 .label-faded{color:var(--t2)!important;font-style:italic}
 
 .info-tbl{width:100%;border-collapse:collapse;margin-top:8px}
@@ -816,11 +814,19 @@ input,select,textarea{font-family:var(--fm)}
 .cls-rnk-tbl .rk-nm{cursor:pointer;color:var(--ac)}
 .cls-rnk-tbl .rk-nm:hover{text-decoration:underline}
 
-/* Fix profile protect points to match info-tbl typography */
-.prof-prot{
-  font-size:.71rem;color:var(--t2);margin-top:4px;letter-spacing:.03em;
+/* Ranking page podium sub-line (grade + class name) */
+.medal-sub{
+  font-size:.67rem;color:var(--t2);margin-top:1px;margin-bottom:3px;
+  font-family:var(--fm);letter-spacing:.03em;
 }
-.prof-prot.active{color:var(--yw)!important;font-family:var(--fm)}
+
+/* Profile sidebar protect points — v5.5 style restored */
+.prof-prot{
+  font-family:var(--fm);font-size:.75rem;color:var(--t2);
+  margin-top:4px;letter-spacing:.03em;
+}
+.prof-prot.active{color:var(--yw)}
+.prof-prot-unit{opacity:.8}
 
 /* ═══════════════════════════════════════════════════════════════
    LOADING SCREEN
