@@ -1,13 +1,16 @@
 /* ================================================================
-   Cote-OS v6.2  ·  app.js
+   Cote-OS v6.4  ·  app.js
    ─────────────────────────────────────────────────────────────────
-   Changes vs v6.1:
-   • Class page: PP付与/PP剥奪 preserve selectMode + selectedIds
-   • Ranking TOP100: podium moved to top, grade+class shown on cards
-   • Static class names applied to ALL grades 1-6, doGradeUp fixed
-   • Profile sidebar: protect points restored to v5.5 .prof-prot div
-   • Profile main basic-info: protect points label/input use .fr style
-   • APP_VER bumped to 6.2
+   Changes vs v6.3:
+   • HISTORY_MAX increased from 60 to 120
+   • renderHistory() overhauled: vertical list showing Year, Month,
+     Class Count, Student Count per entry
+   • resetSlot(): now sets state = null before regenerating, so
+     saveState() guard (if (!state) return) prevents ghost saves
+   • saveState(): guard added at top — if (!state) return
+   • updateSlotButtons(): strict active/has-data/none logic
+   • Profile sidebar "プロフィール" header color → var(--t1)
+   • APP_VER bumped to 6.4
    ================================================================ */
 'use strict';
 
@@ -19,10 +22,10 @@ const CLASS_IDS   = [0, 1, 2, 3, 4];
 const RANK_LABELS = ['A', 'B', 'C', 'D', 'E'];
 const STATS_KEYS  = ['language', 'reasoning', 'memory', 'thinking', 'physical', 'mental'];
 const MONTHS_JP   = ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'];
-const HISTORY_MAX = 60;
+const HISTORY_MAX = 120;
 const NUM_SLOTS   = 5;
 const TOP_N       = 100;
-const APP_VER     = '6.2';
+const APP_VER     = '6.4';
 const THEME_KEY   = 'CoteOS_theme';
 
 const slotKey = n => `CoteOS_v3_Slot${n}`;
@@ -262,7 +265,6 @@ function gradePrefix(grade){
 }
 function genStudentId(grade){
   const pfx=gradePrefix(grade);
-  // find all used sequence numbers for this grade's prefix
   const used=new Set(
     state.students
       .filter(s=>typeof s.grade==='number'&&s.grade===grade&&s.id&&s.id.startsWith(pfx))
@@ -271,7 +273,7 @@ function genStudentId(grade){
   );
   let seq=1;
   while(used.has(seq)) seq++;
-  if(seq>9999){seq=state.nextId++;} // fallback
+  if(seq>9999){seq=state.nextId++;}
   return pfx+String(seq).padStart(4,'0');
 }
 
@@ -335,7 +337,6 @@ function blankClass(grade,classId,rankLabel){
 
 function generateInitialData(){
   Object.assign(state,{students:[],classes:[],nextId:1,year:1,month:4,history:[]});
-  // Classes are created in order A-E per grade (classId 0=A,1=B,...4=E by default)
   GRADES.forEach(g=>CLASS_IDS.forEach(c=>{
     state.classes.push(blankClass(g,c,RANK_LABELS[c]));
   }));
@@ -390,7 +391,13 @@ function computeClassRanking(){
     .sort((a,b)=>b.classPoints!==a.classPoints?b.classPoints-a.classPoints:
       (a.grade!==b.grade?a.grade-b.grade:a.classId-b.classId));
 }
+
+/* ──────────────────────────────────────────────────────────────────
+   SAVE / LOAD — v6.4 fixes
+────────────────────────────────────────────────────────────────── */
 function saveState(silent=false){
+  /* v6.4: guard — do not save if state is null (e.g. mid-reset) */
+  if(!state) return;
   try{
     localStorage.setItem(slotKey(currentSlot),JSON.stringify(state));
     updateSlotButtons();
@@ -410,15 +417,33 @@ function switchSlot(n){
   updateSlotButtons(); updateDateDisplay(); navigate('home',{},true);
   toast(`スロット${n}に切り替えました`);
 }
+
+/* v6.4: resetSlot — sets state = null first so saveState guard fires;
+   then regenerates and saves fresh data. */
 function resetSlot(){
   localStorage.removeItem(slotKey(currentSlot));
-  state=newState(); generateInitialData(); saveState(true);
+  state = null;                   /* ← v6.4: nullify before regen */
+  state = newState();
+  generateInitialData();
+  saveState(true);
 }
+
+/* ──────────────────────────────────────────────────────────────────
+   SLOT BUTTONS — v6.4
+   Visual logic:
+     s === currentSlot  → .active (cyan dot, always wins)
+     data in localStorage && s !== currentSlot → .has-data (green dot)
+     otherwise → no dot class
+────────────────────────────────────────────────────────────────── */
 function updateSlotButtons(){
   document.querySelectorAll('.sl').forEach(b=>{
-    const n=+b.dataset.slot;
-    b.classList.toggle('active',n===currentSlot);
-    b.classList.toggle('has-data',slotHasData(n));
+    const s=+b.dataset.slot;
+    b.classList.remove('active','has-data');
+    if(s===currentSlot){
+      b.classList.add('active');
+    } else if(slotHasData(s)){
+      b.classList.add('has-data');
+    }
   });
   const chip=document.getElementById('slot-chip');
   if(chip) chip.textContent=`スロット ${currentSlot}`;
@@ -583,16 +608,11 @@ function doGradeUp(){
   state.students.forEach(s=>{if(s.grade===6)s.grade='Graduate';});
   for(let g=5;g>=1;g--) state.students.forEach(s=>{if(s.grade===g)s.grade=g+1;});
   state.students.forEach(s=>{if(s.grade==='Incoming')s.grade=1;});
-  /* Promote classes grades 1-5 → 2-6, preserving static name and customName.
-     If a carried class lacks a static name, assign one now for the new grade. */
   const kept=state.classes.filter(c=>c.grade<6).map(c=>{
     const newGrade=c.grade+1;
-    const nm=c.name||JP.clsDef(c.grade,RANK_LABELS[c.classId]||'A');
-    /* Re-derive static name for the new grade if no customName is set */
     const newStaticName=c.customName?c.name:JP.clsDef(newGrade,RANK_LABELS[c.classId]||'A');
     return {...c,grade:newGrade,name:newStaticName};
   });
-  /* Fresh grade-1 classes with static names locked in */
   CLASS_IDS.forEach(id=>kept.push(blankClass(1,id,RANK_LABELS[id])));
   state.classes=kept;
 }
@@ -614,8 +634,7 @@ function undoGradeUp(snap){
 }
 
 /* ──────────────────────────────────────────────────────────────────
-   GEAR MENU — v5.4/5.5 rules:
-   Only #gear-btn toggles. Internal clicks stopPropagation.
+   GEAR MENU
 ────────────────────────────────────────────────────────────────── */
 let gearOpen     = false;
 let themeFlyOpen = false;
@@ -720,6 +739,7 @@ function updateDateDisplay(){
 }
 function renderPage(page,params){
   const app=document.getElementById('app');
+  if(!app) return;
   switch(page){
     case 'home':         app.innerHTML=renderHome(); break;
     case 'grade':        app.innerHTML=renderGrade(params.grade); break;
@@ -825,32 +845,36 @@ window.execHomeDist=function(grade,classId,amt){
 };
 
 /* ──────────────────────────────────────────────────────────────────
-   HISTORY PAGE
+   HISTORY PAGE — v6.4: vertical list with Year, Month, Class Count,
+   Student Count per entry.
 ────────────────────────────────────────────────────────────────── */
 function renderHistory(){
   const snaps=state.history;
   let h=`
     <button class="back-btn" onclick="goBack()">◀ 戻る</button>
     <div class="pg-hdr">
-      <span class="pg-title">📋 ${JP.history}</span>
+      <span class="pg-title">${JP.history}</span>
       <span class="pg-sub">${snaps.length} / ${HISTORY_MAX} スナップショット</span>
     </div>`;
-  if(!snaps.length){ h+=`<div class="hist-empty">月を進めると履歴が記録されます。</div>`; return h; }
-  h+=`<div class="hist-pg-grid">`;
+
+  if(!snaps.length){
+    h+=`<div class="hist-empty">月を進めると履歴が記録されます。</div>`;
+    return h;
+  }
+
+  h+=`<div class="hist-list">`;
   snaps.forEach((snap,idx)=>{
-    const cpRows=(snap.classPoints||[]).slice(0,10).map(e=>{
-      const cls=state.classes.find(c=>c.grade===e.grade&&c.classId===e.classId);
-      const nm=cls?.customName||JP.clsDef(e.grade,RANK_LABELS[e.classId]||'?');
-      return `<div class="hist-cp-row"><span class="hist-cp-nm">${esc(nm)}</span><span class="hist-cp-val">${(e.cp||0).toLocaleString()} CP</span></div>`;
-    }).join('');
-    const more=(snap.classPoints||[]).length>10?`<div class="dim" style="font-size:.62rem;margin-top:3px">+${snap.classPoints.length-10}クラス…</div>`:'';
+    /* Count distinct classes that have data in this snapshot */
+    const clsCount=(snap.classPoints||[]).length;
+    /* Count students recorded in this snapshot */
+    const stuCount=(snap.studentPP||[]).length;
+
     h+=`
-      <div class="hist-snap">
-        <div class="hist-snap-hdr">
-          <span class="hist-snap-date">${fmtDate(snap.year,snap.month)}</span>
-          <span class="hist-snap-cnt">#${snaps.length-idx}</span>
-        </div>
-        <div class="hist-cp-list">${cpRows}${more}</div>
+      <div class="hist-row">
+        <div class="hist-row-date">Year ${snap.year} &nbsp;·&nbsp; ${MONTHS_JP[snap.month-1]}</div>
+        <div class="hist-row-idx">#${snaps.length-idx}</div>
+        <div class="hist-row-cls"><span>${clsCount}</span> クラス</div>
+        <div class="hist-row-stu"><span>${stuCount}</span> 名</div>
       </div>`;
   });
   h+=`</div>`;
@@ -858,9 +882,7 @@ function renderHistory(){
 }
 
 /* ──────────────────────────────────────────────────────────────────
-   GRADE PAGE — v5.5
-   kp-strip layout: horizontal scroll (v5.3 style restored).
-   kp-card: [Name flex:1] [PP] [PRP if >0]
+   GRADE PAGE
 ────────────────────────────────────────────────────────────────── */
 function renderGrade(grade){
   const ranked=getRanked(grade);
@@ -876,7 +898,7 @@ function renderGrade(grade){
   ranked.forEach((cls,ri)=>{
     const rank=RANK_LABELS[ri], nm=clsName(grade,cls.classId);
     const sts=getStudentsOf(grade,cls.classId).filter(s=>!s.isExpelled);
-    const kp=sts.slice(0,5);  /* v6.1: show up to 5 students per strip */
+    const kp=sts.slice(0,5);
     h+=`
       <div class="cls-row bl${rank}">
         <div class="cls-row-hdr" onclick="navigate('class',{grade:${grade},classId:${cls.classId}},false)">
@@ -928,11 +950,7 @@ window.execRandomizeGrade=function(grade){
 };
 
 /* ──────────────────────────────────────────────────────────────────
-   CLASS PAGE — v5.5
-   Bulk bar changes:
-   • "解除" → "全解除"
-   • New "PP剥奪" button (shares same amount input with "PP付与")
-   • Both buttons use id="blk-pp" input
+   CLASS PAGE — v6.2/6.3/6.4
 ────────────────────────────────────────────────────────────────── */
 function renderClass(grade,classId){
   const cls=getCls(grade,classId), rank=rankOf(grade,classId), nm=clsName(grade,classId);
@@ -977,8 +995,8 @@ function renderClass(grade,classId){
         <input type="number" class="fi bulk-inp" id="blk-pp" placeholder="PP量" min="0"
                value="${escA(String(bulkPPValue))}"
                oninput="bulkPPValue=this.value" />
-        <button class="btn btn-sm btn-ac" onclick="applyBulkGive(${grade},${classId})">PP付与</button>
-        <button class="btn btn-sm btn-ac" onclick="applyBulkSeize(${grade},${classId})">PP剥奪</button>
+        <button class="btn btn-sm btn-ac" onclick="applyBulkGive(${grade},${classId})"><span class="cls-pp-lbl">PP</span>付与</button>
+        <button class="btn btn-sm btn-ac" onclick="applyBulkSeize(${grade},${classId})"><span class="cls-pp-lbl">PP</span>剥奪</button>
         <button class="btn btn-sm btn-dn" onclick="confirmBulkDelete(${grade},${classId})">選択した生徒を削除</button>
       `:''}
     </div>
@@ -1029,7 +1047,6 @@ function renderCards(students){
 
 window.cardClick=function(sid){
   if(selectMode){
-    /* Capture current input value before re-render */
     const inp=document.getElementById('blk-pp');
     if(inp) bulkPPValue=inp.value;
     selectedIds.has(sid)?selectedIds.delete(sid):selectedIds.add(sid);
@@ -1039,7 +1056,7 @@ window.cardClick=function(sid){
 window.toggleSel=(g,c)=>{
   selectMode=!selectMode;
   selectedIds=new Set();
-  if(!selectMode) bulkPPValue=''; /* clear persisted value when exiting select mode */
+  if(!selectMode) bulkPPValue='';
   renderPage('class',{grade:g,classId:c});
 };
 window.selAll=(g,c)=>{
@@ -1053,7 +1070,7 @@ window.deselAll=(g,c)=>{
   renderPage('class',{grade:g,classId:c});
 };
 
-/* ── PP付与 (give) — adds amount immediately; keeps selectMode active ── */
+/* ── PP付与 (give) — v6.2: keeps selectMode active ── */
 window.applyBulkGive=function(grade,classId){
   const inp=document.getElementById('blk-pp');
   if(inp) bulkPPValue=inp.value;
@@ -1061,12 +1078,11 @@ window.applyBulkGive=function(grade,classId){
   if(isNaN(amt)||amt<0){toast('✗ 0以上の数値を入力してください','err');return;}
   if(!selectedIds.size){toast('✗ 生徒が選択されていません','err');return;}
   let n=0; selectedIds.forEach(id=>{const s=state.students.find(x=>x.id===id);if(s){s.privatePoints+=amt;n++;}});
-  /* v6.2: stay in select mode — do NOT reset selectMode/selectedIds/bulkPPValue */
   saveState(true); renderPage('class',{grade,classId});
   toast(`✓ ${n}名に +${amt.toLocaleString()} PP を付与`,'ok');
 };
 
-/* ── PP剥奪 (seize) — subtracts immediately, clamps at 0; keeps selectMode active ── */
+/* ── PP剥奪 (seize) — v6.2: keeps selectMode active ── */
 window.applyBulkSeize=function(grade,classId){
   const inp=document.getElementById('blk-pp');
   if(inp) bulkPPValue=inp.value;
@@ -1077,7 +1093,6 @@ window.applyBulkSeize=function(grade,classId){
     const s=state.students.find(x=>x.id===id);
     if(s){ s.privatePoints=Math.max(0, s.privatePoints-amt); n++; }
   });
-  /* v6.2: stay in select mode — do NOT reset selectMode/selectedIds/bulkPPValue */
   saveState(true); renderPage('class',{grade,classId});
   toast(`✓ ${n}名から ${amt.toLocaleString()} PP を剥奪`,'warn');
 };
@@ -1129,7 +1144,9 @@ window.addStudent=function(grade,classId){
 };
 
 /* ──────────────────────────────────────────────────────────────────
-   PROFILE PAGE
+   PROFILE PAGE — v6.3/v6.4
+   • プロフィール header + separator at top of prof-side
+   • header color now var(--t1) via CSS (changed in stylesheet)
 ────────────────────────────────────────────────────────────────── */
 function renderProfile(sid){
   const s=state.students.find(x=>x.id===sid);
@@ -1175,6 +1192,8 @@ function renderProfile(sid){
     <button class="back-btn" onclick="goBack()">◀ 戻る</button>
     <div id="prof-wrap">
       <div class="prof-side">
+        <div class="prof-side-hdr">プロフィール</div>
+        <hr class="prof-side-sep" />
         <div class="prof-name">${esc(s.name)||'(未記入)'}</div>
         <div class="prof-sid">${s.id}</div>
         <span class="badge ${badgeCls}">${statusLabel}</span>
@@ -1335,9 +1354,7 @@ window.deleteStudentFromProfile=function(sid){
 };
 
 /* ──────────────────────────────────────────────────────────────────
-   RANKING PAGE — v6.2
-   Podium (TOP 3) rendered first at the top with grade + class name.
-   Full table follows below.
+   RANKING PAGE — v6.2/6.3/6.4
 ────────────────────────────────────────────────────────────────── */
 function renderRankingPage(){
   const ranked=computeRanking();
@@ -1396,14 +1413,12 @@ function renderRankingPage(){
 }
 
 /* ──────────────────────────────────────────────────────────────────
-   CLASS RANKING PAGE — v6.1
-   Full-page view of all 30 classes sorted by CP descending.
+   CLASS RANKING PAGE — v6.1/6.3/6.4
 ────────────────────────────────────────────────────────────────── */
 function renderClassRankingPage(){
   const clsRanked=computeClassRanking();
   const medals=['🥇','🥈','🥉'];
 
-  /* Build proper rank numbers (ties share same rank) */
   const rows=[];
   let lastCP=null, lastRank=1;
   clsRanked.forEach((cls,i)=>{
@@ -1419,7 +1434,6 @@ function renderClassRankingPage(){
       <span class="pg-sub">全30クラス CP降順 · 同CP=同順位</span>
     </div>`;
 
-  /* Top-3 medal cards */
   if(rows.length){
     h+=`<div class="medal-row">`;
     rows.slice(0,Math.min(3,rows.length)).forEach(({rank,cls},i)=>{
@@ -1532,9 +1546,7 @@ function afterRender(){
 }
 
 /* ──────────────────────────────────────────────────────────────────
-   EVENT BINDINGS — v5.5
-   Gear tray never closes on internal clicks.
-   Only #gear-btn toggles the tray.
+   EVENT BINDINGS
 ────────────────────────────────────────────────────────────────── */
 function bindEvents(){
   /* Time navigation */
