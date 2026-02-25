@@ -1,26 +1,27 @@
 /* ================================================================
-   Cote-OS v7.6  ·  app.js
+   Cote-OS v7.7  ·  app.js  "Typography & Consistency"
    ─────────────────────────────────────────────────────────────────
-   Changes vs v7.5:
-   • APP_VER → '7.6'
-   • boot(): Guest Mode boot now calls generateInitialData() so the
-     Home screen is populated with 1,200 blank students on first load
-   • RADAR_LABELS: new const — suffix-stripped labels for drawProfileRadar
-     [言語,推論,記憶,思考,身体,精神] instead of JP keys with 力/能力
-   • drawProfileRadar: uses RADAR_LABELS; labelOffset increased from
-     r+13 to r+22 to prevent text/line overlap at all canvas sizes
-   • computeRankingBy: filters pool to active enrolled students only
-     (typeof grade === 'number' && !isExpelled) — excludes Incoming
-     and Graduate from Top-100 and any per-student overall calc
-   • renderRankingPage: pool used for overall score also uses active
-     pool so percentile rank is consistent with the filtered set
-   • computeClassRanking: unchanged (class points are structural)
-   • incomingCollapsedState: new module-level Map — persists collapsed/
-     expanded status of each cohort ID across re-renders; toggleCohort
-     writes to it; renderIncoming reads it to restore panel state
-   • randomizeIncomingCohort: confirmed emoji-free (uses genStudentName)
-   • renderHome: 🎮 emoji removed from guest mode label
-   • RANK_SORT_ITEMS labels: 力 suffix stripped to match table headers
+   Changes vs v7.6:
+   • APP_VER → '7.7'
+   • fmtDate: output changed from "Year X · 4月" to "Year X, Month Y"
+     (pure numeric month — no MONTHS_JP lookup needed for taskbar)
+   • drawProfileRadar: labelOffset set to exactly r+18 per spec
+     (was r+22 in v7.6; r+18 is the agreed visible-separation value)
+   • Ranking table td builder: stale 'rnk-num' class removed; all
+     numeric data cols (PP, PRP, stats, overall) now get 'rk-num'
+     (CSS v7.7 .rk-num = Orbitron font); .rk-pp keeps green colour
+   • Grade screen "ランダム生成" btn-yw: 🎲 emoji removed from both
+     the button label and the confirmRandomizeGrade modal title
+   • graduatesCollapsedState: new module-level Map (mirrors
+     incomingCollapsedState); persists collapse state of each
+     graduate year-cohort accordion panel across re-renders
+   • renderGraduates: reads graduatesCollapsedState to restore
+     collapsed class + arrow char when rebuilding HTML on re-render;
+     new panels default to open (not collapsed)
+   • toggleCohort: now writes to BOTH Maps keyed by id prefix —
+     graduate cohort IDs start with "Year-" or "卒業年不明",
+     incoming cohort IDs start with "inc-"; each Map is written
+     independently so the two screens don't interfere
    ================================================================ */
 'use strict';
 
@@ -38,7 +39,7 @@ const MONTHS_JP   = ['1月','2月','3月','4月','5月','6月','7月','8月','9�
 const HISTORY_MAX = 120;
 const NUM_SLOTS   = 12;
 const TOP_N       = 100;
-const APP_VER     = '7.6';
+const APP_VER     = '7.7';
 const THEME_KEY   = 'CoteOS_theme';
 const SLOT_META_KEY = 'CoteOS_v7_SlotMeta';
 const BGM_KEY       = 'CoteOS_v7_BGM';
@@ -401,7 +402,8 @@ function toast(msg,cls='',ms=2800){
   el.textContent=msg; el.className=cls?`on ${cls}`:'on';
   clearTimeout(toast._t); toast._t=setTimeout(()=>{ el.className=''; },ms);
 }
-function fmtDate(y,m){ return `Year ${y} · ${MONTHS_JP[m-1]}`; }
+/* v7.7: date format changed from "Year X · 4月" to "Year X, Month Y" */
+function fmtDate(y,m){ return `Year ${y}, Month ${m}`; }
 
 function fmtPP(v){
   const a=Math.abs(v);
@@ -1549,7 +1551,7 @@ function renderGrade(grade){
         <span class="pg-title">${JP.gradeN(grade)}</span>
         <span class="pg-sub">クラス順位 · ${fmtDate(state.year,state.month)}</span>
       </div>
-      <button class="btn btn-yw" onclick="confirmRandomizeGrade(${grade})">🎲 ランダム生成</button>
+      <button class="btn btn-yw" onclick="confirmRandomizeGrade(${grade})">ランダム生成</button>
     </div>`;
   ranked.forEach((cls,ri)=>{
     const rank=RANK_LABELS[ri], nm=clsName(grade,cls.classId);
@@ -1587,7 +1589,7 @@ function renderGrade(grade){
 window.confirmRandomizeGrade=function(grade){
   const total=state.students.filter(s=>s.grade===grade&&!s.isExpelled).length;
   openModal(`
-    <div class="m-title">🎲 ${JP.gradeN(grade)} ランダム生成</div>
+    <div class="m-title">${JP.gradeN(grade)} ランダム生成</div>
     <div class="m-body">
       <p><strong style="color:var(--yw)">${JP.gradeN(grade)}</strong> の在籍生徒
          <strong style="color:var(--ac)">${total}名</strong> の<br>
@@ -2051,9 +2053,9 @@ function drawProfileRadar(){
   const w=canvas.width, h=canvas.height;
   const cx=w/2, cy=h/2;
   // v7.1: tighter radius so labels don't clip at smaller size
-  // v7.6: labelOffset increased r+13 → r+22 for clean label separation
+  // v7.7: labelOffset set to exactly r+18 per spec (was r+22 in v7.6)
   const r=Math.min(w,h)*0.32;
-  const labelOffset=r+22;
+  const labelOffset=r+18;
 
   const vals=STATS_KEYS.map(k=>clampStat(s.stats?.[k]));
   const count=STATS_KEYS.length;
@@ -2217,6 +2219,12 @@ let rankingSortKey='pp';
    Lives at module level so it survives navigate / renderApp calls.    */
 const incomingCollapsedState = new Map();
 
+/* v7.7: graduatesCollapsedState — identical mechanism for the Graduates
+   screen. Key = cohortId string (e.g. "Year-3" or "卒業年不明"),
+   value = true means collapsed. Populated by toggleCohort (shared
+   function); read by renderGraduates to restore state on re-render.  */
+const graduatesCollapsedState = new Map();
+
 function rankSortLabel(key){
   const it=RANK_SORT_ITEMS.find(x=>x.key===key);
   return it?it.label:'PP';
@@ -2364,19 +2372,21 @@ function renderRankingPage(){
     const tds = RNK_COLS.map(c=>{
       const isActive = c.key && c.key===rankingSortKey;
       const activeCls = isActive ? ' stat-active' : '';
-      let content='', tdCls=(c.tdCls||'')+top3+activeCls;
       switch(c.cls){
         case 'col-rank':
-          /* v7.5: rnk-num for monospace font */
-          return `<td class="rn rnk-num${top3}">${rank}</td>`;
+          /* .rn already carries Orbitron; no extra class needed */
+          return `<td class="rn${top3}">${rank}</td>`;
         case 'col-name':
           return `<td class="rk-nm td-left${activeCls}" onclick="navigate('profile',{sid:'${s.id}'},false)">${esc(s.name)||'<span class="dim">(未記入)</span>'}</td>`;
         case 'col-class':
           return `<td class="td-left${activeCls}" style="font-size:.68rem;color:var(--t1)">${gd} / ${esc(cd)}</td>`;
-        default:
-          content = sv(c.key);
-          /* v7.5: numeric data cols (PP, PRP, stats, overall) get rnk-num */
-          return `<td class="${(c.tdCls||'').trim()} rnk-num${activeCls}">${content}</td>`;
+        default:{
+          /* v7.7: all numeric data cols get rk-num (Orbitron via CSS).
+             PP column additionally gets rk-pp for its green colour.   */
+          const base = (c.tdCls||'').trim();
+          const cls  = base ? `${base} rk-num${activeCls}` : `rk-num${activeCls}`;
+          return `<td class="${cls}">${sv(c.key)}</td>`;
+        }
       }
     }).join('');
 
@@ -2498,14 +2508,23 @@ function renderGraduates(){
   sortedYears.forEach(yrKey=>{
     const cohort=byYear[yrKey];
     const cohortId=yrKey.replace(/\s+/g,'-');
+
+    /* v7.7: restore collapsed state from persistent Map.
+       Default is OPEN (not collapsed) for new/unseen cohorts.      */
+    const isCollapsed = graduatesCollapsedState.get(cohortId) === true;
+    const bodyClass   = isCollapsed
+      ? 'cohort-body s-grid cohort-collapsed'
+      : 'cohort-body s-grid';
+    const arrowChar   = isCollapsed ? '▶' : '▼';
+
     h+=`
       <div class="cohort-block" id="cohort-${cohortId}">
         <div class="cohort-hdr" onclick="toggleCohort('${cohortId}')">
           <span class="cohort-yr">${yrKey} 卒業</span>
           <span class="cohort-cnt">${cohort.length}名</span>
-          <span class="cohort-arrow">▼</span>
+          <span class="cohort-arrow">${arrowChar}</span>
         </div>
-        <div class="cohort-body s-grid" id="cohort-body-${cohortId}" onclick="event.stopPropagation()">`;
+        <div class="${bodyClass}" id="cohort-body-${cohortId}" onclick="event.stopPropagation()">`;
     cohort.forEach(s=>{
       const hasPrp=s.protectPoints>0;
       h+=`
@@ -2540,8 +2559,14 @@ window.toggleCohort=function(id){
   body.classList.toggle('cohort-collapsed', isOpen);
   const arrow = block.querySelector('.cohort-arrow');
   if(arrow) arrow.textContent = isOpen ? '▶' : '▼';
-  /* v7.6: persist state — true means collapsed */
-  incomingCollapsedState.set(id, isOpen);
+  /* v7.7: route to the correct persistence Map by ID prefix.
+     Incoming cohort IDs are "inc-N"; graduate cohort IDs are
+     "Year-N" or "卒業年不明". Both Maps use true = collapsed. */
+  if(id.startsWith('inc-')){
+    incomingCollapsedState.set(id, isOpen);
+  } else {
+    graduatesCollapsedState.set(id, isOpen);
+  }
 };
 
 /* ── Incoming — grouped by cohort grade, with Create/Delete ── */

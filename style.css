@@ -1,15 +1,19 @@
 /* ═══════════════════════════════════════════════════════════════
-   Cote-OS v7.6  ·  Stylesheet
+   Cote-OS v7.7  ·  Stylesheet  "Typography & Consistency"
    Themes: classic | light | dark
-   Changes vs v7.5:
-   • .rnk-num rule removed — ranking numeric cells revert to the
-     standard table font (var(--fm) at .72rem, no extra class needed).
-     PP/PRP/stat/overall columns all use the same clean base font.
-   • .ov-score-val: font-size restored to v7.4 value (1.6rem)
-   • .radar-wrap: padding restored to v7.4 value (6px)
-   • Classic --t3 retained at #2e4e6a (v7.3 brightness, kept)
-   • All v7.5 structural fixes (gear tray, BGM hitbox, z-indices)
-     are preserved unchanged
+   Changes vs v7.6:
+   • Ranking table: .rk-pp font (var(--fd), green) now also applied
+     to ALL numeric data columns via new .rk-num class — PP, PRP,
+     all 6 stat cols, overall. Consistent Orbitron font across row.
+   • .ov-score-val: font-size pushed up to 2.4rem to fill whitespace
+     in the fixed-width .ov-score-block (flex:0 0 70px)
+   • .ov-score-block: padding tightened to 4px 2px to give score max
+     room; label and sub text reduced slightly
+   • .radar-wrap: padding reduced 6px → 4px (chart size unchanged;
+     label offset increase handled in JS at r+18)
+   • Classic --t3: #2e4e6a retained (v7.3 brightness for student IDs)
+   • Date format: JS fmtDate outputs "Year X, Month Y" — CSS
+     #date-display letter-spacing adjusted for new format
    ═══════════════════════════════════════════════════════════════ */
 
 /* ── THEME: Classic ──────────────────────────────────────────── */
@@ -179,7 +183,8 @@ input,select,textarea{font-family:var(--fm)}
 }
 #date-display{
   font-family:var(--fd);font-size:.78rem;color:var(--ac);
-  letter-spacing:.1em;text-align:center;white-space:nowrap;
+  letter-spacing:.05em; /* v7.7: reduced .1→.05em — "Year X, Month Y" is wider */
+  text-align:center;white-space:nowrap;
 }
 /* v7.1: slot chip — Japanese only, no "· Slot N" suffix */
 #slot-chip{font-size:.57rem;color:var(--t2);letter-spacing:.06em}
@@ -979,6 +984,15 @@ input,select,textarea{font-family:var(--fm)}
    standard .rnk-tbl td base: font-family:var(--fm), font-size:.72rem.
    This is the clean v7.4 style applied consistently to all columns. */
 
+/* v7.7: .rk-num — Orbitron font applied to ALL numeric data columns
+   in the Top-100 table: PP, PRP, 言語, 推論, 記憶, 思考, 身体, 精神, 総合.
+   JS adds this class to every non-name/non-class td.
+   .rk-pp retains its green colour on top of this base.            */
+.rnk-tbl td.rk-num{
+  font-family:var(--fd);
+  font-size:.72rem;
+  letter-spacing:.01em;
+}
 .rn{font-family:var(--fd);font-size:.8rem;color:var(--t0);text-align:right;padding-right:10px!important}
 .rn.top3{color:var(--yw)}
 .rk-pp{font-family:var(--fd);color:var(--gn)}
@@ -1104,21 +1118,22 @@ input,select,textarea{font-family:var(--fm)}
 .ov-score-block{
   flex:0 0 70px;
   display:flex;flex-direction:column;align-items:center;justify-content:center;
-  background:transparent;border:none;padding:8px 4px;
+  background:transparent;border:none;padding:4px 2px; /* v7.7: tighter padding → more room for score */
 }
-.ov-score-lbl{font-size:.55rem;color:var(--t2);letter-spacing:.09em;margin-bottom:4px}
+.ov-score-lbl{font-size:.52rem;color:var(--t2);letter-spacing:.09em;margin-bottom:2px}
 .ov-score-val{
-  font-family:var(--fd);font-size:1.6rem;font-weight:900;
+  font-family:var(--fd);font-size:2.4rem;font-weight:900; /* v7.7: maximised to fill block */
   color:var(--ac);line-height:1;
 }
-.ov-score-sub{font-size:.55rem;color:var(--t3);margin-top:3px}
+.ov-score-sub{font-size:.52rem;color:var(--t3);margin-top:2px}
 
 /* v7.2: Radar chart — transparent, no border; canvas still constrained */
+/* v7.7: padding 6px → 4px; chart size unchanged; JS label offset r+18 */
 .radar-wrap{
   flex:1;
   display:flex;align-items:center;justify-content:center;
   background:transparent;border:none;
-  padding:6px;
+  padding:4px;
   overflow:hidden;
   min-width:0;
 }
