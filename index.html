@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Cote-OS v6.4</title>
+  <title>Cote-OS v7.6</title>
   <link rel="icon" href="images/favicon.ico" />
   <link rel="preconnect" href="https://fonts.googleapis.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&family=Noto+Sans+JP:wght@300;400;500;700&display=swap" rel="stylesheet" />
@@ -17,7 +17,7 @@
   <!-- LEFT: flex:1 -->
   <div id="tb-left">
     <span id="logo">COTE<span class="ac">OS</span></span>
-    <span id="ver">v6.4</span>
+    <span id="ver">v7.6</span>
     <nav id="breadcrumb" aria-label="パンくずリスト"></nav>
   </div>
 
@@ -35,10 +35,10 @@
   <div id="tb-right">
     <div id="gear-wrap">
 
-      <!-- Tray: slides LEFT on .open — overflow:visible so flyout is not clipped -->
+      <!-- Tray: slides LEFT on .open -->
       <div id="gear-tray" aria-hidden="true">
 
-        <!-- Theme flyout: same width as button, drops downward -->
+        <!-- Theme flyout -->
         <div id="theme-wrap" class="gt-item-wrap">
           <button id="btn-theme" class="gt-btn theme-btn" title="テーマ切替">テーマ</button>
           <div id="theme-flyout" class="gt-flyout" aria-hidden="true">
@@ -48,32 +48,33 @@
           </div>
         </div>
 
-        <!-- History: does NOT close tray -->
+        <!-- History -->
         <button id="btn-history" class="gt-btn hist-btn" title="月次履歴">履歴</button>
 
-        <span class="gt-div"></span>
-
-        <div id="gt-slot-row" role="group" aria-label="セーブスロット">
-          <span class="gt-lbl">スロット</span>
-          <button class="sl" data-slot="1">1</button>
-          <button class="sl" data-slot="2">2</button>
-          <button class="sl" data-slot="3">3</button>
-          <button class="sl" data-slot="4">4</button>
-          <button class="sl" data-slot="5">5</button>
+        <!-- BGM — v7.5: hitbox wraps button + absolutely-positioned slider panel.
+             #bgm-hitbox is position:relative; #bgm-slider-wrap drops below via
+             position:absolute top:100%. Gear tray stays align-items:center.
+             JS toggles .vol-open on #bgm-hitbox to show/hide slider.          -->
+        <div id="bgm-hitbox" class="gt-item-wrap">
+          <button id="btn-bgm" class="gt-btn bgm-btn" title="BGM ON/OFF" aria-label="BGM ON/OFF">♫</button>
+          <!-- Slider panel: absolutely positioned below the button, zero-gap -->
+          <div id="bgm-slider-wrap" aria-hidden="true">
+            <div id="vol-fill-track">
+              <div id="vol-fill-bar"></div>
+            </div>
+            <input type="range" id="bgm-volume" min="0" max="100" value="70"
+                   orient="vertical" aria-label="音量" title="音量" />
+          </div>
         </div>
 
         <span class="gt-div"></span>
 
-        <button id="btn-export" class="gt-btn io-btn" title="書き出し">↓&nbsp;書出</button>
-        <button id="btn-import" class="gt-btn io-btn" title="読み込み">↑&nbsp;読込</button>
+        <!-- Keep Save button in gear menu: opens Save/Load modal -->
+        <button id="btn-save" class="gt-btn sl-btn" title="セーブ">セーブ</button>
 
-        <span class="gt-div"></span>
-
-        <button id="btn-save"  class="gt-btn ac-btn">セーブ</button>
-        <button id="btn-reset" class="gt-btn dn-btn">リセット</button>
       </div><!-- /gear-tray -->
 
-      <!-- Gear toggle — only this opens/closes the tray -->
+      <!-- Gear toggle -->
       <button id="gear-btn" aria-label="設定メニュー" aria-expanded="false" title="設定">⚙</button>
     </div><!-- /gear-wrap -->
 
@@ -85,6 +86,7 @@
 
 <main id="app"></main>
 
+<!-- Standard modal (confirmations, profile actions, etc.) -->
 <div id="modal-overlay" class="hidden" role="dialog" aria-modal="true">
   <div id="modal-box">
     <button id="modal-x" aria-label="閉じる">✕</button>
@@ -92,8 +94,51 @@
   </div>
 </div>
 
+<!-- Save/Load modal (4×3 grid — v7.4: 4×2 control grid; Slot 0 guest play) -->
+<div id="sl-overlay" class="hidden" role="dialog" aria-modal="true" aria-labelledby="sl-title">
+  <div id="sl-box">
+    <div id="sl-header">
+      <span id="sl-title">セーブ／ロード</span>
+    </div>
+
+    <div id="sl-slots" aria-label="データスロット"></div>
+
+    <div id="sl-controls" aria-label="操作パネル">
+      <!-- Row 1: Save · Export · Import · Delete -->
+      <button id="sl-btn-save"   class="sl-act ac">セーブ</button>
+      <button id="sl-btn-export" class="sl-act io">書き出し</button>
+      <button id="sl-btn-import" class="sl-act io">読み込み</button>
+      <button id="sl-btn-delete" class="sl-act dn">削除</button>
+      <!-- Row 2: Play · Play New · [empty] · Back -->
+      <button id="sl-btn-play"     class="sl-act gn">プレイ</button>
+      <button id="sl-btn-new-play" class="sl-act gn sl-act-new"
+              title="スロットを使わずゲストとして1,200名の新規データでプレイ">新しくプレイ</button>
+      <span   class="sl-act-empty"></span>
+      <button id="sl-btn-back"     class="sl-act">戻る</button>
+    </div>
+  </div>
+</div>
+
+<!-- v7.5: Custom UI confirm/alert modal — z-index:1000, above everything including Save modal (z:500).
+     JS populates #uic-title-el, #uic-body, #uic-btn-ok, #uic-btn-cancel and shows/hides. -->
+<div id="uic-overlay" class="hidden" role="dialog" aria-modal="true" aria-labelledby="uic-title-el">
+  <div id="uic-box">
+    <div id="uic-header">
+      <span id="uic-title-el" class="uic-title"></span>
+    </div>
+    <div id="uic-body" class="uic-body"></div>
+    <div id="uic-actions" class="uic-actions">
+      <button id="uic-btn-ok"     class="uic-btn uic-btn-ok">確認</button>
+      <button id="uic-btn-cancel" class="uic-btn uic-btn-cancel">キャンセル</button>
+    </div>
+  </div>
+</div>
+
 <div id="toast" role="status" aria-live="polite"></div>
 
+<script src="https://w.soundcloud.com/player/api.js"></script>
 <script src="app.js"></script>
+
+<iframe id="bgm-player" width="100%" height="300" scrolling="no" frameborder="no" allow="autoplay" src="https://w.soundcloud.com/player/?url=https%3A//api.soundcloud.com/tracks/2272461698&color=%23ff5500&auto_play=false&hide_related=false&show_comments=false&show_user=false&show_reposts=false&show_teaser=false&visual=false" style="display: none;"></iframe>
 </body>
 </html>

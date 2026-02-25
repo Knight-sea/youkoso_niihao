@@ -1,16 +1,26 @@
 /* ================================================================
-   Cote-OS v6.4  ·  app.js
+   Cote-OS v7.6  ·  app.js
    ─────────────────────────────────────────────────────────────────
-   Changes vs v6.3:
-   • HISTORY_MAX increased from 60 to 120
-   • renderHistory() overhauled: vertical list showing Year, Month,
-     Class Count, Student Count per entry
-   • resetSlot(): now sets state = null before regenerating, so
-     saveState() guard (if (!state) return) prevents ghost saves
-   • saveState(): guard added at top — if (!state) return
-   • updateSlotButtons(): strict active/has-data/none logic
-   • Profile sidebar "プロフィール" header color → var(--t1)
-   • APP_VER bumped to 6.4
+   Changes vs v7.5:
+   • APP_VER → '7.6'
+   • boot(): Guest Mode boot now calls generateInitialData() so the
+     Home screen is populated with 1,200 blank students on first load
+   • RADAR_LABELS: new const — suffix-stripped labels for drawProfileRadar
+     [言語,推論,記憶,思考,身体,精神] instead of JP keys with 力/能力
+   • drawProfileRadar: uses RADAR_LABELS; labelOffset increased from
+     r+13 to r+22 to prevent text/line overlap at all canvas sizes
+   • computeRankingBy: filters pool to active enrolled students only
+     (typeof grade === 'number' && !isExpelled) — excludes Incoming
+     and Graduate from Top-100 and any per-student overall calc
+   • renderRankingPage: pool used for overall score also uses active
+     pool so percentile rank is consistent with the filtered set
+   • computeClassRanking: unchanged (class points are structural)
+   • incomingCollapsedState: new module-level Map — persists collapsed/
+     expanded status of each cohort ID across re-renders; toggleCohort
+     writes to it; renderIncoming reads it to restore panel state
+   • randomizeIncomingCohort: confirmed emoji-free (uses genStudentName)
+   • renderHome: 🎮 emoji removed from guest mode label
+   • RANK_SORT_ITEMS labels: 力 suffix stripped to match table headers
    ================================================================ */
 'use strict';
 
@@ -21,14 +31,24 @@ const GRADES      = [1, 2, 3, 4, 5, 6];
 const CLASS_IDS   = [0, 1, 2, 3, 4];
 const RANK_LABELS = ['A', 'B', 'C', 'D', 'E'];
 const STATS_KEYS  = ['language', 'reasoning', 'memory', 'thinking', 'physical', 'mental'];
+/* v7.6: RADAR_LABELS — display labels for drawProfileRadar, strip 力/能力 suffix.
+   Order must match STATS_KEYS exactly.                                            */
+const RADAR_LABELS = ['言語', '推論', '記憶', '思考', '身体', '精神'];
 const MONTHS_JP   = ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'];
 const HISTORY_MAX = 120;
-const NUM_SLOTS   = 5;
+const NUM_SLOTS   = 12;
 const TOP_N       = 100;
-const APP_VER     = '6.4';
+const APP_VER     = '7.6';
 const THEME_KEY   = 'CoteOS_theme';
+const SLOT_META_KEY = 'CoteOS_v7_SlotMeta';
+const BGM_KEY       = 'CoteOS_v7_BGM';
 
-const slotKey = n => `CoteOS_v3_Slot${n}`;
+const slotKey = n => `CoteOS_v7_Slot${n}`;
+
+const STAT_GRADE_TABLE = [
+  null, 'D-', 'D', 'D+', 'C-', 'C', 'C+',
+  'B-', 'B', 'B+', 'A-', 'A', 'A+', 'S-', 'S', 'S+',
+];
 
 const JP = {
   language:'言語力', reasoning:'推論力', memory:'記憶力',
@@ -233,10 +253,26 @@ let state       = null;
 let navStack    = [];
 let selectMode  = false;
 let selectedIds = new Set();
-let bulkPPValue = '';   /* v6.1: persists PP量 input across sel/desel renders */
+let bulkPPValue = '';
+let swapMode    = false;
+let swapDragId  = null;
+
+let slModalOpen     = false;
+let slSelectedSlot  = 1;
+let slNameDrafts    = {};
+
+/* v7.3: Slot 0 — Guest Mode ─────────────────────────────────────
+   currentSlot === 0  ⟹  session is volatile; data lives in state
+   only. saveState() refuses to persist slot 0 unless the user
+   explicitly picks a target slot 1-12 via the Save modal.       */
+let isGuestMode     = false;   // true when currentSlot === 0
+
+let bgmWidget   = null;
+let bgmReady    = false;
+let bgmEnabled  = false;
 
 function newState(){
-  return { year:1, month:4, students:[], classes:[], history:[], nextId:1 };
+  return { year:1, month:4, students:[], classes:[], history:[], nextId:1, slotName:'' };
 }
 
 /* ──────────────────────────────────────────────────────────────────
@@ -257,11 +293,85 @@ function loadTheme(){
 }
 
 /* ──────────────────────────────────────────────────────────────────
+   BGM (SoundCloud Widget)
+────────────────────────────────────────────────────────────────── */
+/* v7.4: syncVolFill — sets --vol-pct on #bgm-slider-wrap so the CSS
+   green fill-bar height matches the current slider value.           */
+function syncVolFill(){
+  const slider=document.getElementById('bgm-volume');
+  const wrap  =document.getElementById('bgm-slider-wrap');
+  if(!slider||!wrap) return;
+  wrap.style.setProperty('--vol-pct', slider.value);
+}
+
+function syncBgmButton(){
+  const btn  = document.getElementById('btn-bgm');
+  const hitbox = document.getElementById('bgm-hitbox');
+  if(!btn) return;
+  btn.classList.toggle('on', !!bgmEnabled);
+  btn.setAttribute('aria-pressed', String(!!bgmEnabled));
+  btn.title = bgmEnabled ? 'BGM ON' : 'BGM OFF';
+  /* v7.5: slider panel uses .vol-open on #bgm-hitbox (bgm-column removed) */
+  if(hitbox){
+    hitbox.classList.toggle('vol-open', !!bgmEnabled);
+    const wrap = document.getElementById('bgm-slider-wrap');
+    if(wrap) wrap.setAttribute('aria-hidden', String(!bgmEnabled));
+  }
+  syncVolFill();
+}
+function setBgmEnabled(on, silent=false){
+  bgmEnabled=!!on;
+  localStorage.setItem(BGM_KEY, bgmEnabled?'1':'0');
+  syncBgmButton();
+  if(bgmReady && bgmWidget){
+    if(bgmEnabled){
+      bgmWidget.play();
+      if(!silent) toast('♪ BGM ON','ok',1400);
+    }else{
+      bgmWidget.pause();
+      if(!silent) toast('♪ BGM OFF','warn',1400);
+    }
+  }
+}
+function toggleBGM(){
+  setBgmEnabled(!bgmEnabled);
+}
+function initBGM(){
+  bgmEnabled = localStorage.getItem(BGM_KEY)==='1';
+  syncBgmButton();
+
+  const frame=document.getElementById('bgm-player');
+  if(!frame || !window.SC || !window.SC.Widget) return;
+  try{
+    bgmWidget = window.SC.Widget(frame);
+    bgmWidget.bind(window.SC.Widget.Events.READY, ()=>{
+      bgmReady=true;
+      if(bgmEnabled) bgmWidget.play();
+    });
+    bgmWidget.bind(window.SC.Widget.Events.FINISH, ()=>{
+      if(!bgmEnabled) return;
+      bgmWidget.seekTo(0);
+      bgmWidget.play();
+    });
+  }catch(e){
+    console.warn('BGM init failed', e);
+  }
+}
+
+/* ──────────────────────────────────────────────────────────────────
    STUDENT ID
 ────────────────────────────────────────────────────────────────── */
 function gradePrefix(grade){
-  if(typeof grade!=='number'||grade<1||grade>6) return '000';
-  return String(7+(6-grade)+(state.year-1)).padStart(3,'0');
+  /* v7.4: supports numeric incoming cohort grades (e.g. 7, 8, 12, 13…)
+     The prefix encodes: base-year offset from year 7 + grade offset.
+     Standard grades 1-6 retain original prefix logic.
+     Incoming cohort grades (>6) use grade number directly as base.  */
+  if(typeof grade!=='number'||grade<1) return '000';
+  if(grade<=6){
+    return String(7+(6-grade)+(state.year-1)).padStart(3,'0');
+  }
+  // Incoming cohort: prefix = grade number (e.g. grade 13 → '013')
+  return String(grade).padStart(3,'0');
 }
 function genStudentId(grade){
   const pfx=gradePrefix(grade);
@@ -302,6 +412,53 @@ function fmtPP(v){
   return String(v);
 }
 function ppCol(v){ return v>0?'pos':v<0?'neg':'neu'; }
+function clampStat(v){
+  const n=parseInt(v,10);
+  return (!isNaN(n)&&n>=1&&n<=15)?n:1;
+}
+
+function statGradeLabel(value){
+  return STAT_GRADE_TABLE[clampStat(value)] || 'D-';
+}
+function statGradeClass(value){
+  const n=clampStat(value);
+  const map=['sg-dm','sg-d','sg-dp','sg-cm','sg-c','sg-cp','sg-bm','sg-b','sg-bp','sg-am','sg-a','sg-ap','sg-s','sg-s','sg-sp'];
+  return map[n-1] || 'sg-dm';
+}
+
+function getSchoolRankingPool(src=state?.students||[]){
+  return src.filter(s=>typeof s.privatePoints==='number' && !s.isExpelled);
+}
+function getPPRankPercentile(student,pool=getSchoolRankingPool()){
+  if(!student || !pool.length) return 100;
+  const higher = pool.filter(s=>s.privatePoints > student.privatePoints).length;
+  const same   = pool.filter(s=>s.privatePoints === student.privatePoints).length;
+  const rank   = higher + (same>0 ? 1 : 0);
+  return (rank / pool.length) * 100;
+}
+function getPPRankBonus(student,pool=getSchoolRankingPool()){
+  const p=getPPRankPercentile(student,pool);
+  if(p<=1) return 5;
+  if(p<=20) return 4;
+  if(p<=40) return 3;
+  if(p<=60) return 2;
+  if(p<=80) return 1;
+  return 0;
+}
+function calcOverallScoreDetail(student,pool=getSchoolRankingPool()){
+  if(!student){
+    return { base:0, protectBonus:0, ppBonus:0, percentile:100, total:0 };
+  }
+  const base=STATS_KEYS.reduce((sum,k)=>sum+clampStat(student.stats?.[k]),0); // max 90
+  const protectBonus = student.protectPoints>0 ? 5 : 0; // once only
+  const ppBonus      = getPPRankBonus(student,pool);    // max 5
+  const percentile   = getPPRankPercentile(student,pool);
+  const total        = Math.min(100, base + protectBonus + ppBonus);
+  return { base, protectBonus, ppBonus, percentile, total };
+}
+function calcOverallScore(student,pool=getSchoolRankingPool()){
+  return calcOverallScoreDetail(student,pool).total;
+}
 
 /* ──────────────────────────────────────────────────────────────────
    CLASS HELPERS
@@ -336,7 +493,8 @@ function blankClass(grade,classId,rankLabel){
 }
 
 function generateInitialData(){
-  Object.assign(state,{students:[],classes:[],nextId:1,year:1,month:4,history:[]});
+  const sName = currentSlot > 0 ? slotNameOf(currentSlot) : 'ゲストデータ';
+  Object.assign(state,{students:[],classes:[],nextId:1,year:1,month:4,history:[],slotName:sName});
   GRADES.forEach(g=>CLASS_IDS.forEach(c=>{
     state.classes.push(blankClass(g,c,RANK_LABELS[c]));
   }));
@@ -350,8 +508,157 @@ function generateInitialData(){
 }
 
 /* ──────────────────────────────────────────────────────────────────
-   GRADE RANDOMISER
+   INCOMING COHORT SYSTEM — v7.4
+   ─────────────────────────────────────────────────────────────────
+   "Incoming" students are numeric-grade cohorts (grade > 6) that
+   live alongside the active grades. On next April (doGradeUp), all
+   Incoming students (grade === 'Incoming') become Grade 1; the
+   numeric cohort grade is only used for display/organisation here.
+
+   Design decision: we keep storing s.grade = 'Incoming' (the
+   existing string used by doGradeUp), but add s.cohortGrade (a
+   number like 13) so we can group and label them. The ID prefix
+   uses the cohortGrade number (e.g. 013NNNN).
+   ─────────────────────────────────────────────────────────────────
+   currentIncomingBaseGrade():
+     Returns the numeric grade that represents "Year 1 students"
+     entering this cycle. Looks at IDs of grade-1 students:
+     the first 3 chars of their ID is the year-1 prefix → base.
+     If no grade-1 students exist, falls back to 7 + (state.year-1).
+
+   nextIncomingCohortGrade():
+     The cohort grade for the NEXT incoming class = base grade + 1.
+
+   getIncomingCohorts():
+     Returns a sorted array of unique cohortGrade numbers found
+     among Incoming students.
+
+   createIncomingCohort():
+     Generates 200 blank Incoming students across 5 classes with
+     proper IDs and pushes them; saves state.
+
+   deleteIncomingCohort(cohortGrade):
+     Removes all Incoming students with that cohortGrade.
 ────────────────────────────────────────────────────────────────── */
+function currentIncomingBaseGrade(){
+  // Find grade-1 students and read their ID prefix
+  const g1 = state.students.find(s=>s.grade===1&&s.id&&s.id.length>=3);
+  if(g1){
+    const pfxNum = parseInt(g1.id.slice(0,3),10);
+    if(!isNaN(pfxNum)) return pfxNum;
+  }
+  // Fallback: standard formula
+  return 7+(6-1)+(state.year-1); // = year+11
+}
+
+function nextIncomingCohortGrade(){
+  const existing = getIncomingCohorts();
+  if(existing.length){
+    return Math.max(...existing)+1;
+  }
+  return currentIncomingBaseGrade()+1;
+}
+
+function getIncomingCohorts(){
+  const set=new Set();
+  state.students.forEach(s=>{
+    if(s.grade==='Incoming' && typeof s.cohortGrade==='number') set.add(s.cohortGrade);
+  });
+  return [...set].sort((a,b)=>a-b);
+}
+
+window.createIncomingCohort=function(){
+  const cg = nextIncomingCohortGrade();
+  // Temporarily set grade to cg so genStudentId uses prefix 0cg
+  // We store grade='Incoming' and cohortGrade=cg
+  let seq=1;
+  CLASS_IDS.forEach(cid=>{
+    for(let i=0;i<40;i++){
+      const pfx=String(cg).padStart(3,'0');
+      const id=pfx+String(seq).padStart(4,'0');
+      seq++;
+      const stats=Object.fromEntries(STATS_KEYS.map(k=>[k,1]));
+      state.students.push({
+        id, name:'', gender:'M', dob:'', grade:'Incoming', cohortGrade:cg,
+        classId:cid, stats, specialAbility:'',
+        privatePoints:0, protectPoints:0, contracts:[], isExpelled:false,
+      });
+    }
+  });
+  saveState(true);
+  navigateReplace('incoming',{});
+  toast(`✓ 入学予定コホート 第${cg}期 (200名) を作成しました`,'ok',3000);
+};
+
+window.deleteIncomingCohort=function(cg){
+  uiConfirm({
+    title:`第${cg}期コホートを削除`,
+    body:`入学予定 第${cg}期 の全生徒を削除します。<br><strong>この操作は取り消せません。</strong>`,
+    variant:'danger',
+    okLabel:'削除する',
+    onOk:()=>{
+      state.students=state.students.filter(s=>!(s.grade==='Incoming'&&s.cohortGrade===cg));
+      // Remove their contract references too
+      state.students.forEach(s=>{
+        const validIds=new Set(state.students.map(x=>x.id));
+        s.contracts=s.contracts.filter(c=>validIds.has(c.targetId));
+      });
+      saveState(true);
+      navigateReplace('incoming',{});
+      toast(`✓ 第${cg}期コホートを削除しました`,'warn',3000);
+    },
+  });
+};
+
+/* v7.5: randomizeIncomingCohort — fills all 200 slots of the given cohort
+   with randomised name, gender, DOB, PP (by class config), and stats.
+   Stat range: 40–90 on a 0–100 scale mapped to the 1–15 stat range:
+     raw 0–100  →  stat = round(raw / 100 * 14) + 1  (gives 1–15)
+   With range 40–90: min stat ≈ 7, max stat ≈ 14 (strong incoming class). */
+window.randomizeIncomingCohort=function(cg){
+  const cohortStudents = state.students.filter(s=>s.grade==='Incoming'&&s.cohortGrade===cg);
+  if(!cohortStudents.length){
+    toast(`✗ 第${cg}期に生徒がいません`,'err'); return;
+  }
+  /* Group by classId so we can apply PP_RANGE per-class */
+  const byClass = {};
+  CLASS_IDS.forEach(cid=>{ byClass[cid]=[]; });
+  cohortStudents.forEach(s=>{ if(byClass[s.classId]!==undefined) byClass[s.classId].push(s); });
+
+  CLASS_IDS.forEach(cid=>{
+    const grp = byClass[cid];
+    if(!grp.length) return;
+    const n    = grp.length;
+    const half = Math.floor(n / 2);
+    /* Balanced gender array — roughly 50/50, then shuffle */
+    const gend = Array(half).fill('M').concat(Array(n-half).fill('F'));
+    for(let i=gend.length-1;i>0;i--){
+      const j=Math.floor(Math.random()*(i+1));
+      [gend[i],gend[j]]=[gend[j],gend[i]];
+    }
+    /* PP range: use CLASS_STAT_CFG-equivalent for incoming (treat as class 0–4) */
+    const [ppLo, ppHi] = PP_RANGE[cid] ?? [0, 50000];
+
+    grp.forEach((s, idx)=>{
+      const gender = gend[idx] || 'M';
+      s.name   = genStudentName(gender);
+      s.gender = gender;
+      /* Incoming students: estimated DOB as if entering grade 1 next year */
+      s.dob    = genDOB(1, state.year + 1);
+      s.privatePoints = rndInt(ppLo, ppHi);
+      /* Stats: raw 40–90 range → mapped to 1–15 scale */
+      STATS_KEYS.forEach(k=>{
+        const raw  = rndInt(40, 90);
+        s.stats[k] = Math.min(15, Math.max(1, Math.round(raw / 100 * 14) + 1));
+      });
+      s.specialAbility = '';
+    });
+  });
+
+  saveState(true);
+  navigateReplace('incoming', {});
+  toast(`✓ 第${cg}期 ランダム生成完了 (${cohortStudents.length}名)`, 'ok', 3000);
+};
 function randomizeGrade(grade){
   const sts=state.students.filter(s=>s.grade===grade&&!s.isExpelled);
   const byClass={}; CLASS_IDS.forEach(cid=>{byClass[cid]=[];});
@@ -393,60 +700,361 @@ function computeClassRanking(){
 }
 
 /* ──────────────────────────────────────────────────────────────────
-   SAVE / LOAD — v6.4 fixes
+   SAVE / LOAD (v7.0) — 12 slot modal system
 ────────────────────────────────────────────────────────────────── */
-function saveState(silent=false){
-  /* v6.4: guard — do not save if state is null (e.g. mid-reset) */
-  if(!state) return;
-  try{
-    localStorage.setItem(slotKey(currentSlot),JSON.stringify(state));
-    updateSlotButtons();
-    if(!silent) toast(`✓ スロット${currentSlot}にセーブしました`,'ok');
-  } catch(e){ toast('✗ セーブ失敗: '+e.message,'err'); }
+function defaultSlotName(n){ return `Slot ${n}`; }
+function normalizeSlotMeta(meta){
+  const out={};
+  for(let n=1;n<=NUM_SLOTS;n++){
+    const v=meta?.[n] ?? meta?.[String(n)];
+    out[n]=(typeof v==='string'&&v.trim())?v.trim():defaultSlotName(n);
+  }
+  return out;
 }
-function loadSlot(n){
-  const raw=localStorage.getItem(slotKey(n)); if(!raw) return false;
-  try{ state=JSON.parse(raw); return true; }
-  catch(e){ console.warn('loadSlot',n,e); return false; }
+function loadSlotMeta(){
+  try{ return normalizeSlotMeta(JSON.parse(localStorage.getItem(SLOT_META_KEY)||'{}')); }
+  catch(_){ return normalizeSlotMeta({}); }
+}
+function saveSlotMeta(meta){
+  localStorage.setItem(SLOT_META_KEY, JSON.stringify(normalizeSlotMeta(meta)));
+}
+function slotNameOf(n){
+  const meta=loadSlotMeta();
+  return meta[n] || defaultSlotName(n);
+}
+function setSlotName(n,name){
+  const meta=loadSlotMeta();
+  meta[n]=(name&&name.trim())?name.trim():defaultSlotName(n);
+  saveSlotMeta(meta);
 }
 function slotHasData(n){ return !!localStorage.getItem(slotKey(n)); }
-function switchSlot(n){
-  if(n===currentSlot) return;
-  saveState(true); state=null; currentSlot=n; selectMode=false; selectedIds=new Set(); navStack=[];
-  if(!loadSlot(n)){ state=newState(); generateInitialData(); saveState(true); }
+
+function saveState(silent=false,targetSlot=currentSlot,forcedName=''){
+  if(!state || !state.students || state.students.length===0) return false;
+  const slot=Number(targetSlot)||currentSlot;
+  /* v7.3: Slot 0 is volatile — never write guest data to localStorage */
+  if(slot===0) return false;
+  const slotName=(forcedName||state.slotName||slotNameOf(slot)||defaultSlotName(slot)).trim();
+  try{
+    const payload={...state, slotName};
+    localStorage.setItem(slotKey(slot), JSON.stringify(payload));
+    setSlotName(slot, slotName);
+    if(slot===currentSlot) state.slotName=slotName;
+    updateSlotButtons();
+    if(slModalOpen) renderSaveLoadModal();
+    if(!silent) toast(`✓ スロット${slot}にセーブしました`,'ok');
+    return true;
+  }catch(e){
+    toast('✗ セーブ失敗: '+e.message,'err');
+    return false;
+  }
+}
+function loadSlot(n){
+  const raw=localStorage.getItem(slotKey(n));
+  if(!raw){ state=null; return false; }
+  try{
+    state=JSON.parse(raw);
+    if(!state.slotName) state.slotName=slotNameOf(n);
+    return true;
+  }catch(e){
+    console.warn('loadSlot',n,e);
+    state=null;
+    return false;
+  }
+}
+function switchSlot(n, silent=false){
+  const next=+n;
+  if(next===currentSlot) return;
+  saveState(true,currentSlot,state?.slotName||slotNameOf(currentSlot));
+  state=null; currentSlot=next; selectMode=false; swapMode=false; selectedIds=new Set(); navStack=[];
+  loadSlot(next);
   updateSlotButtons(); updateDateDisplay(); navigate('home',{},true);
-  toast(`スロット${n}に切り替えました`);
+  if(!silent) toast(`スロット${next}に切り替えました`);
 }
-
-/* v6.4: resetSlot — sets state = null first so saveState guard fires;
-   then regenerates and saves fresh data. */
-function resetSlot(){
-  localStorage.removeItem(slotKey(currentSlot));
-  state = null;                   /* ← v6.4: nullify before regen */
-  state = newState();
-  generateInitialData();
-  saveState(true);
+function resetSlot(slot=currentSlot){
+  const n=+slot;
+  localStorage.removeItem(slotKey(n));
+  const meta=loadSlotMeta();
+  meta[n]=defaultSlotName(n);
+  saveSlotMeta(meta);
+  if(n===currentSlot) state=null;
+  updateSlotButtons();
+  if(slModalOpen) renderSaveLoadModal();
 }
-
-/* ──────────────────────────────────────────────────────────────────
-   SLOT BUTTONS — v6.4
-   Visual logic:
-     s === currentSlot  → .active (cyan dot, always wins)
-     data in localStorage && s !== currentSlot → .has-data (green dot)
-     otherwise → no dot class
-────────────────────────────────────────────────────────────────── */
 function updateSlotButtons(){
-  document.querySelectorAll('.sl').forEach(b=>{
-    const s=+b.dataset.slot;
-    b.classList.remove('active','has-data');
-    if(s===currentSlot){
-      b.classList.add('active');
-    } else if(slotHasData(s)){
-      b.classList.add('has-data');
+  const chip=document.getElementById('slot-chip');
+  if(chip){
+    /* v7.3: slot 0 = guest mode, slots 1-12 = normal */
+    chip.textContent = currentSlot===0 ? 'ゲストモード' : `スロット ${currentSlot}`;
+  }
+  isGuestMode = (currentSlot===0);
+}
+
+function readSlotBrief(n){
+  const raw=localStorage.getItem(slotKey(n));
+  const name=slNameDrafts[n]??slotNameOf(n);
+  if(!raw){
+    return { slot:n, name, empty:true, year:'-', month:'-', count:0 };
+  }
+  try{
+    const s=JSON.parse(raw);
+    return {
+      slot:n,
+      name:slNameDrafts[n]??(s.slotName||slotNameOf(n)),
+      empty:false,
+      year:s.year ?? '-',
+      month:s.month ?? '-',
+      count:Array.isArray(s.students)?s.students.length:0,
+    };
+  }catch(_){
+    return { slot:n, name, empty:true, year:'-', month:'-', count:0 };
+  }
+}
+
+function renderSaveLoadModal(){
+  const slotsEl=document.getElementById('sl-slots');
+  if(!slotsEl) return;
+  let html='';
+  for(let n=1;n<=NUM_SLOTS;n++){
+    const info=readSlotBrief(n);
+    const active=(n===slSelectedSlot)?' active':'';
+    const emptyCls=info.empty?' empty':'';
+    // v7.2: Japanese status labels
+    const status=info.empty?'空き':'データあり';
+    html+=`
+      <div class="sl-slot${active}${emptyCls}" data-slot="${n}">
+        <div class="sl-slot-head">
+          <span class="sl-slot-num">スロット ${n}</span>
+          <span class="sl-slot-state">${status}</span>
+        </div>
+        <input class="sl-slot-name" data-slot-name="${n}" value="${escA(info.name||defaultSlotName(n))}" />
+        <div class="sl-slot-meta">
+          <div class="sl-slot-meta-row"><span>年</span><span>${info.empty?'―':info.year}</span></div>
+          <div class="sl-slot-meta-row"><span>月</span><span>${info.empty?'―':MONTHS_JP[Math.max(0,(+info.month||1)-1)]}</span></div>
+          <div class="sl-slot-meta-row"><span>生徒数</span><span>${info.empty?'―':info.count+'名'}</span></div>
+        </div>
+      </div>`;
+  }
+  slotsEl.innerHTML=html;
+
+  slotsEl.querySelectorAll('.sl-slot').forEach(card=>{
+    card.addEventListener('click',()=>{
+      slSelectedSlot=+card.dataset.slot;
+      renderSaveLoadModal();
+    });
+  });
+  slotsEl.querySelectorAll('input[data-slot-name]').forEach(inp=>{
+    inp.addEventListener('click',e=>e.stopPropagation());
+    inp.addEventListener('input',()=>{
+      const n=+inp.dataset.slotName;
+      slNameDrafts[n]=inp.value;
+      setSlotName(n, inp.value);
+      if(state && n===currentSlot) state.slotName=slotNameOf(n);
+      updateSlotButtons();
+    });
+  });
+
+  /* v7.3: enable/disable action buttons based on whether selected slot has data */
+  syncSlModalButtons();
+}
+
+/* v7.3: Disable Play / Export / Save when the selected slot is empty.
+   "新しくプレイ" (#sl-btn-new-play) and "読み込み" are always enabled. */
+function syncSlModalButtons(){
+  const hasData = slotHasData(slSelectedSlot);
+  const btns = {
+    'sl-btn-play':   !hasData,   // disabled when empty
+    'sl-btn-save':   false,      // always enabled (saves current state INTO selected slot)
+    'sl-btn-export': !hasData,   // disabled when empty
+    'sl-btn-delete': !hasData,   // disabled when empty
+  };
+  Object.entries(btns).forEach(([id, disable])=>{
+    const el=document.getElementById(id);
+    if(!el) return;
+    el.classList.toggle('sl-act-disabled', disable);
+    el.disabled = disable;
+  });
+  /* new-play is always enabled — never disable it */
+  const newPlay=document.getElementById('sl-btn-new-play');
+  if(newPlay){ newPlay.classList.remove('sl-act-disabled'); newPlay.disabled=false; }
+}
+function openSaveLoadModal(){
+  slModalOpen=true;
+  slSelectedSlot=currentSlot;
+  slNameDrafts={};
+  const ov=document.getElementById('sl-overlay');
+  ov?.classList.remove('hidden');
+  renderSaveLoadModal();
+}
+function closeSaveLoadModal(){
+  slModalOpen=false;
+  document.getElementById('sl-overlay')?.classList.add('hidden');
+}
+function saveToSelectedSlot(){
+  const n=slSelectedSlot;
+  const nameInput=document.querySelector(`input[data-slot-name="${n}"]`);
+  const nm=nameInput?.value?.trim() || slotNameOf(n) || defaultSlotName(n);
+  if(n>0) setSlotName(n,nm);
+
+  if(!state || !state.students?.length){
+    toast('✗ セーブ対象データがありません','err');
+    return;
+  }
+
+  /* v7.3: guest mode — the current state is volatile (slot 0).
+     Saving it means copying to the selected permanent slot.        */
+  if(isGuestMode){
+    uiConfirm({
+      title:'ゲストデータをセーブ',
+      body:`スロット ${n} にゲストデータを保存します。<br>既存データは上書きされます。続行しますか？`,
+      variant: slotHasData(n) ? 'warn' : 'info',
+      okLabel:'セーブ',
+      onOk:()=>{
+        const prevSlot=currentSlot;
+        currentSlot=n;
+        state.slotName=nm;
+        saveState(false,n,nm);
+        currentSlot=prevSlot;     // stay in guest mode
+        renderSaveLoadModal();
+      },
+    });
+    return;
+  }
+
+  /* Normal: save current slot into n */
+  if(n!==currentSlot){
+    uiConfirm({
+      title:`スロット ${n} に上書き`,
+      body:`現在のデータをスロット ${n} に保存します。<br>${slotHasData(n)?'既存データは上書きされます。':''}続行しますか？`,
+      variant: slotHasData(n) ? 'warn' : 'info',
+      okLabel:'セーブ',
+      onOk:()=>{
+        saveState(true,n,nm);
+        toast(`✓ 現在データをスロット${n}へ保存`,'ok');
+        renderSaveLoadModal();
+      },
+    });
+  }else{
+    if(!saveState(true,n,nm)) return;
+    toast(`✓ スロット${n}を保存`,'ok');
+    renderSaveLoadModal();
+  }
+}
+function playSelectedSlot(){
+  const n=slSelectedSlot;
+
+  /* v7.3: If user is in guest mode with data, warn before switching */
+  if(isGuestMode && state?.students?.length){
+    uiConfirm({
+      title:'未保存のゲストデータ',
+      body:`スロット ${n} に切り替えると、現在のゲストデータは失われます。<br>続行しますか？`,
+      variant:'warn',
+      okLabel:'切り替える',
+      onOk:()=>_doPlaySlot(n),
+    });
+    return;
+  }
+
+  _doPlaySlot(n);
+}
+
+function _doPlaySlot(n){
+  /* Empty slot → auto-generate 1,200 blank students and go home */
+  if(!slotHasData(n)){
+    saveState(true, currentSlot, state?.slotName||slotNameOf(currentSlot));
+    currentSlot=n; isGuestMode=false;
+    state=newState();
+    generateInitialData();
+    saveState(true);
+    updateSlotButtons(); updateDateDisplay();
+    selectMode=false; swapMode=false; selectedIds=new Set(); navStack=[];
+    navigate('home',{},true);
+    closeSaveLoadModal();
+    toast(`▶ スロット${n} — 新規データを開始しました`,'ok',3000);
+    return;
+  }
+
+  /* Normal: load existing slot */
+  saveState(true, currentSlot, state?.slotName||slotNameOf(currentSlot));
+  currentSlot=n; isGuestMode=false;
+  loadSlot(n);
+  updateSlotButtons(); updateDateDisplay();
+  selectMode=false; swapMode=false; selectedIds=new Set(); navStack=[];
+  navigate('home',{},true);
+  closeSaveLoadModal();
+  toast(`▶ スロット${n}をロードしました`,'ok');
+}
+function deleteSelectedSlot(){
+  const n=slSelectedSlot;
+  resetSlot(n);
+  if(n===currentSlot){
+    navStack=[];
+    navigate('home',{},true);
+  }
+  toast(`✓ スロット${n}を削除しました`,'warn');
+}
+function bindSaveLoadModalControls(){
+  if(bindSaveLoadModalControls._bound) return;
+  bindSaveLoadModalControls._bound=true;
+
+  // v7.1: #sl-close is hidden in HTML; keep binding harmless
+  document.getElementById('sl-close')?.addEventListener('click',closeSaveLoadModal);
+
+  // v7.1: Back button closes the modal
+  document.getElementById('sl-btn-back')?.addEventListener('click',closeSaveLoadModal);
+
+  // v7.1: Clicking the overlay does NOTHING (background non-interactive)
+  // Do NOT bind sl-overlay click to close.
+
+  document.getElementById('sl-btn-save')?.addEventListener('click',saveToSelectedSlot);
+  document.getElementById('sl-btn-export')?.addEventListener('click',()=>exportAllSlots());
+  document.getElementById('sl-btn-import')?.addEventListener('click',()=>triggerImportDialog());
+
+  // v7.3: Delete — custom UI confirm instead of window.confirm
+  document.getElementById('sl-btn-delete')?.addEventListener('click',()=>{
+    const n=slSelectedSlot;
+    if(!slotHasData(n)){
+      toast(`✗ スロット${n}にはデータがありません`,'err');
+      return;
+    }
+    uiConfirm({
+      title:`スロット ${n} を削除`,
+      body:`スロット ${n} のデータを完全に削除します。<br><strong>この操作は取り消せません。</strong>`,
+      variant:'danger',
+      okLabel:'削除する',
+      onOk:()=>deleteSelectedSlot(),
+    });
+  });
+
+  document.getElementById('sl-btn-play')?.addEventListener('click',playSelectedSlot);
+
+  /* v7.3: "新しくプレイ" — Slot 0 guest mode, always available */
+  document.getElementById('sl-btn-new-play')?.addEventListener('click',()=>{
+    const doStart=()=>{
+      currentSlot=0; isGuestMode=true;
+      state=newState();
+      generateInitialData();
+      // Do NOT saveState — guest data is volatile
+      updateSlotButtons(); updateDateDisplay();
+      selectMode=false; swapMode=false; selectedIds=new Set(); navStack=[];
+      navigate('home',{},true);
+      closeSaveLoadModal();
+      toast('ゲストモード開始 — データは自動保存されません','warn',4000);
+    };
+
+    /* Warn if switching away from unsaved guest session */
+    if(isGuestMode && state?.students?.length){
+      uiConfirm({
+        title:'ゲストデータをリセット',
+        body:'新しくプレイすると、現在のゲストデータは失われます。<br>続行しますか？',
+        variant:'warn',
+        okLabel:'新しくプレイ',
+        onOk:doStart,
+      });
+    }else{
+      doStart();
     }
   });
-  const chip=document.getElementById('slot-chip');
-  if(chip) chip.textContent=`スロット ${currentSlot}`;
 }
 
 /* ──────────────────────────────────────────────────────────────────
@@ -471,13 +1079,16 @@ function exportAllSlots(){
 }
 function serializeSlot(s){
   return {
-    year:s.year,month:s.month,nextId:s.nextId,
+    year:s.year,month:s.month,nextId:s.nextId,slotName:s.slotName||'',
     classes:s.classes.map(c=>({grade:c.grade,classId:c.classId,classPoints:c.classPoints,customName:c.customName||'',name:c.name||''})),
     students:s.students.map(st=>({
       id:st.id,name:st.name,gender:st.gender,dateOfBirth:st.dob,
       grade:st.grade,classId:st.classId,privatePoints:st.privatePoints,protectPoints:st.protectPoints,
       status:st.isExpelled?'expelled':st.grade==='Graduate'?'graduate':st.grade==='Incoming'?'incoming':'active',
       specialAbility:st.specialAbility,
+      /* v7.4: cohort fields */
+      ...(typeof st.cohortGrade==='number'  ? {cohortGrade:st.cohortGrade}   : {}),
+      ...(typeof st.graduateYear==='number' ? {graduateYear:st.graduateYear} : {}),
       stats:Object.fromEntries(STATS_KEYS.map(k=>[k,st.stats[k]])),
       contracts:st.contracts.map(c=>({targetId:c.targetId,monthlyAmount:c.amount})),
     })),
@@ -494,7 +1105,7 @@ function triggerImportDialog(){
     <div class="m-title">↑ データ読み込み</div>
     <div class="m-body">
       <div class="import-info">
-        <strong style="color:var(--io)">読み込み先：</strong> スロット 1〜5 すべてが上書きされます。<br>
+        <strong style="color:var(--io)">読み込み先：</strong> スロット 1〜12 すべてが上書きされます。<br>
         対象ファイル：<code>cote_os_backup_*.json</code><br>
         ※ JSON を手動編集してから読み込むことも可能です。
       </div>
@@ -520,15 +1131,27 @@ function onFilePicked(file){
 }
 function validateAndImport(parsed){
   if(!parsed?.slots||typeof parsed.slots!=='object'){ toast('✗ 無効なファイル形式です','err'); return; }
+  const meta=loadSlotMeta();
   let restored=0;
   for(let n=1;n<=NUM_SLOTS;n++){
     const raw=parsed.slots[n]??parsed.slots[String(n)];
-    if(!raw){ localStorage.removeItem(slotKey(n)); continue; }
-    try{ const ss=deserializeSlot(raw); repairIntegrity(ss); localStorage.setItem(slotKey(n),JSON.stringify(ss)); restored++; }
+    if(!raw){
+      localStorage.removeItem(slotKey(n));
+      meta[n]=defaultSlotName(n);
+      continue;
+    }
+    try{
+      const ss=deserializeSlot(raw);
+      repairIntegrity(ss);
+      localStorage.setItem(slotKey(n),JSON.stringify(ss));
+      meta[n]=(ss.slotName&&ss.slotName.trim())?ss.slotName.trim():defaultSlotName(n);
+      restored++;
+    }
     catch(e){ console.warn('import slot',n,e); }
   }
+  saveSlotMeta(meta);
   state=null; selectMode=false; selectedIds=new Set(); navStack=[];
-  if(!loadSlot(currentSlot)){ state=newState(); generateInitialData(); saveState(true); }
+  loadSlot(currentSlot);
   updateSlotButtons(); updateDateDisplay(); navigate('home',{},true);
   toast(`✓ 読み込み完了 — ${restored}スロットを復元しました`,'io',3500);
 }
@@ -537,6 +1160,7 @@ function deserializeSlot(obj){
   s.year=typeof obj.year==='number'&&obj.year>=1?obj.year:1;
   s.month=typeof obj.month==='number'&&obj.month>=1?obj.month:4;
   s.nextId=typeof obj.nextId==='number'&&obj.nextId>=1?obj.nextId:1;
+  s.slotName=String(obj.slotName||'').trim();
   s.classes=(obj.classes||[]).map(c=>({grade:c.grade,classId:typeof c.classId==='number'?c.classId:0,
     classPoints:typeof c.classPoints==='number'?c.classPoints:0,
     customName:String(c.customName||''),
@@ -544,7 +1168,7 @@ function deserializeSlot(obj){
   s.students=(obj.students||[]).map(st=>{
     const expelled=st.isExpelled===true||st.status==='expelled';
     let grade=st.grade; if(typeof grade==='string'&&/^\d+$/.test(grade)) grade=+grade;
-    return { id:String(st.id||''),name:String(st.name||''),gender:st.gender==='F'?'F':'M',
+    const out={ id:String(st.id||''),name:String(st.name||''),gender:st.gender==='F'?'F':'M',
       dob:String(st.dateOfBirth||st.dob||''),grade,classId:typeof st.classId==='number'?st.classId:0,
       privatePoints:typeof st.privatePoints==='number'?st.privatePoints:0,
       protectPoints:typeof st.protectPoints==='number'?st.protectPoints:0,
@@ -552,6 +1176,10 @@ function deserializeSlot(obj){
       stats:Object.fromEntries(STATS_KEYS.map(k=>[k,clampStat(st.stats?.[k])])),
       contracts:(st.contracts||[]).map(c=>({targetId:String(c.targetId||''),
         amount:typeof(c.monthlyAmount??c.amount)==='number'?(c.monthlyAmount??c.amount):0})) };
+    /* v7.4: restore cohort fields */
+    if(typeof st.cohortGrade==='number')  out.cohortGrade  = st.cohortGrade;
+    if(typeof st.graduateYear==='number') out.graduateYear = st.graduateYear;
+    return out;
   });
   s.history=(obj.historySnapshots||obj.history||[]).slice(0,HISTORY_MAX).map(h=>({
     year:+h.year||1,month:+h.month||4,
@@ -561,7 +1189,6 @@ function deserializeSlot(obj){
   }));
   return s;
 }
-function clampStat(v){ const n=parseInt(v,10); return(!isNaN(n)&&n>=1&&n<=15)?n:1; }
 function repairIntegrity(s){
   const seen=new Set();
   s.students.forEach(st=>{
@@ -595,6 +1222,7 @@ function snapHistory(){
   if(state.history.length>HISTORY_MAX) state.history.pop();
 }
 function advanceMonth(){
+  if(!state){toast('✗ データがありません','err');return;}
   snapHistory(); if(state.month===3) doGradeUp();
   state.students.forEach(s=>{
     const c=state.classes.find(x=>x.grade===s.grade&&x.classId===s.classId);
@@ -605,9 +1233,26 @@ function advanceMonth(){
   saveState(true); renderApp(); toast(`⏩ ${fmtDate(state.year,state.month)} へ進みました`);
 }
 function doGradeUp(){
-  state.students.forEach(s=>{if(s.grade===6)s.grade='Graduate';});
+  // Stamp graduateYear before grade changes
+  state.students.forEach(s=>{
+    if(s.grade===6){
+      s.grade='Graduate';
+      s.graduateYear=state.year; // v7.4: archive year for cohort grouping
+    }
+  });
   for(let g=5;g>=1;g--) state.students.forEach(s=>{if(s.grade===g)s.grade=g+1;});
-  state.students.forEach(s=>{if(s.grade==='Incoming')s.grade=1;});
+
+  // v7.4: Promote Incoming → Grade 1, assigning fresh Grade-1 IDs
+  // cohortGrade is cleared after promotion (no longer needed)
+  state.students.forEach(s=>{
+    if(s.grade==='Incoming'){
+      s.grade=1;
+      delete s.cohortGrade;
+      // Re-generate ID under new grade-1 prefix
+      s.id=genStudentId(1);
+    }
+  });
+
   const kept=state.classes.filter(c=>c.grade<6).map(c=>{
     const newGrade=c.grade+1;
     const newStaticName=c.customName?c.name:JP.clsDef(newGrade,RANK_LABELS[c.classId]||'A');
@@ -617,6 +1262,7 @@ function doGradeUp(){
   state.classes=kept;
 }
 function revertMonth(){
+  if(!state){toast('✗ データがありません','err');return;}
   if(!state.history.length){toast('✗ 履歴がありません','err');return;}
   const snap=state.history.shift();
   if(state.month===4) undoGradeUp(snap);
@@ -698,11 +1344,11 @@ window.gearNav=function(page){
 };
 function goBack(){
   if(navStack.length<=1) return;
-  navStack.pop(); selectMode=false; selectedIds=new Set();
+  navStack.pop(); selectMode=false; swapMode=false; selectedIds=new Set();
   const t=navStack[navStack.length-1]; renderPage(t.page,t.params); updateBreadcrumb();
 }
 window.navTo=function(i){
-  navStack=navStack.slice(0,i+1); selectMode=false; selectedIds=new Set();
+  navStack=navStack.slice(0,i+1); selectMode=false; swapMode=false; selectedIds=new Set();
   const t=navStack[navStack.length-1]; renderPage(t.page,t.params); updateBreadcrumb();
 };
 function pageLabel(n){
@@ -715,7 +1361,10 @@ function pageLabel(n){
     case 'ranking':      return JP.ranking;
     case 'classRanking': return 'クラスランキング';
     case 'history':      return JP.history;
-    case 'profile':   { const s=state.students.find(x=>x.id===n.params.sid); return s?(s.name||s.id):'プロフィール'; }
+    case 'profile':   {
+      const s=state?.students?.find(x=>x.id===n.params.sid);
+      return s?(s.name||s.id):'プロフィール';
+    }
     default: return n.page;
   }
 }
@@ -735,11 +1384,22 @@ function renderApp(){
   if(cur) renderPage(cur.page,cur.params); else navigate('home',{},true);
 }
 function updateDateDisplay(){
-  const el=document.getElementById('date-display'); if(el) el.textContent=fmtDate(state.year,state.month);
+  const el=document.getElementById('date-display'); if(!el) return;
+  // v7.1: always show a date — default to Year 1 · 4月 when no state
+  if(state) el.textContent=fmtDate(state.year,state.month);
+  else el.textContent=fmtDate(1,4);
 }
 function renderPage(page,params){
   const app=document.getElementById('app');
   if(!app) return;
+  /* v7.3: state is ALWAYS non-null after boot (slot 1 auto-inits; guest mode inits in memory).
+     The NO DATA path has been fully removed. */
+  if(!state){
+    // Safety net only — should never occur in normal operation
+    app.innerHTML='<div class="pg-hdr"><span class="pg-title" style="color:var(--t2)">読み込み中...</span></div>';
+    afterRender();
+    return;
+  }
   switch(page){
     case 'home':         app.innerHTML=renderHome(); break;
     case 'grade':        app.innerHTML=renderGrade(params.grade); break;
@@ -765,7 +1425,7 @@ function renderHome(){
 
   let h=`
     <div class="home-bar">
-      <span class="hm-slot">スロット ${currentSlot}</span>
+      <span class="hm-slot">${isGuestMode?'ゲストモード':`スロット ${currentSlot}`}</span>
       <span>${fmtDate(state.year,state.month)}</span>
       <span>${activeCount}名在籍</span>
       <div class="hm-right">
@@ -775,7 +1435,7 @@ function renderHome(){
     </div>
     <div class="pg-hdr">
       <span class="pg-title">システム概要</span>
-      <span class="pg-sub">6学年 · 5クラス統合管理 v${APP_VER}</span>
+      <span class="pg-sub">6学年 · 5クラス統合管理 v${APP_VER}${isGuestMode?' · <span style="color:var(--yw)">ゲストモード（未保存）</span>':''}</span>
     </div>
   `;
 
@@ -845,8 +1505,7 @@ window.execHomeDist=function(grade,classId,amt){
 };
 
 /* ──────────────────────────────────────────────────────────────────
-   HISTORY PAGE — v6.4: vertical list with Year, Month, Class Count,
-   Student Count per entry.
+   HISTORY PAGE — v6.5: vertical list, HISTORY_MAX=120
 ────────────────────────────────────────────────────────────────── */
 function renderHistory(){
   const snaps=state.history;
@@ -864,11 +1523,8 @@ function renderHistory(){
 
   h+=`<div class="hist-list">`;
   snaps.forEach((snap,idx)=>{
-    /* Count distinct classes that have data in this snapshot */
     const clsCount=(snap.classPoints||[]).length;
-    /* Count students recorded in this snapshot */
     const stuCount=(snap.studentPP||[]).length;
-
     h+=`
       <div class="hist-row">
         <div class="hist-row-date">Year ${snap.year} &nbsp;·&nbsp; ${MONTHS_JP[snap.month-1]}</div>
@@ -950,8 +1606,62 @@ window.execRandomizeGrade=function(grade){
 };
 
 /* ──────────────────────────────────────────────────────────────────
-   CLASS PAGE — v6.2/6.3/6.4
+   CLASS PAGE — v7.0 (Select Mode + Swap Mode)
 ────────────────────────────────────────────────────────────────── */
+function applyClassActiveOrder(grade,classId,orderedActive){
+  const activeSet=new Set(orderedActive.map(s=>s.id));
+  const rebuilt=[];
+  let inserted=false;
+  state.students.forEach(s=>{
+    if(activeSet.has(s.id)){
+      if(!inserted){
+        rebuilt.push(...orderedActive);
+        inserted=true;
+      }
+      return;
+    }
+    rebuilt.push(s);
+  });
+  if(!inserted) rebuilt.push(...orderedActive);
+  state.students=rebuilt;
+}
+function swapMoveStudent(grade,classId,dragId,targetId){
+  const active=getStudentsOf(grade,classId).filter(s=>!s.isExpelled);
+  const from=active.findIndex(s=>s.id===dragId);
+  const to=active.findIndex(s=>s.id===targetId);
+  if(from<0||to<0||from===to) return;
+  const [mv]=active.splice(from,1);
+  active.splice(to,0,mv);
+  applyClassActiveOrder(grade,classId,active);
+}
+function bindSwapDragHandlers(grade,classId){
+  if(!swapMode) return;
+  document.querySelectorAll('.s-card[data-sid]').forEach(card=>{
+    card.addEventListener('dragstart',()=>{
+      swapDragId=card.dataset.sid;
+      card.classList.add('dragging');
+    });
+    card.addEventListener('dragend',()=>{
+      card.classList.remove('dragging');
+      document.querySelectorAll('.s-card.drag-over').forEach(el=>el.classList.remove('drag-over'));
+      swapDragId=null;
+    });
+    card.addEventListener('dragover',e=>{
+      e.preventDefault();
+      if(card.dataset.sid!==swapDragId) card.classList.add('drag-over');
+    });
+    card.addEventListener('dragleave',()=>card.classList.remove('drag-over'));
+    card.addEventListener('drop',e=>{
+      e.preventDefault();
+      card.classList.remove('drag-over');
+      const targetId=card.dataset.sid;
+      if(!swapDragId||!targetId||swapDragId===targetId) return;
+      swapMoveStudent(grade,classId,swapDragId,targetId);
+      renderPage('class',{grade,classId});
+    });
+  });
+}
+
 function renderClass(grade,classId){
   const cls=getCls(grade,classId), rank=rankOf(grade,classId), nm=clsName(grade,classId);
   const active=getStudentsOf(grade,classId).filter(s=>!s.isExpelled);
@@ -988,6 +1698,9 @@ function renderClass(grade,classId){
       <button class="btn btn-sm ${selectMode?'btn-yw':''}" onclick="toggleSel(${grade},${classId})">
         ${selectMode?'✓ ':''}選択モード
       </button>
+      <button class="btn btn-sm ${swapMode?'btn-gn':''}" onclick="toggleSwapMode(${grade},${classId})">
+        ${swapMode?'✓ ':''}入れ替えモード
+      </button>
       ${selectMode?`
         <button class="btn btn-sm" onclick="selAll(${grade},${classId})">全選択</button>
         <button class="btn btn-sm" onclick="deselAll(${grade},${classId})">全解除</button>
@@ -999,6 +1712,10 @@ function renderClass(grade,classId){
         <button class="btn btn-sm btn-ac" onclick="applyBulkSeize(${grade},${classId})"><span class="cls-pp-lbl">PP</span>剥奪</button>
         <button class="btn btn-sm btn-dn" onclick="confirmBulkDelete(${grade},${classId})">選択した生徒を削除</button>
       `:''}
+      ${swapMode?`
+        <button class="btn btn-sm btn-ac" onclick="sortByIdSwap(${grade},${classId})">番号ソート</button>
+        <button class="btn btn-sm btn-gn" onclick="confirmSwap(${grade},${classId})">決定</button>
+      `:''}
     </div>
 
     <div class="srch-row">
@@ -1006,26 +1723,28 @@ function renderClass(grade,classId){
       <button class="btn btn-sm" onclick="addStudent(${grade},${classId})">＋ 生徒を追加</button>
     </div>
 
-    <div class="s-grid ${selectMode?'sel-mode':''}">
-      ${renderCards(active)}
+    <div class="s-grid ${selectMode?'sel-mode':''} ${swapMode?'swap-mode':''}" data-swap-grid="1">
+      ${renderCards(active,{draggable:swapMode})}
     </div>`;
 
   if(expl.length){
     h+=`<div class="alt-hdr"><span>退学処分 (${expl.length}名)</span><hr /></div>
-        <div class="s-grid">${renderCards(expl)}</div>`;
+        <div class="s-grid">${renderCards(expl,{draggable:false})}</div>`;
   }
   return h;
 }
 
 /* s-card renderer */
-function renderCards(students){
+function renderCards(students,{draggable=false}={}){
   if(!students.length)
     return `<div class="dim" style="grid-column:1/-1;padding:8px;font-size:.7rem">生徒なし</div>`;
   return students.map(s=>{
     const sel=selectedIds.has(s.id), hasPrp=s.protectPoints>0;
     return `
       <div class="s-card ${s.isExpelled?'expelled':''} ${sel?'selected':''}"
-           data-name="${escA(s.name.toLowerCase())}"
+           data-name="${escA((s.name||'').toLowerCase())}"
+           data-sid="${s.id}"
+           ${draggable&&!s.isExpelled?'draggable="true"':''}
            onclick="cardClick('${s.id}')">
         <div class="s-chk">${sel?'✓':''}</div>
         <div class="s-top-left">
@@ -1046,6 +1765,7 @@ function renderCards(students){
 }
 
 window.cardClick=function(sid){
+  if(swapMode) return;
   if(selectMode){
     const inp=document.getElementById('blk-pp');
     if(inp) bulkPPValue=inp.value;
@@ -1055,9 +1775,30 @@ window.cardClick=function(sid){
 };
 window.toggleSel=(g,c)=>{
   selectMode=!selectMode;
+  if(selectMode) swapMode=false;
   selectedIds=new Set();
   if(!selectMode) bulkPPValue='';
   renderPage('class',{grade:g,classId:c});
+};
+window.toggleSwapMode=(g,c)=>{
+  swapMode=!swapMode;
+  if(swapMode){
+    selectMode=false;
+    selectedIds=new Set();
+  }
+  renderPage('class',{grade:g,classId:c});
+};
+window.sortByIdSwap=(g,c)=>{
+  const active=getStudentsOf(g,c).filter(s=>!s.isExpelled).sort((a,b)=>String(a.id).localeCompare(String(b.id)));
+  applyClassActiveOrder(g,c,active);
+  renderPage('class',{grade:g,classId:c});
+  toast('✓ 番号ソートしました','ok');
+};
+window.confirmSwap=(g,c)=>{
+  swapMode=false;
+  saveState(true);
+  renderPage('class',{grade:g,classId:c});
+  toast('✓ 入れ替えを保存しました','ok');
 };
 window.selAll=(g,c)=>{
   const inp=document.getElementById('blk-pp'); if(inp) bulkPPValue=inp.value;
@@ -1070,7 +1811,7 @@ window.deselAll=(g,c)=>{
   renderPage('class',{grade:g,classId:c});
 };
 
-/* ── PP付与 (give) — v6.2: keeps selectMode active ── */
+/* ── PP付与 (give) — keeps selectMode active ── */
 window.applyBulkGive=function(grade,classId){
   const inp=document.getElementById('blk-pp');
   if(inp) bulkPPValue=inp.value;
@@ -1082,7 +1823,7 @@ window.applyBulkGive=function(grade,classId){
   toast(`✓ ${n}名に +${amt.toLocaleString()} PP を付与`,'ok');
 };
 
-/* ── PP剥奪 (seize) — v6.2: keeps selectMode active ── */
+/* ── PP剥奪 (seize) — keeps selectMode active ── */
 window.applyBulkSeize=function(grade,classId){
   const inp=document.getElementById('blk-pp');
   if(inp) bulkPPValue=inp.value;
@@ -1144,9 +1885,9 @@ window.addStudent=function(grade,classId){
 };
 
 /* ──────────────────────────────────────────────────────────────────
-   PROFILE PAGE — v6.3/v6.4
-   • プロフィール header + separator at top of prof-side
-   • header color now var(--t1) via CSS (changed in stylesheet)
+   PROFILE PAGE — v6.5
+   • プロフィール header color → var(--t1) via CSS
+   • .fr label min-width:96px for flush alignment
 ────────────────────────────────────────────────────────────────── */
 function renderProfile(sid){
   const s=state.students.find(x=>x.id===sid);
@@ -1159,12 +1900,15 @@ function renderProfile(sid){
   const clsDisp=typeof s.grade==='number'?clsName(s.grade,s.classId):'―';
   const hasProt=s.protectPoints>0;
 
+  const pool=getSchoolRankingPool();
+  const ov=calcOverallScoreDetail(s,pool);
   const bars=STATS_KEYS.map(k=>{
     const v=s.stats[k]||1;
+    // v7.1: sb-val span removed — numerical value not shown next to stat name
     return `<div class="sb-row">
       <span class="sb-lbl">${JP[k]}</span>
       <div class="sb-track"><div class="sb-fill" style="width:${((v-1)/14)*100}%"></div></div>
-      <span class="sb-val">${v}</span>
+      <span class="sb-grade ${statGradeClass(v)}">${statGradeLabel(v)}</span>
     </div>`;
   }).join('');
 
@@ -1210,6 +1954,16 @@ function renderProfile(sid){
         </table>
         <div class="sec-ttl mt8">能力プロフィール</div>
         <div class="sb-grid">${bars}</div>
+        <div class="ov-wrap">
+          <div class="ov-score-block">
+            <div class="ov-score-lbl">総合力</div>
+            <div class="ov-score-val">${ov.total}</div>
+            <div class="ov-score-sub">/100</div>
+          </div>
+          <div class="radar-wrap">
+            <canvas id="pf-radar-canvas" data-sid="${escA(sid)}" width="220" height="220"></canvas>
+          </div>
+        </div>
         <div style="margin-top:12px">
           ${s.isExpelled
             ?`<button class="btn-expel" style="border-color:var(--gn);color:var(--gn)" onclick="reinstateStudent('${sid}')">↩ ${JP.reinstate}</button>`
@@ -1236,7 +1990,7 @@ function renderProfile(sid){
         </div>
 
         <div class="prof-sec">
-          <div class="sec-ttl">能力値 (1–15)</div>
+          <div class="sec-ttl">能力値 (1–15 / D-〜S+)</div>
           <div class="stats-grid">
             ${STATS_KEYS.map(k=>`
               <div class="stat-slide">
@@ -1273,6 +2027,93 @@ function renderProfile(sid){
         <button class="btn-save-prof" onclick="saveProfile('${sid}')">✓ プロフィールを保存</button>
       </div>
     </div>`;
+}
+
+function drawProfileRadar(){
+  const canvas=document.getElementById('pf-radar-canvas');
+  if(!canvas) return;
+  const sid=canvas.dataset.sid;
+  const s=state?.students?.find(x=>x.id===sid);
+  if(!s) return;
+
+  const ctx=canvas.getContext('2d');
+  if(!ctx) return;
+
+  // v7.1: size canvas to its CSS container to prevent overflow
+  const wrap=canvas.parentElement;
+  const size=wrap
+    ? Math.floor(Math.min(wrap.clientWidth, wrap.clientHeight) * 0.96)
+    : 180;
+  const displaySize=Math.max(120, Math.min(size, 260));
+  canvas.width=displaySize;
+  canvas.height=displaySize;
+
+  const w=canvas.width, h=canvas.height;
+  const cx=w/2, cy=h/2;
+  // v7.1: tighter radius so labels don't clip at smaller size
+  // v7.6: labelOffset increased r+13 → r+22 for clean label separation
+  const r=Math.min(w,h)*0.32;
+  const labelOffset=r+22;
+
+  const vals=STATS_KEYS.map(k=>clampStat(s.stats?.[k]));
+  const count=STATS_KEYS.length;
+  const step=(Math.PI*2)/count;
+
+  ctx.clearRect(0,0,w,h);
+
+  // Grid rings
+  for(let lv=1; lv<=5; lv++){
+    const rr=(r*lv)/5;
+    ctx.beginPath();
+    for(let i=0;i<count;i++){
+      const a=-Math.PI/2 + step*i;
+      const x=cx+Math.cos(a)*rr;
+      const y=cy+Math.sin(a)*rr;
+      if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+    }
+    ctx.closePath();
+    ctx.strokeStyle='rgba(120,160,190,.28)';
+    ctx.lineWidth=1;
+    ctx.stroke();
+  }
+
+  // Spokes + labels
+  const fontSize=Math.max(8, Math.floor(displaySize*0.072));
+  for(let i=0;i<count;i++){
+    const a=-Math.PI/2 + step*i;
+    const x=cx+Math.cos(a)*r;
+    const y=cy+Math.sin(a)*r;
+    ctx.beginPath();
+    ctx.moveTo(cx,cy);
+    ctx.lineTo(x,y);
+    ctx.strokeStyle='rgba(120,160,190,.25)';
+    ctx.stroke();
+
+    const lx=cx+Math.cos(a)*labelOffset;
+    const ly=cy+Math.sin(a)*labelOffset;
+    ctx.fillStyle='rgba(190,220,240,.8)';
+    ctx.font=`${fontSize}px "Share Tech Mono", monospace`;
+    ctx.textAlign='center';
+    ctx.textBaseline='middle';
+    /* v7.6: RADAR_LABELS — suffix-stripped [言語,推論,記憶,思考,身体,精神] */
+    ctx.fillText(RADAR_LABELS[i], lx, ly);
+  }
+
+  // Data polygon
+  ctx.beginPath();
+  for(let i=0;i<count;i++){
+    const a=-Math.PI/2 + step*i;
+    const rr=(vals[i]/15)*r;
+    const x=cx+Math.cos(a)*rr;
+    const y=cy+Math.sin(a)*rr;
+    if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+  }
+  ctx.closePath();
+  ctx.fillStyle='rgba(0,200,255,.25)';
+  ctx.strokeStyle='rgba(0,200,255,.9)';
+  ctx.lineWidth=2;
+  ctx.fill();
+  ctx.stroke();
 }
 
 window.saveProfile=function(sid){
@@ -1354,23 +2195,112 @@ window.deleteStudentFromProfile=function(sid){
 };
 
 /* ──────────────────────────────────────────────────────────────────
-   RANKING PAGE — v6.2/6.3/6.4
+   RANKING PAGE — Top 3 Podium + v7 sort expansion
 ────────────────────────────────────────────────────────────────── */
+const RANK_SORT_ITEMS = [
+  {key:'pp',        label:'PP'},
+  {key:'prp',       label:'PRP'},
+  {key:'language',  label:'言語'},
+  {key:'reasoning', label:'推論'},
+  {key:'memory',    label:'記憶'},
+  {key:'thinking',  label:'思考'},
+  {key:'physical',  label:'身体'},
+  {key:'mental',    label:'精神'},
+  {key:'overall',   label:'総合力'},
+];
+let rankingSortKey='pp';
+
+/* v7.6: incomingCollapsedState — persists open/closed status of each
+   incoming cohort accordion panel across re-renders. Key = cohortId
+   string (e.g. "inc-7"), value = true means collapsed.
+   Populated by toggleCohort; read by renderIncoming to restore state.
+   Lives at module level so it survives navigate / renderApp calls.    */
+const incomingCollapsedState = new Map();
+
+function rankSortLabel(key){
+  const it=RANK_SORT_ITEMS.find(x=>x.key===key);
+  return it?it.label:'PP';
+}
+function rankSortValue(student,key,pool){
+  switch(key){
+    case 'pp': return student.privatePoints||0;
+    case 'prp': return student.protectPoints||0;
+    case 'language':
+    case 'reasoning':
+    case 'memory':
+    case 'thinking':
+    case 'physical':
+    case 'mental': return clampStat(student.stats?.[key]);
+    case 'overall': return calcOverallScore(student,pool);
+    default: return student.privatePoints||0;
+  }
+}
+function computeRankingBy(key='pp'){
+  /* v7.6: active students only — typeof grade === 'number' (grades 1-6),
+     non-expelled. Incoming and Graduate are excluded from Top-100.     */
+  const pool = state.students.filter(s=>typeof s.grade==='number' && !s.isExpelled);
+  const sorted=[...pool].sort((a,b)=>{
+    const av=rankSortValue(a,key,pool);
+    const bv=rankSortValue(b,key,pool);
+    if(bv!==av) return bv-av;
+    if((b.privatePoints||0)!==(a.privatePoints||0)) return (b.privatePoints||0)-(a.privatePoints||0);
+    return String(a.id).localeCompare(String(b.id));
+  });
+  const out=[];
+  for(let i=0;i<sorted.length&&out.length<TOP_N;i++){
+    const cur=rankSortValue(sorted[i],key,pool);
+    const prev=i>0?rankSortValue(sorted[i-1],key,pool):null;
+    const rank=(i>0&&cur===prev)?out[out.length-1].rank:i+1;
+    out.push({rank,student:sorted[i],value:cur});
+  }
+  return out;
+}
+window.setRankingSort=function(key){
+  rankingSortKey=RANK_SORT_ITEMS.some(x=>x.key===key)?key:'pp';
+  renderPage('ranking',{});
+};
+
+/* ── v7.3: Ranking page — 11-column table with clickable stat headers ──
+   Columns: 順位 | 氏名 | 学年/クラス | PP | PRP | 言語 | 推論 | 記憶 | 思考 | 身体 | 精神 | 総合
+   Each stat header is clickable and updates rankingSortKey.
+   The active-sort column gets .sort-active on both th and td.
+   Mini-bar column is fully removed.
+──────────────────────────────────────────────────────────────── */
+
+/* Column definitions — maps to CSS col-* classes and sort keys */
+const RNK_COLS = [
+  { key:null,        label:'順位',         cls:'col-rank',  thCls:'',        tdCls:'rn',   align:'right'  },
+  { key:null,        label:'氏名',         cls:'col-name',  thCls:'th-left', tdCls:'rk-nm td-left', align:'left' },
+  { key:null,        label:'学年 / クラス',cls:'col-class', thCls:'th-left', tdCls:'td-left',align:'left' },
+  { key:'pp',        label:'PP',           cls:'col-pp',    thCls:'',        tdCls:'rk-pp', align:'right' },
+  { key:'prp',       label:'PRP',          cls:'col-prp',   thCls:'',        tdCls:'',      align:'right' },
+  { key:'language',  label:'言語',         cls:'col-s0',    thCls:'',        tdCls:'',      align:'right' },
+  { key:'reasoning', label:'推論',         cls:'col-s1',    thCls:'',        tdCls:'',      align:'right' },
+  { key:'memory',    label:'記憶',         cls:'col-s2',    thCls:'',        tdCls:'',      align:'right' },
+  { key:'thinking',  label:'思考',         cls:'col-s3',    thCls:'',        tdCls:'',      align:'right' },
+  { key:'physical',  label:'身体',         cls:'col-s4',    thCls:'',        tdCls:'',      align:'right' },
+  { key:'mental',    label:'精神',         cls:'col-s5',    thCls:'',        tdCls:'',      align:'right' },
+  { key:'overall',   label:'総合',         cls:'col-ov',    thCls:'',        tdCls:'',      align:'right' },
+];
+
 function renderRankingPage(){
-  const ranked=computeRanking();
-  const medals=['🥇','🥈','🥉'];
+  const ranked  = computeRankingBy(rankingSortKey);
+  /* v7.6: active pool for overall score must match computeRankingBy filter */
+  const pool    = state.students.filter(s=>typeof s.grade==='number' && !s.isExpelled);
+  const medals  = ['🥇','🥈','🥉'];
+  const valLabel = rankSortLabel(rankingSortKey);
 
   let h=`
     <button class="back-btn" onclick="goBack()">◀ 戻る</button>
     <div class="pg-hdr">
       <span class="pg-title">🏆 ${JP.ranking} TOP ${TOP_N}</span>
-      <span class="pg-sub">全生徒PP降順 · 同PP=同順位</span>
+      <span class="pg-sub">並び替え: ${valLabel}（降順）</span>
     </div>`;
 
-  /* ── Podium: TOP 3 at the top ── */
+  /* ── Podium: TOP 3 ── */
   if(ranked.length){
     h+=`<div class="medal-row">`;
-    ranked.slice(0,Math.min(3,ranked.length)).forEach(({rank,student:s},i)=>{
+    ranked.slice(0,Math.min(3,ranked.length)).forEach(({rank,student:s,value},i)=>{
       const gd=typeof s.grade==='number'?JP.gradeN(s.grade):(s.grade==='Graduate'?'卒業生':'入学予定');
       const cd=typeof s.grade==='number'?clsName(s.grade,s.classId):'―';
       h+=`
@@ -1378,42 +2308,87 @@ function renderRankingPage(){
           <div class="medal-rnk">${medals[i]} 第${rank}位</div>
           <div class="medal-name">${esc(s.name)||'(未記入)'}</div>
           <div class="medal-sub">${gd} &nbsp;${esc(cd)}</div>
-          <div class="medal-pp">${s.privatePoints.toLocaleString()} PP</div>
+          <div class="medal-pp">${Number.isInteger(value)?value.toLocaleString():value} ${valLabel}</div>
         </div>`;
     });
     h+=`</div>`;
   }
 
-  /* ── Full table ── */
+  /* ── colgroup ── */
+  const colgroup = RNK_COLS.map(c=>`<col class="${c.cls}" />`).join('');
+
+  /* ── thead — clickable stat headers ── */
+  const thead = RNK_COLS.map(c=>{
+    const isActive = c.key && c.key===rankingSortKey;
+    const arrow    = c.key ? `<span class="sort-arrow">${isActive?'▼':' '}</span>` : '';
+    const activeCs = isActive ? ' sort-active' : '';
+    const thCls    = [c.thCls, activeCs].filter(Boolean).join(' ');
+    const onClick  = c.key ? `onclick="setRankingSort('${c.key}')"` : '';
+    return `<th class="${thCls}" ${onClick}>${c.label}${arrow}</th>`;
+  }).join('');
+
   h+=`
     <div class="rnk-wrap" style="margin-top:10px">
       <table class="rnk-tbl">
-        <thead><tr>
-          <th style="text-align:right">順位</th>
-          <th>氏名</th>
-          <th>学年 / クラス</th>
-          <th>ID</th>
-          <th style="text-align:right">PP</th>
-        </tr></thead>
+        <colgroup>${colgroup}</colgroup>
+        <thead><tr>${thead}</tr></thead>
         <tbody>`;
-  if(!ranked.length) h+=`<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--t3)">データなし</td></tr>`;
-  ranked.forEach(({rank,student:s})=>{
-    const gd=typeof s.grade==='number'?JP.gradeN(s.grade):(s.grade==='Graduate'?'卒業生':'入学予定');
-    const cd=typeof s.grade==='number'?clsName(s.grade,s.classId):'―';
-    h+=`<tr>
-      <td class="rn ${rank<=3?'top3':''}">${rank}</td>
-      <td class="rk-nm" onclick="navigate('profile',{sid:'${s.id}'},false)">${esc(s.name)||'<span class="dim">(未記入)</span>'}</td>
-      <td style="font-size:.7rem;color:var(--t1)">${gd} / ${esc(cd)}</td>
-      <td style="font-size:.62rem;color:var(--t3)">${s.id}</td>
-      <td class="rk-pp ${s.privatePoints<0?'neg':''}">${s.privatePoints.toLocaleString()}</td>
-    </tr>`;
+
+  if(!ranked.length){
+    h+=`<tr><td colspan="${RNK_COLS.length}" style="text-align:center;padding:20px;color:var(--t3)">データなし</td></tr>`;
+  }
+
+  ranked.forEach(({rank,student:s,value})=>{
+    const gd  = typeof s.grade==='number'?JP.gradeN(s.grade):(s.grade==='Graduate'?'卒業生':'入学予定');
+    const cd  = typeof s.grade==='number'?clsName(s.grade,s.classId):'―';
+    const ov  = calcOverallScore(s, pool);
+    const top3 = rank<=3 ? ' top3' : '';
+
+    /* Per-stat value helper — returns formatted string */
+    const sv = key => {
+      switch(key){
+        case 'pp':       return (s.privatePoints||0).toLocaleString();
+        case 'prp':      return String(s.protectPoints||0);
+        case 'language': return String(clampStat(s.stats?.language));
+        case 'reasoning':return String(clampStat(s.stats?.reasoning));
+        case 'memory':   return String(clampStat(s.stats?.memory));
+        case 'thinking': return String(clampStat(s.stats?.thinking));
+        case 'physical': return String(clampStat(s.stats?.physical));
+        case 'mental':   return String(clampStat(s.stats?.mental));
+        case 'overall':  return String(ov);
+        default: return '';
+      }
+    };
+
+    /* Build tds from RNK_COLS definition */
+    const tds = RNK_COLS.map(c=>{
+      const isActive = c.key && c.key===rankingSortKey;
+      const activeCls = isActive ? ' stat-active' : '';
+      let content='', tdCls=(c.tdCls||'')+top3+activeCls;
+      switch(c.cls){
+        case 'col-rank':
+          /* v7.5: rnk-num for monospace font */
+          return `<td class="rn rnk-num${top3}">${rank}</td>`;
+        case 'col-name':
+          return `<td class="rk-nm td-left${activeCls}" onclick="navigate('profile',{sid:'${s.id}'},false)">${esc(s.name)||'<span class="dim">(未記入)</span>'}</td>`;
+        case 'col-class':
+          return `<td class="td-left${activeCls}" style="font-size:.68rem;color:var(--t1)">${gd} / ${esc(cd)}</td>`;
+        default:
+          content = sv(c.key);
+          /* v7.5: numeric data cols (PP, PRP, stats, overall) get rnk-num */
+          return `<td class="${(c.tdCls||'').trim()} rnk-num${activeCls}">${content}</td>`;
+      }
+    }).join('');
+
+    h+=`<tr>${tds}</tr>`;
   });
+
   h+=`</tbody></table></div>`;
   return h;
 }
 
 /* ──────────────────────────────────────────────────────────────────
-   CLASS RANKING PAGE — v6.1/6.3/6.4
+   CLASS RANKING PAGE
 ────────────────────────────────────────────────────────────────── */
 function renderClassRankingPage(){
   const clsRanked=computeClassRanking();
@@ -1480,57 +2455,258 @@ function renderClassRankingPage(){
 }
 
 /* ──────────────────────────────────────────────────────────────────
-   SPECIAL PAGES (Graduates / Incoming)
+   SPECIAL PAGES (Graduates / Incoming) — v7.4
 ────────────────────────────────────────────────────────────────── */
 function renderSpecial(gradeType){
-  const isGrad=gradeType==='Graduate';
-  const sts=state.students.filter(s=>s.grade===gradeType);
-  const title=isGrad?JP.graduates:JP.incoming2;
-  const col=isGrad?'var(--yw)':'var(--ac)';
+  return gradeType==='Graduate' ? renderGraduates() : renderIncoming();
+}
+
+/* ── Graduates — archived by original grade-year cohort ─────── */
+function renderGraduates(){
+  const sts=state.students.filter(s=>s.grade==='Graduate');
+  /* Group by graduateYear (set at time of graduation) or by ID prefix cohort */
+  const byYear={};
+  sts.forEach(s=>{
+    /* graduateYear: set when student graduated (year they left grade 6).
+       Fall back to 'Unknown' if not set (legacy data).               */
+    const yrKey = typeof s.graduateYear==='number' ? `Year ${s.graduateYear}` : '卒業年不明';
+    if(!byYear[yrKey]) byYear[yrKey]=[];
+    byYear[yrKey].push(s);
+  });
+  const sortedYears=Object.keys(byYear).sort((a,b)=>{
+    const na=parseInt(a.replace('Year ','')),nb=parseInt(b.replace('Year ',''));
+    if(isNaN(na)) return 1;
+    if(isNaN(nb)) return -1;
+    return nb-na; // most recent first
+  });
 
   let h=`
     <button class="back-btn" onclick="goBack()">◀ 戻る</button>
     <div class="pg-hdr">
-      <span class="pg-title" style="color:${col}">${title}</span>
-      <span class="pg-sub">${sts.length}名</span>
+      <span class="pg-title" style="color:var(--yw)">${JP.graduates}</span>
+      <span class="pg-sub">${sts.length}名 · ${sortedYears.length}期</span>
     </div>
     <div class="srch-row">
-      <input class="fi" id="s-search" placeholder="生徒を検索..." oninput="filterStudents()" />
-      ${!isGrad?`<button class="btn btn-sm" onclick="addIncoming()">＋ 追加</button>`:''}
-    </div>
-    <div class="s-grid">`;
-  if(!sts.length) h+=`<div class="dim" style="grid-column:1/-1;padding:20px;text-align:center">生徒なし</div>`;
-  sts.forEach(s=>{
-    const hasPrp=s.protectPoints>0;
+      <input class="fi" id="s-search" placeholder="卒業生を検索..." oninput="filterStudents()" />
+    </div>`;
+
+  if(!sts.length){
+    h+=`<div class="sp-empty-note">卒業生はいません。</div>`;
+    return h;
+  }
+
+  sortedYears.forEach(yrKey=>{
+    const cohort=byYear[yrKey];
+    const cohortId=yrKey.replace(/\s+/g,'-');
     h+=`
-      <div class="s-card ${s.isExpelled?'expelled':''}"
-           data-name="${escA(s.name.toLowerCase())}"
-           onclick="navigate('profile',{sid:'${s.id}'},false)">
-        <div class="s-top-left">
-          <span class="s-sid">${s.id}</span>
-          <span class="s-gender">${s.gender==='M'?JP.male:JP.female}</span>
+      <div class="cohort-block" id="cohort-${cohortId}">
+        <div class="cohort-hdr" onclick="toggleCohort('${cohortId}')">
+          <span class="cohort-yr">${yrKey} 卒業</span>
+          <span class="cohort-cnt">${cohort.length}名</span>
+          <span class="cohort-arrow">▼</span>
         </div>
-        <div class="s-top-right">
-          ${hasPrp?`<span class="s-prp-val">${s.protectPoints}<span class="s-prp-unit">PRP</span></span>`:''}
-        </div>
-        <div class="s-bot-left">
-          <div class="s-name">${esc(s.name)||'<span class="dim">(未記入)</span>'}</div>
-        </div>
-        <div class="s-bot-right">
-          <span class="s-pp-val ${ppCol(s.privatePoints)}">${fmtPP(s.privatePoints)}<span class="s-pp-unit">PP</span></span>
-        </div>
-      </div>`;
+        <div class="cohort-body s-grid" id="cohort-body-${cohortId}" onclick="event.stopPropagation()">`;
+    cohort.forEach(s=>{
+      const hasPrp=s.protectPoints>0;
+      h+=`
+        <div class="s-card ${s.isExpelled?'expelled':''}"
+             data-name="${escA(s.name.toLowerCase())}"
+             onclick="navigate('profile',{sid:'${s.id}'},false)">
+          <div class="s-top-left">
+            <span class="s-sid">${s.id}</span>
+            <span class="s-gender">${s.gender==='M'?JP.male:JP.female}</span>
+          </div>
+          <div class="s-top-right">
+            ${hasPrp?`<span class="s-prp-val">${s.protectPoints}<span class="s-prp-unit">PRP</span></span>`:''}
+          </div>
+          <div class="s-bot-left">
+            <div class="s-name">${esc(s.name)||'<span class="dim">(未記入)</span>'}</div>
+          </div>
+          <div class="s-bot-right">
+            <span class="s-pp-val ${ppCol(s.privatePoints)}">${fmtPP(s.privatePoints)}<span class="s-pp-unit">PP</span></span>
+          </div>
+        </div>`;
+    });
+    h+=`</div></div>`;
   });
-  return h+'</div>';
+  return h;
 }
+window.toggleCohort=function(id){
+  const body =document.getElementById('cohort-body-'+id);
+  const block=document.getElementById('cohort-'+id);
+  if(!body||!block) return;
+  const isOpen = !body.classList.contains('cohort-collapsed');
+  /* isOpen=true means it IS open now → user clicked to CLOSE it */
+  body.classList.toggle('cohort-collapsed', isOpen);
+  const arrow = block.querySelector('.cohort-arrow');
+  if(arrow) arrow.textContent = isOpen ? '▶' : '▼';
+  /* v7.6: persist state — true means collapsed */
+  incomingCollapsedState.set(id, isOpen);
+};
+
+/* ── Incoming — grouped by cohort grade, with Create/Delete ── */
+function renderIncoming(){
+  const cohorts=getIncomingCohorts();
+  const allIncoming=state.students.filter(s=>s.grade==='Incoming');
+  const nextGrade=nextIncomingCohortGrade();
+
+  let h=`
+    <button class="back-btn" onclick="goBack()">◀ 戻る</button>
+    <div class="pg-hdr">
+      <span class="pg-title" style="color:var(--ac)">${JP.incoming2}</span>
+      <span class="pg-sub">${allIncoming.length}名 · ${cohorts.length}コホート</span>
+    </div>
+    <div class="srch-row">
+      <input class="fi" id="s-search" placeholder="入学予定者を検索..." oninput="filterStudents()" />
+      <button class="btn btn-ac" onclick="createIncomingCohort()"
+              title="第${nextGrade}期 200名を新規作成">＋ 入学コホート作成 (第${nextGrade}期)</button>
+    </div>`;
+
+  if(!cohorts.length){
+    h+=`<div class="sp-empty-note">入学予定者はいません。<br>「＋ 入学コホート作成」で新しい期を生成できます。</div>`;
+    return h;
+  }
+
+  cohorts.forEach(cg=>{
+    const cohortStudents=allIncoming.filter(s=>s.cohortGrade===cg);
+    const cohortId=`inc-${cg}`;
+    const classGroups={};
+    CLASS_IDS.forEach(cid=>{classGroups[cid]=cohortStudents.filter(s=>s.classId===cid);});
+
+    /* v7.6: restore collapsed state from persistent Map.
+       Default is OPEN (not collapsed) for newly created cohorts.  */
+    const isCollapsed = incomingCollapsedState.get(cohortId) === true;
+    const bodyClass   = isCollapsed ? 'cohort-body cohort-collapsed' : 'cohort-body';
+    const arrowChar   = isCollapsed ? '▶' : '▼';
+
+    h+=`
+      <div class="cohort-block" id="cohort-${cohortId}">
+        <div class="cohort-hdr" onclick="toggleCohort('${cohortId}')">
+          <span class="cohort-yr" style="color:var(--ac)">入学予定 第${cg}期</span>
+          <span class="cohort-cnt">${cohortStudents.length}名 · 5クラス</span>
+          <button class="cohort-rnd-btn" onclick="event.stopPropagation();randomizeIncomingCohort(${cg})"
+                  title="第${cg}期 全生徒をランダム生成">ランダム生成</button>
+          <button class="cohort-del-btn" onclick="event.stopPropagation();deleteIncomingCohort(${cg})"
+                  title="この期を削除">削除</button>
+          <span class="cohort-arrow">${arrowChar}</span>
+        </div>
+        <div class="${bodyClass}" id="cohort-body-${cohortId}" onclick="event.stopPropagation()">`;
+
+    /* Per-class sub-groups */
+    CLASS_IDS.forEach(cid=>{
+      const clsSts=classGroups[cid];
+      const rankLabel=RANK_LABELS[cid]||'?';
+      h+=`
+          <div class="inc-cls-block">
+            <div class="inc-cls-hdr">
+              <span class="r${rankLabel}" style="font-family:var(--fd);font-weight:700;font-size:.8rem">${rankLabel}組</span>
+              <span style="color:var(--t1);font-size:.7rem">${clsSts.length}名</span>
+            </div>
+            <div class="s-grid">`;
+      if(!clsSts.length){
+        h+=`<div class="dim" style="grid-column:1/-1;padding:10px;font-size:.7rem">生徒なし</div>`;
+      } else {
+        clsSts.forEach(s=>{
+          h+=`
+              <div class="s-card"
+                   data-name="${escA(s.name.toLowerCase())}"
+                   onclick="navigate('profile',{sid:'${s.id}'},false)">
+                <div class="s-top-left">
+                  <span class="s-sid">${s.id}</span>
+                  <span class="s-gender">${s.gender==='M'?JP.male:JP.female}</span>
+                </div>
+                <div class="s-top-right"></div>
+                <div class="s-bot-left">
+                  <div class="s-name">${esc(s.name)||'<span class="dim">(未記入)</span>'}</div>
+                </div>
+                <div class="s-bot-right">
+                  <span class="s-pp-val ${ppCol(s.privatePoints)}">${fmtPP(s.privatePoints)}<span class="s-pp-unit">PP</span></span>
+                </div>
+              </div>`;
+        });
+      }
+      h+=`</div></div>`;
+    });
+
+    h+=`</div></div>`;
+  });
+  return h;
+}
+
+/* Legacy single-student add — kept for backward compat */
 window.addIncoming=function(){
-  const s=blankStudent('Incoming',0); state.students.push(s);
-  saveState(true); renderApp(); toast('✓ 入学予定を追加しました: '+s.id,'ok');
+  const cg=nextIncomingCohortGrade();
+  const pfx=String(cg).padStart(3,'0');
+  const existingSeqs=state.students
+    .filter(s=>s.grade==='Incoming'&&s.id?.startsWith(pfx))
+    .map(s=>parseInt(s.id.slice(-4),10)).filter(n=>!isNaN(n));
+  let seq=(existingSeqs.length?Math.max(...existingSeqs):0)+1;
+  const id=pfx+String(seq).padStart(4,'0');
+  const stats=Object.fromEntries(STATS_KEYS.map(k=>[k,1]));
+  const s={id,name:'',gender:'M',dob:'',grade:'Incoming',cohortGrade:cg,
+           classId:0,stats,specialAbility:'',privatePoints:0,protectPoints:0,
+           contracts:[],isExpelled:false};
+  state.students.push(s);
+  saveState(true); renderApp(); toast('✓ 入学予定を追加しました: '+id,'ok');
 };
 
 /* ──────────────────────────────────────────────────────────────────
-   MODAL
+   CUSTOM UI CONFIRM / ALERT — v7.3
+   Replaces window.confirm and window.alert throughout the app.
+
+   uiConfirm({
+     title   : string,               — modal header text
+     body    : string (HTML allowed),— modal body text
+     variant : 'info'|'warn'|'danger', — colour scheme
+     okLabel : string,               — confirm button label
+     cancelLabel? : string,          — cancel button label (omit to hide)
+     onOk    : function,             — called when OK is pressed
+     onCancel? : function,           — called when Cancel / X is pressed
+   });
+
+   uiAlert({ title, body, variant, okLabel }) — confirm-only variant
 ────────────────────────────────────────────────────────────────── */
+function uiConfirm({title='確認',body='',variant='info',okLabel='確認',cancelLabel='キャンセル',onOk,onCancel}={}){
+  const box   = document.getElementById('uic-box');
+  const ov    = document.getElementById('uic-overlay');
+  const ttl   = document.getElementById('uic-title-el');
+  const bdy   = document.getElementById('uic-body');
+  const btnOk = document.getElementById('uic-btn-ok');
+  const btnCn = document.getElementById('uic-btn-cancel');
+  if(!box||!ov||!ttl||!bdy||!btnOk||!btnCn) return;
+
+  /* Apply variant */
+  box.className = variant==='danger'?'uic-danger':variant==='warn'?'uic-warn':'';
+  ttl.textContent = title;
+  bdy.innerHTML   = body;
+  btnOk.textContent = okLabel;
+
+  if(cancelLabel){
+    btnCn.textContent = cancelLabel;
+    btnCn.style.display = '';
+  }else{
+    btnCn.style.display = 'none';
+  }
+
+  /* Wire up one-shot listeners */
+  const close=(accept)=>{
+    ov.classList.add('hidden');
+    btnOk.onclick = null;
+    btnCn.onclick = null;
+    if(accept && typeof onOk==='function')     onOk();
+    if(!accept && typeof onCancel==='function') onCancel();
+  };
+  btnOk.onclick = ()=>close(true);
+  btnCn.onclick = ()=>close(false);
+
+  ov.classList.remove('hidden');
+}
+
+function uiAlert({title='通知',body='',variant='info',okLabel='OK'}={}){
+  uiConfirm({title,body,variant,okLabel,cancelLabel:null});
+}
+
+
 function openModal(html){
   document.getElementById('modal-body').innerHTML=html;
   document.getElementById('modal-overlay').classList.remove('hidden');
@@ -1543,6 +2719,14 @@ window.closeModal=function(){ document.getElementById('modal-overlay').classList
 function afterRender(){
   const ta=document.getElementById('pf-sa'), ct=document.getElementById('sa-ct');
   if(ta&&ct) ta.addEventListener('input',()=>{ ct.textContent=ta.value.length+'/300'; });
+
+  const cur=navStack[navStack.length-1];
+  if(cur?.page==='profile'){
+    drawProfileRadar();
+  }
+  if(cur?.page==='class' && swapMode){
+    bindSwapDragHandlers(cur.params.grade,cur.params.classId);
+  }
 }
 
 /* ──────────────────────────────────────────────────────────────────
@@ -1550,8 +2734,8 @@ function afterRender(){
 ────────────────────────────────────────────────────────────────── */
 function bindEvents(){
   /* Time navigation */
-  document.getElementById('btn-prev').addEventListener('click', revertMonth);
-  document.getElementById('btn-next').addEventListener('click', advanceMonth);
+  document.getElementById('btn-prev')?.addEventListener('click', revertMonth);
+  document.getElementById('btn-next')?.addEventListener('click', advanceMonth);
   document.addEventListener('keydown', e=>{
     if(!e.ctrlKey) return;
     if(e.key==='ArrowLeft'){e.preventDefault();revertMonth();}
@@ -1559,29 +2743,23 @@ function bindEvents(){
     if(e.key==='s'){e.preventDefault();saveState();}
   });
 
-  /* Gear toggle — ONLY this opens/closes */
-  document.getElementById('gear-btn').addEventListener('click', e=>{
+  /* Gear toggle — ONLY the gear button opens/closes; clicking elsewhere does NOT close it */
+  document.getElementById('gear-btn')?.addEventListener('click', e=>{
     e.stopPropagation(); toggleGear();
   });
 
-  /* Close when clicking outside gear-wrap */
-  document.addEventListener('click', e=>{
-    const wrap=document.getElementById('gear-wrap');
-    if(wrap&&!wrap.contains(e.target)) closeGear();
-  });
-
-  /* Tray swallows its own clicks so the document handler ignores them */
-  document.getElementById('gear-tray').addEventListener('click', e=>{
+  /* Tray swallows its own clicks */
+  document.getElementById('gear-tray')?.addEventListener('click', e=>{
     e.stopPropagation();
   });
 
   /* History — no tray close */
-  document.getElementById('btn-history').addEventListener('click', e=>{
+  document.getElementById('btn-history')?.addEventListener('click', e=>{
     e.stopPropagation(); navigateSafe('history',{});
   });
 
   /* Theme flyout */
-  document.getElementById('btn-theme').addEventListener('click', e=>{
+  document.getElementById('btn-theme')?.addEventListener('click', e=>{
     e.stopPropagation(); toggleThemeFly(e);
   });
   document.querySelectorAll('.tf-opt').forEach(b=>{
@@ -1591,54 +2769,79 @@ function bindEvents(){
     });
   });
 
-  /* Save / Reset */
-  document.getElementById('btn-save').addEventListener('click', e=>{
-    e.stopPropagation(); saveState();
-  });
-  document.getElementById('btn-reset').addEventListener('click', e=>{
+  /* Save/Load modal + BGM */
+  document.getElementById('btn-save')?.addEventListener('click', e=>{
     e.stopPropagation();
-    openModal(`
-      <div class="m-title">スロット${currentSlot} リセット確認</div>
-      <div class="m-body">
-        <p>スロット${currentSlot}の<strong>全データを削除</strong>して<br>
-           1,200名の空欄データを再生成します。<br>
-           <span class="dim">この操作は取り消せません。</span></p>
-        <div class="btn-row">
-          <button class="btn btn-dn" onclick="doReset()">リセット実行</button>
-          <button class="btn" onclick="closeModal()">キャンセル</button>
-        </div>
-      </div>`);
+    openSaveLoadModal();
+  });
+  document.getElementById('btn-bgm')?.addEventListener('click', e=>{
+    e.stopPropagation();
+    toggleBGM();
   });
 
-  /* Export / Import */
-  document.getElementById('btn-export').addEventListener('click', e=>{
-    e.stopPropagation(); exportAllSlots();
+  /* v7.5: volume slider — syncs SoundCloud widget + green fill bar */
+  document.getElementById('bgm-volume')?.addEventListener('input', function(){
+    const vol = parseInt(this.value, 10) / 100;
+    if(bgmReady && bgmWidget){
+      bgmWidget.setVolume(vol * 100);
+    }
+    syncVolFill();
   });
-  document.getElementById('btn-import').addEventListener('click', e=>{
-    e.stopPropagation(); triggerImportDialog();
+
+  /* v7.5: mouseleave/mouseenter on #bgm-hitbox — reliable open/close.
+     .vol-open lives on #bgm-hitbox itself (bgm-column removed in v7.5).
+     The CSS ::after bridge prevents premature mouseleave mid-transition. */
+  document.getElementById('bgm-hitbox')?.addEventListener('mouseleave', ()=>{
+    const hitbox = document.getElementById('bgm-hitbox');
+    if(hitbox && bgmEnabled) hitbox.classList.remove('vol-open');
   });
-  document.getElementById('file-pick').addEventListener('change', function(){
+  document.getElementById('bgm-hitbox')?.addEventListener('mouseenter', ()=>{
+    const hitbox = document.getElementById('bgm-hitbox');
+    if(hitbox && bgmEnabled) hitbox.classList.add('vol-open');
+  });
+
+  /* v7.3: uic-overlay — cancel on backdrop click or Escape */
+  document.getElementById('uic-overlay')?.addEventListener('click', e=>{
+    if(e.target.id==='uic-overlay'){
+      document.getElementById('uic-btn-cancel')?.click();
+    }
+  });
+  document.addEventListener('keydown', e=>{
+    if(e.key==='Escape'){
+      const ov=document.getElementById('uic-overlay');
+      if(ov && !ov.classList.contains('hidden')){
+        document.getElementById('uic-btn-cancel')?.click();
+      }
+    }
+  });
+
+  document.getElementById('file-pick')?.addEventListener('change', function(){
     onFilePicked(this.files[0]); this.value='';
   });
-
-  /* Slot switcher */
-  document.querySelectorAll('.sl').forEach(b=>{
-    b.addEventListener('click', e=>{
-      e.stopPropagation();
-      const n=+b.dataset.slot; if(n!==currentSlot) switchSlot(n);
-    });
-  });
+  bindSaveLoadModalControls();
 
   /* Modal close */
-  document.getElementById('modal-x').addEventListener('click', closeModal);
-  document.getElementById('modal-overlay').addEventListener('click', e=>{
+  document.getElementById('modal-x')?.addEventListener('click', closeModal);
+  document.getElementById('modal-overlay')?.addEventListener('click', e=>{
     if(e.target.id==='modal-overlay') closeModal();
   });
 }
 
+/* doReset — clears current slot (or guest session), navigates home */
 window.doReset=function(){
-  closeModal(); resetSlot(); selectMode=false; selectedIds=new Set(); navStack=[];
-  navigate('home',{},true); toast(`✓ スロット${currentSlot} リセット完了`,'ok');
+  closeModal();
+  if(isGuestMode){
+    // Guest: just regenerate blank data in memory
+    state=newState(); generateInitialData();
+    selectMode=false; swapMode=false; selectedIds=new Set(); navStack=[];
+    navigate('home',{},true);
+    toast('✓ ゲストデータをリセットしました','ok');
+  }else{
+    resetSlot();
+    selectMode=false; swapMode=false; selectedIds=new Set(); navStack=[];
+    navigate('home',{},true);
+    toast(`✓ スロット${currentSlot} リセット完了`,'ok');
+  }
 };
 
 /* Global references */
@@ -1655,13 +2858,19 @@ function showLoader(msg){
   el.innerHTML=`<div class="ld-logo">COTE-OS</div><div class="ld-txt">${msg}</div><div class="ld-sub">しばらくお待ちください...</div>`;
   document.body.appendChild(el); return el;
 }
+
+/* v7.6: boot — Guest Mode (slot 0) by default, but immediately
+   calls generateInitialData() so the Home screen is populated
+   with 1,200 blank students on first load. Slot 1–12 data is
+   preserved in localStorage and accessible via the Save modal. */
 function boot(){
   loadTheme();
-  const ok=loadSlot(currentSlot);
-  if(!ok||!state?.students?.length){
-    const ld=showLoader('1,200名の初期データを生成中...');
-    setTimeout(()=>{ state=newState(); generateInitialData(); saveState(true); ld.remove(); finishBoot(); },80);
-  } else finishBoot();
+  initBGM();
+  currentSlot = 0;
+  isGuestMode  = true;
+  state = newState();
+  generateInitialData();   /* populate 1,200 blank students for guest session */
+  finishBoot();
 }
 function finishBoot(){
   bindEvents();

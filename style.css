@@ -1,11 +1,15 @@
 /* ═══════════════════════════════════════════════════════════════
-   Cote-OS v6.4  ·  Stylesheet
+   Cote-OS v7.6  ·  Stylesheet
    Themes: classic | light | dark
-   Changes vs v6.3:
-   • Slot buttons: .active::after always wins (blue-white dot via !important)
-   •   .sl.has-data dot logic corrected — only shows when NOT active
-   • History page: new vertical list layout styles (.hist-list, .hist-row-*)
-   • Profile sidebar header color changed from --io to --t1
+   Changes vs v7.5:
+   • .rnk-num rule removed — ranking numeric cells revert to the
+     standard table font (var(--fm) at .72rem, no extra class needed).
+     PP/PRP/stat/overall columns all use the same clean base font.
+   • .ov-score-val: font-size restored to v7.4 value (1.6rem)
+   • .radar-wrap: padding restored to v7.4 value (6px)
+   • Classic --t3 retained at #2e4e6a (v7.3 brightness, kept)
+   • All v7.5 structural fixes (gear tray, BGM hitbox, z-indices)
+     are preserved unchanged
    ═══════════════════════════════════════════════════════════════ */
 
 /* ── THEME: Classic ──────────────────────────────────────────── */
@@ -22,7 +26,7 @@
   --t0: #ccdde9;
   --t1: #7498b2;
   --t2: #3c5e7c;
-  --t3: #1e384f;
+  --t3: #2e4e6a; /* v7.3: +1 shade lighter for student ID visibility */
   --ac:  #00c8ff;
   --acd: #004f6b;
   --acg: rgba(0,200,255,.10);
@@ -135,7 +139,7 @@ input,select,textarea{font-family:var(--fm)}
 ::-webkit-scrollbar-thumb:hover{background:var(--acd)}
 
 /* ═══════════════════════════════════════════════════════════════
-   TASKBAR — pure 3-zone flex, no position:absolute
+   TASKBAR
 ═══════════════════════════════════════════════════════════════ */
 #taskbar{
   position:sticky;top:0;z-index:400;
@@ -143,6 +147,7 @@ input,select,textarea{font-family:var(--fm)}
   height:var(--tbh);padding:0 10px;
   background:var(--s1);border-bottom:1px solid var(--bd2);
   box-shadow:0 2px 18px rgba(0,0,0,.4);
+  overflow:visible;  /* v7.4: allow bgm-column slider to extend below taskbar */
 }
 #tb-left{
   flex:1;min-width:0;
@@ -165,7 +170,6 @@ input,select,textarea{font-family:var(--fm)}
 #breadcrumb a:hover{text-decoration:underline}
 .bc-sep{color:var(--t3);margin:0 4px}
 
-/* Center: flex:0 so both flex:1 sides push it to true center */
 #tb-center{
   flex:0 0 auto;
   display:flex;align-items:center;gap:8px;flex-shrink:0;
@@ -177,6 +181,7 @@ input,select,textarea{font-family:var(--fm)}
   font-family:var(--fd);font-size:.78rem;color:var(--ac);
   letter-spacing:.1em;text-align:center;white-space:nowrap;
 }
+/* v7.1: slot chip — Japanese only, no "· Slot N" suffix */
 #slot-chip{font-size:.57rem;color:var(--t2);letter-spacing:.06em}
 
 #tb-right{
@@ -206,79 +211,166 @@ input,select,textarea{font-family:var(--fm)}
 #gear-btn:hover{border-color:var(--ac);color:var(--ac);background:var(--s4)}
 #gear-btn.open{border-color:var(--ac);color:var(--ac);background:var(--acd);box-shadow:0 0 10px var(--acg)}
 
-/* Tray: slides open to the left.
-   overflow:visible here so the flyout is not clipped. */
 #gear-tray{
-  display:flex;align-items:center;gap:5px;
+  display:flex;align-items:center; /* v7.5: restored from v7.3 — flex-start caused jump */
+  gap:5px;
   overflow:visible;
   max-width:0;opacity:0;
   transition:max-width var(--gear-tr), opacity var(--gear-tr);
   white-space:nowrap;
   padding-right:6px;
 }
-#gear-tray.open{max-width:720px;opacity:1;}
+#gear-tray.open{max-width:500px;opacity:1;}
 
 /* Gear tray buttons */
 .gt-btn{
   background:var(--s3);color:var(--t0);border:1px solid var(--bd);
   padding:3px 8px;font-family:var(--fm);font-size:.71rem;
-  letter-spacing:.04em;white-space:nowrap;transition:all var(--tr);
+  letter-spacing:.04em;white-space:nowrap;transition:background var(--tr),border-color var(--tr),color var(--tr),box-shadow var(--tr);
   height:28px;display:flex;align-items:center;flex-shrink:0;
 }
 .gt-btn:hover{background:var(--s5);border-color:var(--ac);color:var(--ac)}
-.gt-btn:active{transform:scale(.97)}
-.gt-btn.io-btn{border-color:var(--iod);color:var(--io)}
-.gt-btn.io-btn:hover{background:var(--iog);border-color:var(--io)}
-.gt-btn.ac-btn{border-color:var(--acd);color:var(--ac)}
-.gt-btn.ac-btn:hover{background:var(--acg);box-shadow:0 0 8px var(--acg)}
-.gt-btn.dn-btn{border-color:var(--rdd);color:var(--rd)}
-.gt-btn.dn-btn:hover{background:rgba(255,51,85,.09);border-color:var(--rd)}
+/* v7.5: NO transform on :active — prevents icon/menu jump */
 
-/* v6.3: History button → purple (same as theme button) */
+/* History button — purple */
 .gt-btn.hist-btn{border-color:var(--iod);color:var(--io)}
 .gt-btn.hist-btn:hover{background:var(--iog);border-color:var(--io)}
 
-/* v6.3: Theme button — text-only, same purple style */
+/* Theme button — purple */
 .gt-btn.theme-btn{border-color:var(--iod);color:var(--io)}
 .gt-btn.theme-btn:hover{background:var(--iog);border-color:var(--io)}
 .gt-btn.theme-btn.open{border-color:var(--io);background:var(--iog)}
 
-.gt-div{display:block;width:1px;height:22px;background:var(--bd2);flex-shrink:0}
-
-/* Slot buttons */
-#gt-slot-row{
-  display:flex;align-items:center;gap:3px;
-  padding:2px 5px;background:var(--s2);border:1px solid var(--bd);height:28px;
-}
-.gt-lbl{font-size:.62rem;color:var(--t2);white-space:nowrap;margin-right:2px}
-.sl{
-  width:22px;height:22px;
-  background:var(--s3);border:1px solid var(--bd);
-  color:var(--t1);font-family:var(--fm);font-size:.7rem;
-  display:flex;align-items:center;justify-content:center;
-  transition:all var(--tr);position:relative;flex-shrink:0;
-}
-.sl:hover{border-color:var(--acd);color:var(--t0);background:var(--s4)}
-
-/* v6.4: active slot → blue-white dot. Always takes priority. */
-.sl.active{background:var(--acd);border-color:var(--ac);color:var(--ac);box-shadow:0 0 7px var(--acg)}
-.sl.active::after{
-  content:'';position:absolute;bottom:2px;right:2px;
-  width:4px;height:4px;border-radius:50%;
-  background:var(--ac)!important;
-  z-index:2;
+/* ── v7.5: BGM Hitbox ────────────────────────────────────────────
+   Architecture change from v7.4:
+   • #bgm-column wrapper removed — caused flex-start alignment bug
+   • #bgm-hitbox is position:relative; contains the ♫ button normally
+     in the flex flow (height:28px like all other .gt-btn elements)
+   • #bgm-slider-wrap is position:ABSOLUTE top:100% left:0 right:0
+     so it drops below the taskbar without affecting any flex layout
+   • .vol-open class toggled on #bgm-hitbox (not a child) by JS
+   • Hitbox covers both button + slider area via pseudo-element bridge
+     so mouseleave only fires when cursor truly exits the rectangle
+────────────────────────────────────────────────────────────────── */
+#bgm-hitbox{
+  position:relative;
+  flex-shrink:0;
+  display:flex;
+  align-items:center;   /* matches gear-tray align-items:center */
 }
 
-/* v6.4: has-data → green dot only when NOT active */
-.sl.has-data:not(.active)::after{
-  content:'';position:absolute;bottom:2px;right:2px;
-  width:4px;height:4px;border-radius:50%;background:var(--gn);
+/* The BGM toggle button — standard gt-btn size, in normal flex flow */
+.gt-btn.bgm-btn{
+  border-color:var(--gnd);color:var(--t1);
+  min-width:auto;height:28px;
+  justify-content:center;padding:3px 9px;
+  font-size:.88rem;
+  flex-shrink:0;
+}
+.gt-btn.bgm-btn:hover{background:var(--gnd);border-color:var(--gn);color:var(--gn)}
+.gt-btn.bgm-btn.on{
+  border-color:var(--gn);color:var(--gn);
+  background:var(--gnd);box-shadow:0 0 7px rgba(0,255,136,.2);
+}
+
+/* Slider panel — absolutely positioned below #bgm-hitbox.
+   Collapsed (height:0) by default; .vol-open on #bgm-hitbox shows it. */
+#bgm-slider-wrap{
+  position:absolute;
+  top:100%;           /* flush below the button, zero gap */
+  left:0;
+  right:0;            /* inherits width of #bgm-hitbox = button width */
+  height:0;
+  overflow:hidden;
+  opacity:0;
+  pointer-events:none;
+  transition:height .2s ease, opacity .18s ease;
+  /* Visual box */
+  background:var(--s2);
+  border:1px solid var(--bd2);
+  border-top:none;
+  box-sizing:border-box;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:13px 0;
+}
+#bgm-hitbox.vol-open #bgm-slider-wrap{
+  height:106px;       /* 80px slider + 13px padding top + 13px bottom */
+  opacity:1;
+  pointer-events:all;
+}
+/* Invisible pseudo-element bridge fills the gap between button bottom
+   and slider panel top so mouseleave doesn't fire mid-transition.     */
+#bgm-hitbox.vol-open::after{
+  content:'';
+  position:absolute;
+  top:100%;
+  left:0;right:0;
+  height:2px;          /* covers the border seam */
+  background:transparent;
+  pointer-events:all;
+}
+
+/* ── Fill track + fill bar ───────────────────────────────────── */
+#vol-fill-track{
+  position:absolute;
+  left:50%;
+  transform:translateX(-50%);
+  top:13px;
+  bottom:13px;
+  width:4px;
+  background:var(--bd2);
+  border-radius:2px;
+  pointer-events:none;
+  overflow:hidden;
+}
+/* Green fill grows from bottom. JS sets --vol-pct on #bgm-slider-wrap */
+#vol-fill-bar{
+  position:absolute;
+  bottom:0;left:0;right:0;
+  height:calc(var(--vol-pct, 70) * 1%);
+  background:var(--gn);
+  border-radius:2px;
+  transition:height .08s linear;
+}
+
+/* ── Vertical range input — transparent overlay over the fill ── */
+#bgm-volume{
+  -webkit-appearance:none;
+  appearance:none;
+  writing-mode:vertical-lr;
+  direction:rtl;
+  width:100%;          /* fills full width of slider-wrap = button width */
+  height:80px;
+  cursor:pointer;
+  background:transparent;
+  outline:none;
+  position:relative;
   z-index:1;
 }
+#bgm-volume::-webkit-slider-runnable-track{
+  width:4px;background:transparent;border-radius:2px;
+}
+#bgm-volume::-moz-range-track{
+  width:4px;background:transparent;border-radius:2px;
+}
+/* No thumb — fill bar is the only visual */
+#bgm-volume::-webkit-slider-thumb{
+  -webkit-appearance:none;
+  width:0;height:0;background:transparent;border:none;box-shadow:none;
+}
+#bgm-volume::-moz-range-thumb{
+  width:0;height:0;background:transparent;border:none;box-shadow:none;
+}
 
-/* ── Theme flyout ─────────────────────────────────────────────
-   v6.3: width:100% of .gt-item-wrap, matching text-only テーマ button.
-─────────────────────────────────────────────────────────────── */
+/* Save/Load button — cyan accent */
+.gt-btn.sl-btn{border-color:var(--acd);color:var(--ac)}
+.gt-btn.sl-btn:hover{background:var(--acg);box-shadow:0 0 8px var(--acg)}
+
+.gt-div{display:block;width:1px;height:22px;background:var(--bd2);flex-shrink:0}
+
+/* ── Theme flyout ─────────────────────────────────────────────── */
 .gt-item-wrap{
   position:relative;flex-shrink:0;
 }
@@ -300,10 +392,200 @@ input,select,textarea{font-family:var(--fm)}
   padding:6px 8px;text-align:center;
   transition:all var(--tr);white-space:nowrap;width:100%;
 }
-.tf-opt:hover{background:var(--s3);color:var(--ac)}
+/* v7.0: Classic/Light/Dark hover — more distinct colors per theme */
+.tf-opt:hover{background:var(--s4);color:var(--ac)}
+[data-theme="classic"] .tf-opt:hover{background:var(--s4);color:var(--ac)}
+[data-theme="classic"] .tf-opt[data-theme="dark"]:hover{
+  background:#09131e;
+  color:#7fd2ff;
+  box-shadow:inset 0 0 0 1px #1b3a57;
+}
+[data-theme="dark"] .tf-opt:hover{background:#202c44;color:#60c8f0}
 .tf-opt.active{color:var(--ac);background:var(--acd)}
+.tf-opt[data-theme="classic"]{text-align:center}
 
 #file-pick{display:none}
+
+/* ═══════════════════════════════════════════════════════════════
+   SAVE/LOAD MODAL — v7.1 (4×3 slots, 4-col controls, no X btn)
+═══════════════════════════════════════════════════════════════ */
+#sl-overlay{
+  position:fixed;inset:0;z-index:500;
+  background:var(--overlay);
+  display:flex;align-items:center;justify-content:center;
+  padding:20px 14px;
+  /* v7.1: prevent clicks passing through overlay to background */
+  pointer-events:all;
+}
+#sl-overlay.hidden{
+  display:none;
+  pointer-events:none;
+}
+
+#sl-box{
+  background:var(--modal-bg);border:1px solid var(--modal-bd);
+  /* v7.1: wider to comfortably fit 4 columns */
+  width:clamp(640px, 60vw, 1060px);
+  max-width:94vw;
+  min-height:min(54vh, 680px);
+  max-height:90vh;
+  overflow-y:auto;
+  padding:18px 18px 16px;
+  border-radius:10px;
+  box-shadow:0 0 60px rgba(0,0,0,.95);
+  display:flex;flex-direction:column;gap:12px;
+  /* Stop clicks inside modal from reaching overlay */
+  pointer-events:all;
+}
+#sl-header{
+  display:flex;align-items:center;
+  /* v7.1: no close button, so title is alone */
+  justify-content:flex-start;
+  padding-bottom:10px;border-bottom:1px solid var(--bd2);
+}
+#sl-title{
+  font-family:var(--fd);font-size:.82rem;color:var(--ac);
+  letter-spacing:.18em;
+}
+/* v7.1: #sl-close removed from HTML; keep rule harmless if JS re-adds it */
+#sl-close{display:none}
+
+/* v7.1: Slot area — 4 columns × 3 rows */
+#sl-slots{
+  display:grid;
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  gap:10px;
+  align-content:start;
+  min-height:300px;
+}
+
+/* Slot card */
+.sl-slot{
+  background:linear-gradient(165deg,var(--s2),var(--s1));
+  border:1px solid var(--bd);
+  border-radius:8px;
+  padding:10px 11px 9px;
+  display:flex;flex-direction:column;gap:4px;
+  cursor:pointer;transition:border-color var(--tr),background var(--tr),transform var(--tr);
+  position:relative;min-height:108px;
+}
+.sl-slot:hover{border-color:var(--acd);background:var(--s3)}
+.sl-slot.active{
+  border-color:var(--ac);
+  box-shadow:0 0 0 1px var(--ac), 0 0 12px var(--acg);
+  /* v7.5: transform removed — no upward jump when selecting slot */
+}
+.sl-slot.empty{
+  border-style:dashed;
+  background:
+    repeating-linear-gradient(-45deg,var(--s2),var(--s2) 6px,var(--s1) 6px,var(--s1) 12px);
+}
+
+.sl-slot-head{
+  display:flex;align-items:center;justify-content:space-between;gap:6px;
+}
+.sl-slot-num{
+  font-family:var(--fd);font-size:.6rem;color:var(--t2);letter-spacing:.11em;
+}
+.sl-slot-state{
+  font-size:.56rem;color:var(--gn);letter-spacing:.08em;text-transform:uppercase;
+}
+.sl-slot.empty .sl-slot-state{color:var(--t3)}
+
+.sl-slot-name{
+  background:transparent;border:none;border-bottom:1px solid var(--bd2);
+  color:var(--t0);font-family:var(--fm);font-size:.72rem;
+  width:100%;padding:2px 2px 3px;outline:none;
+  transition:border-color var(--tr);
+}
+.sl-slot-name:focus{border-color:var(--ac)}
+.sl-slot-name::placeholder{color:var(--t3)}
+
+.sl-slot-meta{
+  margin-top:auto;
+  display:flex;
+  flex-direction:column;
+  gap:2px;
+  font-size:.62rem;
+  color:var(--t2);
+}
+.sl-slot-meta-row{
+  display:flex;align-items:center;justify-content:space-between;gap:8px;
+}
+.sl-slot-meta-row span:last-child{color:var(--t0)}
+
+/* v7.4: Control panel — strict 4×2 grid
+   Row 1: セーブ · 書き出し · 読み込み · 削除
+   Row 2: プレイ · 新しくプレイ · [empty] · 戻る             */
+#sl-controls{
+  display:grid;
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  gap:8px;
+  padding-top:6px;
+  border-top:1px solid var(--bd2);
+}
+/* Empty placeholder cells in bottom row */
+.sl-act-empty{
+  display:block;
+  /* visually invisible, takes up grid space */
+}
+.sl-act{
+  background:var(--s3);border:1px solid var(--bd);
+  color:var(--t0);font-family:var(--fm);font-size:.72rem;
+  letter-spacing:.06em;padding:9px 8px;
+  transition:all var(--tr);
+}
+.sl-act:hover{border-color:var(--acd);color:var(--ac);background:var(--s2)}
+.sl-act.ac{border-color:var(--acd);color:var(--ac)}
+.sl-act.ac:hover{background:var(--acg)}
+.sl-act.io{border-color:var(--iod);color:var(--io)}
+.sl-act.io:hover{background:var(--iog);border-color:var(--io)}
+.sl-act.dn{border-color:var(--rdd);color:var(--rd)}
+.sl-act.dn:hover{background:rgba(255,51,85,.1);border-color:var(--rd)}
+.sl-act.yw{border-color:var(--ywd);color:var(--yw)}
+.sl-act.yw:hover{background:rgba(255,215,0,.1);border-color:var(--yw)}
+/* v7.2: Play button — lime green (#32CD32) */
+.sl-act.gn{
+  background:#1a4d1a;
+  border-color:#32CD32;
+  color:#32CD32;
+}
+.sl-act.gn:hover{background:#32CD32;color:#000;border-color:#32CD32}
+
+/* v7.3: "新しくプレイ" (Slot 0 / Guest) — always enabled, brighter accent */
+.sl-act-new{
+  border-color:#32CD32!important;
+  color:#32CD32!important;
+  background:rgba(50,205,50,.12)!important;
+  letter-spacing:.03em;
+  box-shadow:0 0 0 1px rgba(50,205,50,.25);
+}
+.sl-act-new:hover{
+  background:#32CD32!important;
+  color:#000!important;
+  box-shadow:0 0 10px rgba(50,205,50,.5);
+}
+/* Disabled slot actions (JS adds .sl-act-disabled) */
+.sl-act-disabled{
+  opacity:.32;
+  pointer-events:none;
+  cursor:not-allowed;
+}
+
+@media (max-width: 1000px){
+  #sl-slots{grid-template-columns:repeat(3,minmax(0,1fr))}
+  /* sl-controls stays 4-col at 1000px — 4 buttons fit fine */
+}
+@media (max-width: 700px){
+  #sl-box{
+    width:min(94vw,700px);
+    min-height:auto;
+    padding:14px 12px 12px;
+  }
+  #sl-slots{grid-template-columns:repeat(2,minmax(0,1fr));min-height:auto}
+  #sl-controls{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .sl-act-empty{display:none}
+}
 
 /* ═══════════════════════════════════════════════════════════════
    MAIN APP
@@ -343,6 +625,8 @@ input,select,textarea{font-family:var(--fm)}
 .btn-yw:hover{background:rgba(255,215,0,.08);border-color:var(--yw)}
 .btn-io{border-color:var(--iod);color:var(--io)}
 .btn-io:hover{background:var(--iog);border-color:var(--io)}
+.btn-gn{border-color:var(--gnd);color:var(--gn)}
+.btn-gn:hover{background:rgba(0,255,136,.08);border-color:var(--gn)}
 
 .fi,.fs,.fta{
   background:var(--s2);border:1px solid var(--bd);
@@ -431,7 +715,7 @@ input,select,textarea{font-family:var(--fm)}
 .sp-lbl{font-size:.63rem;color:var(--t2);margin-top:3px}
 
 /* ═══════════════════════════════════════════════════════════════
-   HISTORY PAGE — v6.4: vertical list layout
+   HISTORY PAGE
 ═══════════════════════════════════════════════════════════════ */
 .hist-list{
   display:flex;flex-direction:column;gap:3px;
@@ -535,8 +819,6 @@ input,select,textarea{font-family:var(--fm)}
 .bulk-bar label{font-size:.71rem;color:var(--t1)}
 .bulk-cnt{font-family:var(--fd);font-size:.71rem;color:var(--ac);min-width:60px}
 .bulk-inp{width:90px}
-
-/* v6.3: "PP" unit label on class screen boosted ×1.2 */
 .cls-pp-lbl{font-size:calc(0.71rem * 1.2)}
 
 /* Student grid */
@@ -559,6 +841,14 @@ input,select,textarea{font-family:var(--fm)}
 .s-card:hover{border-color:var(--acd);background:var(--s2)}
 .s-card.expelled{opacity:.27;border-style:dashed}
 .s-card.selected{border-color:var(--yw);background:rgba(255,215,0,.05)}
+
+/* v7.0: Drag & Drop states */
+.s-card[draggable="true"]{cursor:grab}
+.s-card[draggable="true"]:active{cursor:grabbing}
+.s-card.dragging{opacity:.35;border-color:var(--ac);border-style:dashed}
+.s-card.drag-over{border-color:var(--gn);box-shadow:0 0 8px rgba(0,255,136,.35);background:rgba(0,255,136,.06)}
+.swap-mode .s-card:not(.expelled){border-color:var(--t3)}
+.swap-mode .s-card:not(.expelled):hover{border-color:var(--gn);background:rgba(0,255,136,.04)}
 
 .s-chk{
   position:absolute;top:3px;right:3px;
@@ -618,7 +908,6 @@ input,select,textarea{font-family:var(--fm)}
   font-family:var(--fd);font-size:1.08rem;font-weight:700;
   white-space:nowrap;line-height:1.1;
 }
-/* v6.3: "PP" unit label on s-card boosted ×1.2 */
 .s-pp-unit{
   color:#ffffff;font-size:calc(0.62rem * 1.2);font-family:var(--fm);
   margin-left:2px;opacity:.88;font-weight:normal;
@@ -629,34 +918,123 @@ input,select,textarea{font-family:var(--fm)}
 .alt-hdr hr{flex:1;border:none;border-top:1px solid var(--bd)}
 
 /* ═══════════════════════════════════════════════════════════════
-   RANKING PAGE
+   RANKING PAGE — v7.3
+   Table now shows all 9 sortable stats as thead columns.
+   Mini-bar column removed; colgroup gives each stat 48px.
 ═══════════════════════════════════════════════════════════════ */
 .rnk-wrap{overflow-x:auto}
-.rnk-tbl{width:100%;border-collapse:collapse;font-size:.77rem}
+.rnk-tbl{
+  width:100%;border-collapse:collapse;font-size:.72rem;
+  table-layout:fixed;
+}
+/* Fixed column widths — stat columns are intentionally compact */
+.rnk-tbl col.col-rank  { width:46px }
+.rnk-tbl col.col-name  { width:130px }
+.rnk-tbl col.col-class { width:110px }
+/* 9 stat columns: PP, PRP, 言語, 推論, 記憶, 思考, 身体, 精神, 総合 */
+.rnk-tbl col.col-pp    { width:68px }
+.rnk-tbl col.col-prp   { width:52px }
+.rnk-tbl col.col-s0,
+.rnk-tbl col.col-s1,
+.rnk-tbl col.col-s2,
+.rnk-tbl col.col-s3,
+.rnk-tbl col.col-s4,
+.rnk-tbl col.col-s5,
+.rnk-tbl col.col-ov    { width:48px }
+
 .rnk-tbl th{
-  padding:5px 10px;border-bottom:2px solid var(--bd2);
-  color:var(--t2);font-weight:normal;letter-spacing:.06em;text-align:left;
-  background:var(--s1);white-space:nowrap;
+  padding:4px 6px;border-bottom:2px solid var(--bd2);
+  color:var(--t2);font-weight:normal;font-size:.63rem;
+  letter-spacing:.03em;text-align:right;
+  background:var(--s1);white-space:nowrap;cursor:pointer;
+  transition:color var(--tr);
+  overflow:hidden;text-overflow:ellipsis;
+  user-select:none;
 }
+/* Name and class columns are left-aligned */
+.rnk-tbl th.th-left{ text-align:left }
+.rnk-tbl th:hover{color:var(--ac)}
+.rnk-tbl th.sort-active{color:var(--ac)}
+.rnk-tbl th .sort-arrow{
+  display:inline-block;
+  font-size:.55rem;margin-left:2px;
+  width:.6em;text-align:center;
+  opacity:.6;vertical-align:middle;
+}
+.rnk-tbl th.sort-active .sort-arrow{ opacity:1; color:var(--ac); }
+
 .rnk-tbl td{
-  padding:5px 10px;border-bottom:1px solid var(--bd);
+  padding:4px 6px;border-bottom:1px solid var(--bd);
   color:var(--t1);transition:background var(--tr);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  text-align:right;
 }
+.rnk-tbl td.td-left{ text-align:left }
 .rnk-tbl tbody tr:hover td{background:var(--s2);color:var(--t0)}
-.rn{font-family:var(--fd);font-size:.8rem;color:var(--t0);text-align:right;padding-right:12px!important}
+/* Stat cell highlight when that column is the active sort */
+.rnk-tbl td.stat-active{ color:var(--ac);font-weight:600; }
+
+/* v7.6: .rnk-num class no longer overrides font — removed.
+   Ranking numeric cells (PP, PRP, stats, overall, rank#) use the
+   standard .rnk-tbl td base: font-family:var(--fm), font-size:.72rem.
+   This is the clean v7.4 style applied consistently to all columns. */
+
+.rn{font-family:var(--fd);font-size:.8rem;color:var(--t0);text-align:right;padding-right:10px!important}
 .rn.top3{color:var(--yw)}
-.rk-pp{font-family:var(--fd);color:var(--gn);text-align:right}
+.rk-pp{font-family:var(--fd);color:var(--gn)}
 .rk-pp.neg{color:var(--rd)}
 .rk-nm{cursor:pointer;color:var(--ac)}
 .rk-nm:hover{text-decoration:underline}
 .medal-row{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
 .medal-card{background:var(--s2);border:1px solid var(--bd);padding:10px 14px;flex:1;min-width:170px}
+.medal-card[style*="cursor:pointer"]:hover{border-color:var(--ac);background:var(--s3)}
 .medal-rnk{font-size:.67rem;color:var(--t2);margin-bottom:3px}
 .medal-name{font-family:var(--fj);font-size:.85rem;color:var(--t0);margin-bottom:3px}
 .medal-pp{font-family:var(--fd);font-size:1.08rem;color:var(--gn)}
 
+/* v7.3: Sort bar — labels now doubled as table headers; keep bar as quick-access row */
+.rnk-sort-bar{
+  display:flex;align-items:center;gap:6px;flex-wrap:wrap;
+  padding:5px 10px;background:var(--s2);border:1px solid var(--bd);
+  margin-bottom:9px;font-size:.68rem;color:var(--t2);
+}
+.rnk-sort-bar label{color:var(--t2);white-space:nowrap}
+.rnk-sort-btn{
+  background:var(--s3);border:1px solid var(--bd);
+  color:var(--t1);font-family:var(--fm);font-size:.65rem;
+  padding:2px 7px;transition:all var(--tr);white-space:nowrap;
+}
+.rnk-sort-btn:hover{border-color:var(--ac);color:var(--ac)}
+.rnk-sort-btn.active{border-color:var(--ac);color:var(--ac);background:var(--acd)}
+
 /* ═══════════════════════════════════════════════════════════════
-   PROFILE PAGE
+   CLASS RANKING TABLE
+═══════════════════════════════════════════════════════════════ */
+.cls-rnk-section{margin-top:12px}
+.cls-rnk-tbl{width:100%;border-collapse:collapse;font-size:.77rem}
+.cls-rnk-tbl th{
+  padding:5px 10px;border-bottom:2px solid var(--bd2);
+  color:var(--t2);font-weight:normal;letter-spacing:.06em;text-align:left;
+  background:var(--s1);white-space:nowrap;
+}
+.cls-rnk-tbl td{
+  padding:5px 10px;border-bottom:1px solid var(--bd);
+  color:var(--t1);transition:background var(--tr);
+}
+.cls-rnk-tbl tbody tr:hover td{background:var(--s2);color:var(--t0)}
+.cls-rnk-tbl .rn{font-family:var(--fd);font-size:.8rem;color:var(--t0);text-align:right;padding-right:12px!important}
+.cls-rnk-tbl .rn.top3{color:var(--yw)}
+.cls-rnk-tbl .rk-cp{font-family:var(--fd);color:var(--gn);text-align:right;white-space:nowrap}
+.cls-rnk-tbl .rk-nm{cursor:pointer;color:var(--ac)}
+.cls-rnk-tbl .rk-nm:hover{text-decoration:underline}
+
+.medal-sub{
+  font-size:.67rem;color:var(--t2);margin-top:1px;margin-bottom:3px;
+  font-family:var(--fm);letter-spacing:.03em;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   PROFILE PAGE — v7.1
 ═══════════════════════════════════════════════════════════════ */
 #prof-wrap{display:grid;grid-template-columns:280px 1fr;gap:12px}
 @media(max-width:800px){#prof-wrap{grid-template-columns:1fr}}
@@ -667,7 +1045,6 @@ input,select,textarea{font-family:var(--fm)}
 }
 .prof-main{display:flex;flex-direction:column;gap:9px}
 
-/* v6.4: Profile sidebar header color changed from --io to --t1 */
 .prof-side-hdr{
   font-family:var(--fd);font-size:.62rem;color:var(--t1);
   letter-spacing:.18em;text-transform:uppercase;
@@ -701,12 +1078,57 @@ input,select,textarea{font-family:var(--fm)}
 .info-tbl td:first-child{color:var(--t2);width:46%}
 .info-tbl td:last-child{color:var(--t0);text-align:right}
 
+/* v7.1: stat bars — hide numerical value (.sb-val hidden) */
 .sb-grid{margin-top:8px}
-.sb-row{display:flex;align-items:center;gap:6px;margin-bottom:3px}
-.sb-lbl{font-size:.62rem;color:var(--t2);width:56px;flex-shrink:0}
+.sb-row{display:flex;align-items:center;gap:6px;margin-bottom:4px}
+.sb-lbl{font-size:.62rem;color:var(--t2);width:48px;flex-shrink:0}
 .sb-track{flex:1;height:5px;background:var(--bd)}
 .sb-fill{height:100%;background:var(--ac);transition:width .3s}
-.sb-val{font-size:.68rem;color:var(--t0);width:18px;text-align:right;font-family:var(--fd)}
+/* v7.1: numerical value next to stat name hidden */
+.sb-val{display:none}
+.sb-grade{
+  font-family:var(--fd);font-size:.66rem;font-weight:700;
+  width:28px;text-align:center;flex-shrink:0;
+}
+/* letter-grade color tiers */
+.sg-sp{color:#ff9f00} .sg-s{color:#ffd700} .sg-ap{color:#a0ff80}
+.sg-a{color:#00ff88}  .sg-am{color:#00e07a} .sg-bp{color:#00c8ff}
+.sg-b{color:#60b8ff}  .sg-bm{color:#7498b2} .sg-cp{color:#a0b8c8}
+.sg-c{color:#8090a0}  .sg-cm{color:#607080} .sg-dp{color:#506070}
+.sg-d{color:#405060}  .sg-dm{color:#304050}
+
+/* v7.2: Overall score block — transparent, no border (floats on .prof-side bg) */
+.ov-wrap{
+  display:flex;align-items:stretch;gap:10px;margin-top:10px;
+}
+.ov-score-block{
+  flex:0 0 70px;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  background:transparent;border:none;padding:8px 4px;
+}
+.ov-score-lbl{font-size:.55rem;color:var(--t2);letter-spacing:.09em;margin-bottom:4px}
+.ov-score-val{
+  font-family:var(--fd);font-size:1.6rem;font-weight:900;
+  color:var(--ac);line-height:1;
+}
+.ov-score-sub{font-size:.55rem;color:var(--t3);margin-top:3px}
+
+/* v7.2: Radar chart — transparent, no border; canvas still constrained */
+.radar-wrap{
+  flex:1;
+  display:flex;align-items:center;justify-content:center;
+  background:transparent;border:none;
+  padding:6px;
+  overflow:hidden;
+  min-width:0;
+}
+.radar-wrap canvas{
+  display:block;
+  max-width:100%;
+  max-height:100%;
+  width:auto !important;
+  height:auto !important;
+}
 
 .prof-sec{background:var(--s1);border:1px solid var(--bd);padding:11px 13px}
 .sec-ttl{
@@ -714,7 +1136,6 @@ input,select,textarea{font-family:var(--fm)}
   text-transform:uppercase;margin-bottom:8px;
   padding-bottom:5px;border-bottom:1px solid var(--bd);
 }
-/* v6.3: unified label width for .fr rows in prof-sec */
 .fr{display:flex;align-items:center;gap:7px;margin-bottom:6px}
 .fr label{font-size:.69rem;color:var(--t1);min-width:96px;flex-shrink:0}
 .fr .fi,.fr .fs{flex:1;min-width:0}
@@ -767,10 +1188,10 @@ input,select,textarea{font-family:var(--fm)}
 .mt12{margin-top:12px}
 
 /* ═══════════════════════════════════════════════════════════════
-   MODAL
+   MODAL (standard)
 ═══════════════════════════════════════════════════════════════ */
 #modal-overlay{
-  position:fixed;inset:0;z-index:500;
+  position:fixed;inset:0;z-index:600; /* v7.5: above save modal z:500 */
   background:var(--overlay);display:flex;align-items:center;justify-content:center;
 }
 #modal-overlay.hidden{display:none}
@@ -810,33 +1231,8 @@ input,select,textarea{font-family:var(--fm)}
 #toast.on.warn{border-color:var(--ywd);color:var(--yw)}
 
 /* ═══════════════════════════════════════════════════════════════
-   CLASS RANKING TABLE
+   PROFILE sidebar protect points
 ═══════════════════════════════════════════════════════════════ */
-.cls-rnk-section{margin-top:12px}
-.cls-rnk-tbl{width:100%;border-collapse:collapse;font-size:.77rem}
-.cls-rnk-tbl th{
-  padding:5px 10px;border-bottom:2px solid var(--bd2);
-  color:var(--t2);font-weight:normal;letter-spacing:.06em;text-align:left;
-  background:var(--s1);white-space:nowrap;
-}
-.cls-rnk-tbl td{
-  padding:5px 10px;border-bottom:1px solid var(--bd);
-  color:var(--t1);transition:background var(--tr);
-}
-.cls-rnk-tbl tbody tr:hover td{background:var(--s2);color:var(--t0)}
-.cls-rnk-tbl .rn{font-family:var(--fd);font-size:.8rem;color:var(--t0);text-align:right;padding-right:12px!important}
-.cls-rnk-tbl .rn.top3{color:var(--yw)}
-.cls-rnk-tbl .rk-cp{font-family:var(--fd);color:var(--gn);text-align:right;white-space:nowrap}
-.cls-rnk-tbl .rk-nm{cursor:pointer;color:var(--ac)}
-.cls-rnk-tbl .rk-nm:hover{text-decoration:underline}
-
-/* Ranking page podium sub-line (grade + class name) */
-.medal-sub{
-  font-size:.67rem;color:var(--t2);margin-top:1px;margin-bottom:3px;
-  font-family:var(--fm);letter-spacing:.03em;
-}
-
-/* Profile sidebar protect points — v5.5 style restored */
 .prof-prot{
   font-family:var(--fm);font-size:.75rem;color:var(--t2);
   margin-top:4px;letter-spacing:.03em;
@@ -855,5 +1251,204 @@ input,select,textarea{font-family:var(--fm)}
 .ld-txt{font-size:.75rem;color:var(--t3);letter-spacing:.1em;animation:blink 1s infinite}
 .ld-sub{font-size:.63rem;color:var(--t3);opacity:.55}
 @keyframes blink{0%,100%{opacity:1}50%{opacity:.2}}
+
+/* ═══════════════════════════════════════════════════════════════
+   NO-DATA STATE (v6.5+)
+═══════════════════════════════════════════════════════════════ */
+.no-data-wrap{
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:14px;padding:60px 20px;text-align:center;
+}
+.no-data-title{
+  font-family:var(--fd);font-size:1.1rem;color:var(--t2);
+  letter-spacing:.15em;
+}
+.no-data-sub{
+  font-size:.75rem;color:var(--t3);line-height:1.7;max-width:360px;
+}
+.btn-init{
+  background:var(--acd);border:1px solid var(--ac);color:var(--ac);
+  font-family:var(--fd);font-size:.78rem;padding:9px 22px;
+  letter-spacing:.1em;transition:all var(--tr);
+}
+.btn-init:hover{background:var(--acg);box-shadow:0 0 12px var(--acg)}
+
+/* ═══════════════════════════════════════════════════════════════
+   CUSTOM UI CONFIRM / ALERT — v7.5
+   z-index:1000 — topmost layer, above save modal (z:500),
+   standard modal (z:600), and everything else.
+   Variants: .uic-danger (delete), .uic-warn (overwrite/unsaved),
+             .uic-info (save confirm — default)
+═══════════════════════════════════════════════════════════════ */
+#uic-overlay{
+  position:fixed;inset:0;z-index:1000;
+  background:rgba(0,0,0,.88);
+  display:flex;align-items:center;justify-content:center;
+  padding:20px;
+}
+#uic-overlay.hidden{display:none}
+
+#uic-box{
+  background:var(--modal-bg);
+  border:1px solid var(--modal-bd);
+  border-radius:8px;
+  width:clamp(300px,42vw,480px);
+  max-width:94vw;
+  padding:0;
+  box-shadow:0 0 50px rgba(0,0,0,.95);
+  overflow:hidden;
+  display:flex;flex-direction:column;
+}
+
+#uic-header{
+  padding:12px 16px 10px;
+  border-bottom:1px solid var(--bd2);
+  display:flex;align-items:center;gap:8px;
+}
+.uic-title{
+  font-family:var(--fd);font-size:.76rem;
+  color:var(--ac);letter-spacing:.14em;
+  flex:1;
+}
+/* Danger variant — delete confirmation */
+#uic-box.uic-danger #uic-header{ border-bottom-color:var(--rdd); }
+#uic-box.uic-danger .uic-title { color:var(--rd); }
+/* Warning variant — overwrite / unsaved */
+#uic-box.uic-warn   #uic-header{ border-bottom-color:var(--ywd); }
+#uic-box.uic-warn   .uic-title { color:var(--yw); }
+
+.uic-body{
+  padding:16px 16px 12px;
+  font-size:.80rem;color:var(--t0);
+  line-height:1.7;
+}
+.uic-body strong{ color:var(--rd); }
+#uic-box.uic-warn .uic-body strong{ color:var(--yw); }
+
+.uic-actions{
+  display:flex;gap:8px;
+  padding:10px 16px 14px;
+  justify-content:flex-end;
+}
+.uic-btn{
+  font-family:var(--fm);font-size:.72rem;letter-spacing:.06em;
+  padding:7px 18px;border:1px solid var(--bd);
+  background:var(--s3);color:var(--t0);
+  cursor:pointer;transition:all var(--tr);
+}
+.uic-btn:hover{border-color:var(--ac);color:var(--ac);background:var(--s4)}
+.uic-btn:active{transform:scale(.97)}
+
+/* OK button variants */
+.uic-btn-ok{
+  border-color:var(--acd);color:var(--ac);
+}
+.uic-btn-ok:hover{background:var(--acg)}
+#uic-box.uic-danger .uic-btn-ok{border-color:var(--rdd);color:var(--rd)}
+#uic-box.uic-danger .uic-btn-ok:hover{background:rgba(255,51,85,.12);border-color:var(--rd)}
+#uic-box.uic-warn   .uic-btn-ok{border-color:var(--ywd);color:var(--yw)}
+#uic-box.uic-warn   .uic-btn-ok:hover{background:rgba(255,215,0,.1);border-color:var(--yw)}
+
+/* Cancel button — always neutral */
+.uic-btn-cancel{color:var(--t1)}
+
+/* ═══════════════════════════════════════════════════════════════
+   RANKING — v7.2 mini stat-bar helpers retained for any
+   other uses; column removed from rnk-tbl in v7.3
+═══════════════════════════════════════════════════════════════ */
+.mc-0{color:var(--ac)}
+.mc-1{color:#a78bfa}
+.mc-2{color:#60c0ff}
+.mc-3{color:#00ffcc}
+.mc-4{color:#ff9f44}
+.mc-5{color:#ff6680}
+.mc-6{color:var(--gn)}
+.mc-7{color:var(--yw)}
+.mc-8{color:var(--or)}
+
+/* ═══════════════════════════════════════════════════════════════
+   COHORT BLOCKS — v7.4
+   Used by both Graduates (by graduateYear) and Incoming (by cohortGrade).
+═══════════════════════════════════════════════════════════════ */
+.cohort-block{
+  margin-bottom:14px;
+  border:1px solid var(--bd);
+  border-radius:6px;
+  overflow:hidden;
+}
+.cohort-hdr{
+  display:flex;align-items:center;gap:10px;
+  padding:9px 14px;
+  background:var(--s2);
+  cursor:pointer;
+  user-select:none;
+  border-bottom:1px solid var(--bd);
+  transition:background var(--tr);
+}
+.cohort-hdr:hover{background:var(--s3)}
+.cohort-yr{
+  font-family:var(--fd);font-size:.72rem;
+  color:var(--yw);letter-spacing:.1em;flex:1;
+}
+.cohort-cnt{
+  font-size:.68rem;color:var(--t2);letter-spacing:.05em;
+}
+.cohort-del-btn{
+  font-size:.65rem;color:var(--rd);
+  border:1px solid var(--rdd);
+  padding:2px 7px;border-radius:3px;
+  background:none;cursor:pointer;
+  transition:all var(--tr);
+}
+.cohort-del-btn:hover{background:rgba(255,51,85,.12);border-color:var(--rd)}
+
+/* v7.5: ランダム生成 button inside cohort-hdr — yellow accent, no emoji */
+.cohort-rnd-btn{
+  font-size:.65rem;color:var(--yw);
+  border:1px solid var(--ywd);
+  padding:2px 8px;border-radius:3px;
+  background:none;cursor:pointer;
+  font-family:var(--fm);letter-spacing:.04em;
+  transition:all var(--tr);
+}
+.cohort-rnd-btn:hover{background:rgba(255,215,0,.10);border-color:var(--yw)}
+.cohort-arrow{
+  font-size:.7rem;color:var(--t2);width:10px;text-align:center;
+  transition:transform .15s ease;
+}
+.cohort-body{
+  padding:10px 12px;
+  transition:max-height .25s ease, opacity .2s ease, padding .2s ease;
+  max-height:9999px;
+  opacity:1;
+}
+.cohort-body.cohort-collapsed{
+  max-height:0;
+  overflow:hidden;
+  opacity:0;
+  padding:0 12px;
+}
+/* Incoming cohort: class sub-blocks */
+.inc-cls-block{
+  margin-bottom:12px;
+}
+.inc-cls-hdr{
+  display:flex;align-items:center;gap:8px;
+  padding:4px 8px;
+  background:var(--s3);
+  border-bottom:1px solid var(--bd);
+  margin-bottom:6px;
+}
+/* Empty state note for Incoming / Graduates pages */
+.sp-empty-note{
+  padding:28px 20px;
+  text-align:center;
+  color:var(--t2);
+  font-size:.78rem;
+  line-height:1.8;
+  border:1px dashed var(--bd);
+  border-radius:6px;
+  margin-top:10px;
+}
 
 .hidden{display:none!important}
