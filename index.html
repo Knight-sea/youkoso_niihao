@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Cote-OS v7.7</title>
+  <title>Cote-OS v8.0</title>
   <link rel="icon" href="images/favicon.ico" />
   <link rel="preconnect" href="https://fonts.googleapis.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&family=Noto+Sans+JP:wght@300;400;500;700&display=swap" rel="stylesheet" />
@@ -17,7 +17,7 @@
   <!-- LEFT: flex:1 -->
   <div id="tb-left">
     <span id="logo">COTE<span class="ac">OS</span></span>
-    <span id="ver">v7.7</span>
+    <span id="ver">v8.0</span>
     <nav id="breadcrumb" aria-label="パンくずリスト"></nav>
   </div>
 
@@ -51,13 +51,9 @@
         <!-- History -->
         <button id="btn-history" class="gt-btn hist-btn" title="月次履歴">履歴</button>
 
-        <!-- BGM — v7.5: hitbox wraps button + absolutely-positioned slider panel.
-             #bgm-hitbox is position:relative; #bgm-slider-wrap drops below via
-             position:absolute top:100%. Gear tray stays align-items:center.
-             JS toggles .vol-open on #bgm-hitbox to show/hide slider.          -->
+        <!-- BGM -->
         <div id="bgm-hitbox" class="gt-item-wrap">
           <button id="btn-bgm" class="gt-btn bgm-btn" title="BGM ON/OFF" aria-label="BGM ON/OFF">♫</button>
-          <!-- Slider panel: absolutely positioned below the button, zero-gap -->
           <div id="bgm-slider-wrap" aria-hidden="true">
             <div id="vol-fill-track">
               <div id="vol-fill-bar"></div>
@@ -69,7 +65,7 @@
 
         <span class="gt-div"></span>
 
-        <!-- Keep Save button in gear menu: opens Save/Load modal -->
+        <!-- Save button -->
         <button id="btn-save" class="gt-btn sl-btn" title="セーブ">セーブ</button>
 
       </div><!-- /gear-tray -->
@@ -94,7 +90,7 @@
   </div>
 </div>
 
-<!-- Save/Load modal (4×3 grid — v7.4: 4×2 control grid; Slot 0 guest play) -->
+<!-- Save/Load modal -->
 <div id="sl-overlay" class="hidden" role="dialog" aria-modal="true" aria-labelledby="sl-title">
   <div id="sl-box">
     <div id="sl-header">
@@ -119,8 +115,7 @@
   </div>
 </div>
 
-<!-- v7.5: Custom UI confirm/alert modal — z-index:1000, above everything including Save modal (z:500).
-     JS populates #uic-title-el, #uic-body, #uic-btn-ok, #uic-btn-cancel and shows/hides. -->
+<!-- v7.5: Custom UI confirm/alert modal -->
 <div id="uic-overlay" class="hidden" role="dialog" aria-modal="true" aria-labelledby="uic-title-el">
   <div id="uic-box">
     <div id="uic-header">

@@ -1,19 +1,23 @@
 /* ═══════════════════════════════════════════════════════════════
-   Cote-OS v7.7  ·  Stylesheet  "Typography & Consistency"
+   Cote-OS v8.0  ·  Stylesheet  "Mobile Foundation & Localization"
    Themes: classic | light | dark
-   Changes vs v7.6:
-   • Ranking table: .rk-pp font (var(--fd), green) now also applied
-     to ALL numeric data columns via new .rk-num class — PP, PRP,
-     all 6 stat cols, overall. Consistent Orbitron font across row.
-   • .ov-score-val: font-size pushed up to 2.4rem to fill whitespace
-     in the fixed-width .ov-score-block (flex:0 0 70px)
-   • .ov-score-block: padding tightened to 4px 2px to give score max
-     room; label and sub text reduced slightly
-   • .radar-wrap: padding reduced 6px → 4px (chart size unchanged;
-     label offset increase handled in JS at r+18)
-   • Classic --t3: #2e4e6a retained (v7.3 brightness for student IDs)
-   • Date format: JS fmtDate outputs "Year X, Month Y" — CSS
-     #date-display letter-spacing adjusted for new format
+   Changes vs v7.12:
+   • Full mobile responsive system added:
+     - body.mobile-mode and @media (max-width:768px) / (orientation:portrait)
+       applied in tandem for maximum device coverage.
+     - #taskbar: stacks to two rows on narrow screens; font sizes reduced.
+     - #tb-center, #tb-left, #tb-right: flex-wrap or shrink on mobile.
+     - #app: padding reduced on mobile.
+     - .cls-strip: 2 columns on ≤768px, 1 column on ≤420px.
+     - .home-ctrl-bar: stacks to column; .hcb-dist-row wraps.
+     - #sl-box, #sl-slots: width 94vw, 2-column slot grid on mobile.
+     - #modal-box: width 94vw, padding reduced on mobile.
+     - .prof-wrap: single column on mobile.
+     - .rnk-tbl: horizontal scroll wrapper on mobile.
+     - .hcb-half: full-width on mobile.
+   • All v7.12 rules preserved unchanged:
+     .mini-chk-wrap hidden by default, body.edit-mode restores it.
+     .mini-top/.mini-bottom layout, ×1.2 scaled text in .cls-mini.
    ═══════════════════════════════════════════════════════════════ */
 
 /* ── THEME: Classic ──────────────────────────────────────────── */
@@ -686,18 +690,223 @@ input,select,textarea{font-family:var(--fm)}
 .grade-hint{font-size:.62rem;color:var(--t3);margin-left:auto}
 
 .cls-strip{display:grid;grid-template-columns:repeat(5,1fr);gap:5px;padding:6px 8px;overflow:hidden}
+@media(max-width:768px),.mobile-mode .cls-strip{grid-template-columns:repeat(2,1fr)}
 @media(max-width:700px){.cls-strip{grid-template-columns:repeat(3,1fr)}}
 @media(max-width:420px){.cls-strip{grid-template-columns:repeat(2,1fr)}}
+body.mobile-mode .cls-strip{grid-template-columns:repeat(2,1fr);gap:6px}
+@media(max-width:360px){.cls-strip,body.mobile-mode .cls-strip{grid-template-columns:1fr}}
 .cls-mini{
   background:var(--s2);border:1px solid var(--bd);
-  padding:7px 9px;cursor:pointer;
-  transition:all var(--tr);position:relative;display:flex;flex-direction:column;gap:2px;
+  /* v7.12: flex column with space-between to pin CP to bottom */
+  padding:6px 9px 6px;min-height:70px;
+  cursor:pointer;
+  transition:all var(--tr);position:relative;
+  display:flex;flex-direction:column;justify-content:space-between;gap:0;
 }
 .cls-mini:hover{border-color:var(--ac);background:var(--s4)}
-.mini-rank{position:absolute;top:4px;right:6px;font-family:var(--fd);font-size:.8rem;font-weight:700}
-.mini-name{font-size:.68rem;color:var(--t1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:calc(100% - 18px)}
-.mini-cp{font-family:var(--fd);font-size:1.02rem;font-weight:700}
-.mini-cplbl{font-size:.58rem;color:var(--t3)}
+/* v7.10: checked/selected highlight — cyan border + faint tint */
+.cls-mini.chk-selected{
+  border-color:var(--ac);
+  background:var(--acd);
+  box-shadow:inset 0 0 0 1px var(--ac);
+}
+.cls-mini.chk-selected .mini-name{color:var(--ac)}
+
+/* v7.12: Rank badge — absolute top-right, font scaled ×1.2 */
+.mini-rank{
+  position:absolute;top:4px;right:6px;
+  font-family:var(--fd);font-size:.91rem;font-weight:700;
+}
+
+/* v7.12: Top section — name + rank live in the same row area.
+   Rank is absolute so name flows naturally; right padding prevents overlap. */
+.mini-top{
+  display:flex;align-items:flex-start;
+  padding-right:26px; /* clear the absolute rank badge */
+  min-height:0;
+}
+
+/* v7.12: Class name — font scaled ×1.2 (.67rem → .80rem).
+   No left margin by default (checkbox hidden). */
+.mini-name{
+  font-size:.80rem;color:var(--t1);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  max-width:100%;
+  transition:color var(--tr);
+  line-height:1.3;
+}
+
+/* v7.12: Edit Mode — show left margin on name to clear visible checkbox */
+body.edit-mode .mini-name{
+  margin-left:20px;
+  max-width:calc(100% - 20px);
+}
+
+/* v7.12: Bottom section — CP value pinned to bottom-left */
+.mini-bottom{
+  display:flex;align-items:baseline;gap:4px;
+  margin-top:auto;
+}
+
+/* v7.12: CP value — font scaled ×1.2 (1.02rem → 1.22rem) */
+.mini-cp{font-family:var(--fd);font-size:1.22rem;font-weight:700;line-height:1.1}
+
+/* v7.12: CP label — font scaled ×1.2 (.58rem → .70rem) */
+.mini-cplbl{font-size:.70rem;color:var(--t3)}
+
+/* ── v7.12: Checkbox multi-select inside .cls-mini ──────────────
+   .mini-chk-wrap hidden by default (display:none) for clean look.
+   Restored to display:flex only when body.edit-mode is active.
+   Stopping propagation in JS prevents card-click (navigate).     */
+.mini-chk-wrap{
+  position:absolute;top:5px;left:7px;
+  display:none;  /* v7.12: hidden by default */
+  align-items:center;
+  cursor:pointer;
+  z-index:1;
+}
+/* v7.12: Show checkbox only in Edit Mode */
+body.edit-mode .mini-chk-wrap{
+  display:flex;
+}
+.mini-chk{
+  /* reset browser default */
+  -webkit-appearance:none;appearance:none;
+  /* v7.12: checkbox size NOT scaled — stays at 13×13px */
+  width:13px;height:13px;
+  background:var(--s3);
+  border:1px solid var(--bd2);
+  border-radius:2px;
+  cursor:pointer;
+  flex-shrink:0;
+  transition:all var(--tr);
+  position:relative;
+}
+.mini-chk:hover{border-color:var(--ac)}
+/* checked state — filled cyan square with a white tick via pseudo */
+.mini-chk:checked{
+  background:var(--acd);
+  border-color:var(--ac);
+}
+.mini-chk:checked::after{
+  content:'';
+  position:absolute;
+  left:2px;top:0px;
+  width:4px;height:8px;
+  border:2px solid var(--ac);
+  border-top:none;border-left:none;
+  transform:rotate(45deg);
+}
+.mini-chk:focus{outline:none;border-color:var(--ac)}
+
+/* ── v7.10: Per-grade select-all bar ───────────────────────────
+   Thin strip rendered between .grade-hdr and .cls-strip.
+   Contains "全選択" / "全解除" buttons for the grade's 5 classes.
+   v7.11: Hidden by default; only shown when Edit Mode is active.   */
+.cls-sel-bar{
+  display:none;  /* v7.11: hidden by default */
+  align-items:center;gap:6px;
+  padding:3px 8px;
+  background:var(--s1);
+  border-bottom:1px solid var(--bd);
+  border-top:1px solid var(--bd);
+}
+/* v7.11: Show cls-sel-bar when Edit Mode is active */
+body.edit-mode .cls-sel-bar{
+  display:flex;
+}
+.cls-sel-bar-lbl{
+  font-size:.6rem;color:var(--t3);letter-spacing:.05em;
+  margin-right:2px;flex-shrink:0;
+}
+.cls-sel-btn{
+  font-family:var(--fm);font-size:.6rem;
+  padding:1px 7px;
+  background:var(--s3);border:1px solid var(--bd2);
+  color:var(--t2);
+  transition:all var(--tr);white-space:nowrap;
+}
+.cls-sel-btn:hover{border-color:var(--ac);color:var(--ac);background:var(--s4)}
+.cls-sel-btn.sel-all-btn:hover{border-color:var(--ac);color:var(--ac)}
+.cls-sel-btn.sel-none-btn:hover{border-color:var(--bd2);color:var(--t1)}
+
+/* ── v7.10: hcb selected-class counter ─────────────────────────
+   Replaces the .hcb-cls-sel dropdown in the left half of the
+   ctrl bar. Shows how many classes are currently checked.         */
+.hcb-sel-info{
+  font-family:var(--fd);font-size:.63rem;
+  color:var(--ac);letter-spacing:.04em;
+  background:var(--acd);border:1px solid var(--acd);
+  padding:2px 8px;white-space:nowrap;
+  flex-shrink:0;
+}
+.hcb-sel-info.none{
+  color:var(--t2);background:var(--s3);border-color:var(--bd2);
+}
+
+/* ── v7.11: Edit Mode Toggle Button ─────────────────────────────
+   Replaces the "クラス未選択" static text. Prominent button that
+   activates Edit Mode, revealing PP/CP dist controls + sel-bars.  */
+.btn-edit-mode{
+  background:var(--s3);border:1px solid var(--bd2);
+  color:var(--t1);font-family:var(--fm);font-size:.68rem;
+  padding:4px 13px;letter-spacing:.06em;white-space:nowrap;
+  transition:all var(--tr);flex-shrink:0;
+  display:flex;align-items:center;gap:5px;
+}
+.btn-edit-mode::before{
+  content:'✎';font-size:.75rem;opacity:.7;
+  transition:opacity var(--tr);
+}
+.btn-edit-mode:hover{
+  border-color:var(--ac);color:var(--ac);background:var(--acg);
+}
+.btn-edit-mode:hover::before{opacity:1}
+/* Active/ON state — orange accent to signal "mode is on" */
+.btn-edit-mode.edit-active{
+  border-color:var(--or);color:var(--or);
+  background:rgba(255,136,0,.10);
+  box-shadow:0 0 8px rgba(255,136,0,.15);
+}
+.btn-edit-mode.edit-active::before{
+  content:'✕';opacity:1;
+}
+.btn-edit-mode.edit-active:hover{
+  border-color:var(--or);color:var(--or);
+  background:rgba(255,136,0,.18);
+}
+
+/* ── v7.11: Integrated PP + CP distribution row ─────────────────
+   Single compact row housing both PP and CP distribute/confiscate.
+   Hidden by default; shown only when Edit Mode is active.         */
+.hcb-dist-row{
+  display:none;  /* hidden by default */
+  align-items:center;gap:5px;flex-wrap:wrap;
+  width:100%;
+  padding-top:5px;
+  margin-top:4px;
+  border-top:1px solid var(--bd);
+}
+body.edit-mode .hcb-dist-row{
+  display:flex;
+}
+
+/* PP group label */
+.hcb-dist-lbl{
+  font-size:.59rem;color:var(--t3);letter-spacing:.05em;
+  white-space:nowrap;flex-shrink:0;
+}
+/* Thin vertical divider between PP and CP groups inside dist-row */
+.hcb-dist-sep{
+  width:1px;height:18px;background:var(--bd2);
+  flex-shrink:0;align-self:center;margin:0 2px;
+}
+
+/* v7.11: CP give/take buttons — same style as PP give/take */
+.hcb-btn.cp-give{border-color:var(--acd);color:var(--ac)}
+.hcb-btn.cp-give:hover{background:var(--acg);border-color:var(--ac)}
+.hcb-btn.cp-take{border-color:var(--rdd);color:var(--rd)}
+.hcb-btn.cp-take:hover{background:rgba(255,51,85,.08);border-color:var(--rd)}
 
 .dist-row{display:flex;align-items:center;gap:3px;margin-top:5px;padding-top:4px;border-top:1px solid var(--bd)}
 .dist-inp{
@@ -718,6 +927,116 @@ input,select,textarea{font-family:var(--fm)}
 .sp-tile:hover{background:var(--s2)}
 .sp-cnt{font-family:var(--fd);font-size:1.05rem;font-weight:700}
 .sp-lbl{font-size:.63rem;color:var(--t2);margin-top:3px}
+
+/* ── v7.9: Home Control Bar ─────────────────────────────────────
+   Consolidated bar rendered directly below .pg-hdr on the Home
+   screen. Two equal halves separated by a 1px divider.
+   Left  — PP / CP controls for the currently-selected class.
+   Right — 卒業生 / 入学予定 navigation with live count badges.    */
+.home-ctrl-bar{
+  display:flex;align-items:stretch;
+  background:var(--s2);border:1px solid var(--bd);
+  margin-bottom:11px;
+  /* no flex-wrap: the two halves are fixed 50% — collapse via media */
+}
+@media(max-width:640px){
+  .home-ctrl-bar{flex-direction:column}
+}
+
+/* Each half */
+.hcb-half{
+  flex:1;
+  display:flex;align-items:center;gap:6px;flex-wrap:wrap;
+  padding:7px 12px;
+  min-width:0;
+}
+/* v7.11: left half becomes column to stack top row + dist row */
+.hcb-left{
+  flex-direction:column;
+  align-items:stretch;
+  border-right:1px solid var(--bd);
+}
+/* Top row inside left half — contains edit button + sel-info */
+.hcb-left-top{
+  display:flex;align-items:center;gap:6px;flex-wrap:wrap;
+}
+@media(max-width:640px){
+  .hcb-left{border-right:none;border-bottom:1px solid var(--bd)}
+}
+
+/* Section label */
+.hcb-label{
+  font-size:.62rem;color:var(--t2);letter-spacing:.05em;
+  white-space:nowrap;flex-shrink:0;
+}
+
+/* Class selector dropdown */
+.hcb-cls-sel{
+  background:var(--s3);border:1px solid var(--bd2);
+  color:var(--t0);font-family:var(--fm);font-size:.67rem;
+  padding:3px 6px;
+  max-width:120px;min-width:80px;
+  transition:border-color var(--tr);
+}
+.hcb-cls-sel:focus{outline:none;border-color:var(--acd)}
+.hcb-cls-sel option{background:var(--s2)}
+
+/* Shared PP/CP amount input */
+.hcb-inp{
+  background:var(--s3);border:1px solid var(--bd);
+  color:var(--t0);font-family:var(--fm);font-size:.67rem;
+  padding:3px 6px;width:72px;text-align:center;
+  transition:border-color var(--tr);
+}
+.hcb-inp:focus{outline:none;border-color:var(--acd)}
+.hcb-inp::placeholder{color:var(--t3)}
+
+/* Action buttons — PP distribute / confiscate */
+.hcb-btn{
+  background:var(--s3);border:1px solid var(--bd);
+  color:var(--t1);font-family:var(--fm);font-size:.63rem;
+  padding:3px 8px;white-space:nowrap;
+  transition:all var(--tr);
+}
+.hcb-btn:hover{border-color:var(--ac);color:var(--ac);background:var(--s4)}
+.hcb-btn.pp-give{border-color:var(--gnd);color:var(--gn)}
+.hcb-btn.pp-give:hover{background:rgba(0,255,136,.08);border-color:var(--gn)}
+.hcb-btn.pp-take{border-color:var(--rdd);color:var(--rd)}
+.hcb-btn.pp-take:hover{background:rgba(255,51,85,.08);border-color:var(--rd)}
+.hcb-btn.cp-btn{border-color:var(--acd);color:var(--ac)}
+.hcb-btn.cp-btn:hover{background:var(--acg);border-color:var(--ac)}
+
+/* Vertical micro-divider between PP and CP groups */
+.hcb-sep{
+  width:1px;height:22px;background:var(--bd2);
+  flex-shrink:0;align-self:center;
+}
+
+/* Right half — navigation buttons */
+.hcb-nav-btn{
+  flex:1;
+  display:flex;align-items:center;justify-content:center;gap:8px;
+  padding:8px 10px;
+  background:var(--s3);border:1px solid var(--bd);
+  cursor:pointer;
+  transition:all var(--tr);
+  font-size:.72rem;
+  white-space:nowrap;
+  min-width:0;
+}
+.hcb-nav-btn:hover{background:var(--s4);border-color:var(--ac);color:var(--ac)}
+.hcb-nav-btn.nav-grad{border-color:var(--ywd);color:var(--yw)}
+.hcb-nav-btn.nav-grad:hover{background:rgba(255,215,0,.08);border-color:var(--yw)}
+.hcb-nav-btn.nav-inc{border-color:var(--acd);color:var(--ac)}
+.hcb-nav-btn.nav-inc:hover{background:var(--acg);border-color:var(--ac)}
+/* Count badge inside the nav button */
+.hcb-nav-cnt{
+  font-family:var(--fd);font-size:.82rem;font-weight:700;
+  line-height:1;
+}
+.hcb-nav-lbl{
+  font-size:.63rem;letter-spacing:.04em;opacity:.85;
+}
 
 /* ═══════════════════════════════════════════════════════════════
    HISTORY PAGE
@@ -1206,7 +1525,7 @@ input,select,textarea{font-family:var(--fm)}
    MODAL (standard)
 ═══════════════════════════════════════════════════════════════ */
 #modal-overlay{
-  position:fixed;inset:0;z-index:600; /* v7.5: above save modal z:500 */
+  position:fixed;inset:0;z-index:700; /* v7.8: 600→700, above gt-flyout(600) & sl-overlay(500) */
   background:var(--overlay);display:flex;align-items:center;justify-content:center;
 }
 #modal-overlay.hidden{display:none}
@@ -1466,4 +1785,330 @@ input,select,textarea{font-family:var(--fm)}
   margin-top:10px;
 }
 
+/* ═══════════════════════════════════════════════════════════════
+   SPECIAL TRAIT SYSTEM — v7.8
+   Two surfaces:
+     1) .trait-display-wrap / .trait-tag  — read-only tag strip
+        rendered in prof-side below .ov-wrap
+     2) .trait-cat-* / .trait-chip       — edit accordion in prof-main
+═══════════════════════════════════════════════════════════════ */
+
+/* ── 1. DISPLAY: tag strip ──────────────────────────────────── */
+.trait-display-wrap{
+  margin-top:10px;
+  display:flex;flex-wrap:wrap;gap:4px;
+  min-height:20px; /* always takes space even when empty */
+}
+/* Individual trait tag */
+.trait-tag{
+  display:inline-flex;align-items:center;
+  font-family:var(--fm);font-size:.59rem;
+  padding:2px 7px;
+  border-radius:2px;
+  border:1px solid;
+  white-space:nowrap;letter-spacing:.03em;
+  line-height:1.6;
+}
+/* Category colour palette — border + text, very subtle background */
+.trait-tag.tc-brain    {border-color:#6aa3ff;color:#6aa3ff;background:rgba(106,163,255,.08)}
+.trait-tag.tc-physical {border-color:var(--gn);color:var(--gn);background:rgba(0,255,136,.07)}
+.trait-tag.tc-artistic {border-color:var(--io);color:var(--io);background:rgba(167,139,250,.08)}
+.trait-tag.tc-strategic{border-color:var(--yw);color:var(--yw);background:rgba(255,215,0,.07)}
+.trait-tag.tc-skill    {border-color:var(--or);color:var(--or);background:rgba(255,136,0,.07)}
+.trait-tag.tc-sensory  {border-color:var(--ac);color:var(--ac);background:rgba(0,200,255,.07)}
+/* Empty-state message */
+.trait-display-empty{
+  font-size:.6rem;color:var(--t3);letter-spacing:.04em;font-style:italic;
+}
+
+/* ── 2. EDIT: category accordion ───────────────────────────── */
+.trait-edit-wrap{
+  display:flex;flex-direction:column;gap:4px;
+}
+.trait-cat-block{
+  border:1px solid var(--bd);
+  border-radius:3px;
+  overflow:hidden;
+}
+.trait-cat-hdr{
+  display:flex;align-items:center;gap:8px;
+  padding:6px 10px;
+  background:var(--s2);
+  cursor:pointer;user-select:none;
+  transition:background var(--tr);
+}
+.trait-cat-hdr:hover{background:var(--s3)}
+.trait-cat-lbl{
+  font-size:.65rem;color:var(--t1);
+  letter-spacing:.05em;flex:1;
+}
+/* Colour accent on label per category */
+.trait-cat-block.tc-brain     .trait-cat-lbl{color:#6aa3ff}
+.trait-cat-block.tc-physical  .trait-cat-lbl{color:var(--gn)}
+.trait-cat-block.tc-artistic  .trait-cat-lbl{color:var(--io)}
+.trait-cat-block.tc-strategic .trait-cat-lbl{color:var(--yw)}
+.trait-cat-block.tc-skill     .trait-cat-lbl{color:var(--or)}
+.trait-cat-block.tc-sensory   .trait-cat-lbl{color:var(--ac)}
+/* Badge — shows count of selected traits in this category */
+.trait-cat-badge{
+  font-family:var(--fd);font-size:.56rem;
+  padding:1px 5px;border-radius:10px;
+  background:var(--s4);color:var(--t2);
+  min-width:16px;text-align:center;
+  transition:background var(--tr),color var(--tr);
+}
+.trait-cat-badge.has-sel{
+  background:var(--acd);color:var(--ac);
+}
+.trait-cat-arrow{
+  font-size:.62rem;color:var(--t3);
+  width:10px;text-align:center;
+  transition:transform .15s ease;
+}
+.trait-cat-block.tc-open .trait-cat-arrow{transform:rotate(90deg)}
+
+/* Collapsible body */
+.trait-cat-body{
+  display:flex;flex-wrap:wrap;gap:5px;
+  padding:8px 10px;
+  background:var(--s1);
+  /* smooth collapse */
+  max-height:200px;
+  overflow:hidden;
+  transition:max-height .2s ease, padding .15s ease, opacity .15s ease;
+  opacity:1;
+}
+.trait-cat-body.cat-collapsed{
+  max-height:0;
+  padding-top:0;padding-bottom:0;
+  opacity:0;
+}
+/* Individual selectable trait chip */
+.trait-chip{
+  display:inline-flex;align-items:center;
+  font-family:var(--fm);font-size:.62rem;
+  padding:3px 9px;
+  border-radius:2px;
+  border:1px solid var(--bd2);
+  background:var(--s3);
+  color:var(--t1);
+  cursor:pointer;
+  user-select:none;
+  white-space:nowrap;
+  transition:all var(--tr);
+  letter-spacing:.03em;
+}
+.trait-chip:hover{border-color:var(--ac);color:var(--t0);background:var(--s4)}
+/* Selected state */
+.trait-chip.selected{
+  background:var(--acd);
+  color:var(--ac);
+  border-color:var(--ac);
+}
+/* Category-tinted selected state */
+.trait-cat-block.tc-brain     .trait-chip.selected{background:rgba(106,163,255,.15);border-color:#6aa3ff;color:#6aa3ff}
+.trait-cat-block.tc-physical  .trait-chip.selected{background:rgba(0,255,136,.12);border-color:var(--gn);color:var(--gn)}
+.trait-cat-block.tc-artistic  .trait-chip.selected{background:rgba(167,139,250,.14);border-color:var(--io);color:var(--io)}
+.trait-cat-block.tc-strategic .trait-chip.selected{background:rgba(255,215,0,.12);border-color:var(--yw);color:var(--yw)}
+.trait-cat-block.tc-skill     .trait-chip.selected{background:rgba(255,136,0,.12);border-color:var(--or);color:var(--or)}
+.trait-cat-block.tc-sensory   .trait-chip.selected{background:rgba(0,200,255,.12);border-color:var(--ac);color:var(--ac)}
+
 .hidden{display:none!important}
+
+/* ═══════════════════════════════════════════════════════════════
+   v8.0 MOBILE RESPONSIVE SYSTEM
+   Two complementary mechanisms:
+   1. body.mobile-mode class — set by JS updateMobileMode() on load
+      and resize; triggers when width ≤768px OR portrait orientation.
+   2. @media queries — viewport-width-only fallback for environments
+      where JS may not have run yet.
+   Both target the same layout adjustments for consistency.
+═══════════════════════════════════════════════════════════════ */
+
+/* ── Taskbar mobile ──────────────────────────────────────────── */
+@media(max-width:768px){
+  #taskbar{
+    flex-wrap:wrap;height:auto;padding:5px 8px;gap:4px;
+    row-gap:4px;
+  }
+  #tb-left{flex:1 1 auto;min-width:0;gap:5px}
+  #tb-center{
+    order:3;flex:0 0 100%;
+    justify-content:center;padding:2px 0 4px;
+    border-top:1px solid var(--bd);
+  }
+  #tb-right{flex:0 0 auto}
+  #logo{font-size:.82rem}
+  #ver{display:none}
+  #date-block{min-width:110px}
+  #date-display{font-size:.7rem}
+}
+body.mobile-mode #taskbar{
+  flex-wrap:wrap;height:auto;padding:5px 8px;gap:4px;row-gap:4px;
+}
+body.mobile-mode #tb-left{flex:1 1 auto;min-width:0;gap:5px}
+body.mobile-mode #tb-center{
+  order:3;flex:0 0 100%;justify-content:center;
+  padding:2px 0 4px;border-top:1px solid var(--bd);
+}
+body.mobile-mode #tb-right{flex:0 0 auto}
+body.mobile-mode #logo{font-size:.82rem}
+body.mobile-mode #ver{display:none}
+body.mobile-mode #date-block{min-width:110px}
+body.mobile-mode #date-display{font-size:.7rem}
+
+/* ── #app padding mobile ─────────────────────────────────────── */
+@media(max-width:768px){
+  #app{padding:10px 10px;}
+}
+body.mobile-mode #app{padding:10px 10px;}
+
+/* ── Home bar & control bar mobile ──────────────────────────── */
+@media(max-width:768px){
+  .home-bar{flex-wrap:wrap;gap:6px;font-size:.68rem}
+  .hm-right{margin-left:0;flex-wrap:wrap;gap:6px}
+  .home-ctrl-bar{flex-direction:column}
+  .hcb-left{border-right:none;border-bottom:1px solid var(--bd)}
+  .hcb-half{padding:6px 10px;flex-wrap:wrap}
+  .hcb-dist-row{flex-wrap:wrap;gap:4px}
+  .hcb-inp{width:60px}
+}
+body.mobile-mode .home-bar{flex-wrap:wrap;gap:6px;font-size:.68rem}
+body.mobile-mode .hm-right{margin-left:0;flex-wrap:wrap;gap:6px}
+body.mobile-mode .home-ctrl-bar{flex-direction:column}
+body.mobile-mode .hcb-left{border-right:none;border-bottom:1px solid var(--bd)}
+body.mobile-mode .hcb-half{padding:6px 10px;flex-wrap:wrap}
+body.mobile-mode .hcb-dist-row{flex-wrap:wrap;gap:4px}
+body.mobile-mode .hcb-inp{width:60px}
+
+/* ── Grade blocks mobile ─────────────────────────────────────── */
+@media(max-width:768px){
+  .grade-hdr{padding:6px 10px}
+  .grade-lbl{font-size:.78rem}
+}
+body.mobile-mode .grade-hdr{padding:6px 10px}
+body.mobile-mode .grade-lbl{font-size:.78rem}
+
+/* ── cls-mini card mobile — maintain v7.12 layout ───────────── */
+@media(max-width:768px){
+  .cls-mini{min-height:64px;padding:5px 8px 5px}
+  .mini-cp{font-size:1.1rem}
+  .mini-name{font-size:.75rem}
+  .mini-rank{font-size:.84rem}
+}
+body.mobile-mode .cls-mini{min-height:64px;padding:5px 8px 5px}
+body.mobile-mode .mini-cp{font-size:1.1rem}
+body.mobile-mode .mini-name{font-size:.75rem}
+body.mobile-mode .mini-rank{font-size:.84rem}
+
+/* ── Save/Load modal mobile ──────────────────────────────────── */
+@media(max-width:768px){
+  #sl-overlay{padding:10px 8px}
+  #sl-box{
+    width:94vw;min-height:auto;
+    padding:12px 10px 10px;
+    border-radius:7px;
+  }
+  #sl-slots{
+    grid-template-columns:repeat(2,minmax(0,1fr));
+    min-height:auto;gap:7px;
+  }
+  #sl-controls{
+    grid-template-columns:repeat(2,minmax(0,1fr));
+    gap:6px;
+  }
+  .sl-act-empty{display:none}
+  .sl-slot{min-height:88px;padding:8px 9px 7px}
+}
+body.mobile-mode #sl-overlay{padding:10px 8px}
+body.mobile-mode #sl-box{
+  width:94vw;min-height:auto;
+  padding:12px 10px 10px;border-radius:7px;
+}
+body.mobile-mode #sl-slots{
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  min-height:auto;gap:7px;
+}
+body.mobile-mode #sl-controls{
+  grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;
+}
+body.mobile-mode .sl-act-empty{display:none}
+body.mobile-mode .sl-slot{min-height:88px;padding:8px 9px 7px}
+
+/* ── Standard modal mobile ───────────────────────────────────── */
+@media(max-width:768px){
+  #modal-box{
+    width:94vw;max-width:94vw;
+    padding:14px 12px 12px;
+  }
+}
+body.mobile-mode #modal-box{
+  width:94vw;max-width:94vw;padding:14px 12px 12px;
+}
+
+/* ── uic overlay mobile ──────────────────────────────────────── */
+@media(max-width:768px){
+  #uic-box{width:92vw;max-width:92vw;padding:14px 12px}
+}
+body.mobile-mode #uic-box{width:92vw;max-width:92vw;padding:14px 12px}
+
+/* ── Profile page mobile ─────────────────────────────────────── */
+@media(max-width:768px){
+  #prof-wrap{grid-template-columns:1fr!important}
+  .prof-side{border-right:none;border-bottom:1px solid var(--bd)}
+}
+body.mobile-mode #prof-wrap{grid-template-columns:1fr!important}
+body.mobile-mode .prof-side{border-right:none;border-bottom:1px solid var(--bd)}
+
+/* ── Ranking table mobile — horizontal scroll ────────────────── */
+@media(max-width:768px){
+  .rnk-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  .rnk-tbl{min-width:620px}
+}
+body.mobile-mode .rnk-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
+body.mobile-mode .rnk-tbl{min-width:620px}
+
+/* ── Student grid mobile ─────────────────────────────────────── */
+@media(max-width:768px){
+  .s-grid{grid-template-columns:repeat(2,1fr)!important}
+}
+body.mobile-mode .s-grid{grid-template-columns:repeat(2,1fr)!important}
+
+/* ── Breadcrumb truncation on mobile ─────────────────────────── */
+@media(max-width:768px){
+  #breadcrumb{max-width:130px;font-size:.65rem}
+}
+body.mobile-mode #breadcrumb{max-width:130px;font-size:.65rem}
+
+/* ── Cohort/incoming blocks mobile ──────────────────────────── */
+@media(max-width:768px){
+  .cohort-block{margin-bottom:10px}
+  .cohort-hdr{padding:7px 10px}
+}
+body.mobile-mode .cohort-block{margin-bottom:10px}
+body.mobile-mode .cohort-hdr{padding:7px 10px}
+
+/* ── Page header on mobile — tighter ─────────────────────────── */
+@media(max-width:768px){
+  .pg-hdr{flex-wrap:wrap;gap:6px;margin-bottom:9px}
+  .pg-title{font-size:.86rem}
+}
+body.mobile-mode .pg-hdr{flex-wrap:wrap;gap:6px;margin-bottom:9px}
+body.mobile-mode .pg-title{font-size:.86rem}
+
+/* ── Gear tray on mobile — slightly more compact ─────────────── */
+@media(max-width:768px){
+  .gt-btn{font-size:.66rem;padding:3px 6px;height:26px}
+  #gear-btn{width:30px;height:30px;font-size:1rem}
+}
+body.mobile-mode .gt-btn{font-size:.66rem;padding:3px 6px;height:26px}
+body.mobile-mode #gear-btn{width:30px;height:30px;font-size:1rem}
+
+/* ── Portrait orientation specific ───────────────────────────── */
+@media(orientation:portrait){
+  .cls-strip{grid-template-columns:repeat(2,1fr)}
+  #taskbar{flex-wrap:wrap;height:auto;padding:5px 8px}
+  #tb-center{order:3;flex:0 0 100%;border-top:1px solid var(--bd);padding:2px 0 4px}
+  .home-ctrl-bar{flex-direction:column}
+  .hcb-left{border-right:none;border-bottom:1px solid var(--bd)}
+}

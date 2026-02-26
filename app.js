@@ -1,27 +1,26 @@
 /* ================================================================
-   Cote-OS v7.7  ·  app.js  "Typography & Consistency"
+   Cote-OS v8.0  ·  app.js  "Mobile Foundation & Localization"
    ─────────────────────────────────────────────────────────────────
-   Changes vs v7.6:
-   • APP_VER → '7.7'
-   • fmtDate: output changed from "Year X · 4月" to "Year X, Month Y"
-     (pure numeric month — no MONTHS_JP lookup needed for taskbar)
-   • drawProfileRadar: labelOffset set to exactly r+18 per spec
-     (was r+22 in v7.6; r+18 is the agreed visible-separation value)
-   • Ranking table td builder: stale 'rnk-num' class removed; all
-     numeric data cols (PP, PRP, stats, overall) now get 'rk-num'
-     (CSS v7.7 .rk-num = Orbitron font); .rk-pp keeps green colour
-   • Grade screen "ランダム生成" btn-yw: 🎲 emoji removed from both
-     the button label and the confirmRandomizeGrade modal title
-   • graduatesCollapsedState: new module-level Map (mirrors
-     incomingCollapsedState); persists collapse state of each
-     graduate year-cohort accordion panel across re-renders
-   • renderGraduates: reads graduatesCollapsedState to restore
-     collapsed class + arrow char when rebuilding HTML on re-render;
-     new panels default to open (not collapsed)
-   • toggleCohort: now writes to BOTH Maps keyed by id prefix —
-     graduate cohort IDs start with "Year-" or "卒業年不明",
-     incoming cohort IDs start with "inc-"; each Map is written
-     independently so the two screens don't interfere
+   Changes vs v7.12:
+   • APP_VER → '8.0'
+   • TRAIT_CATEGORIES labels fully localized to Japanese:
+       Brain     → 頭脳系
+       Physical  → 身体能力系
+       Artistic  → 芸術系
+       Strategic → 戦略系
+       Skill     → 特殊技能系
+       Sensory   → 特殊感覚系
+   • randomizeIncomingCohort stat generation balanced:
+     Previous formula (raw 40–90 → 1–15 scale) produced inflated
+     stats (min ≈7, max ≈14). Replaced with genStat(cid, key) which
+     uses CLASS_STAT_CFG per-class averages — same as active students.
+   • updateMobileMode(): new function — detects portrait orientation
+     or narrow viewport (≤768px) and toggles 'mobile-mode' class on
+     <body>. Called on boot and on window resize.
+   • finishBoot: calls updateMobileMode() and attaches resize listener.
+   • All v7.12 logic preserved: editMode, checkedClasses, hcbDistPP,
+     hcbDistCP, .mini-top/.mini-bottom HTML structure, 1.5× names,
+     genDOB −10yr shift, "Year X, Month Y" date format.
    ================================================================ */
 'use strict';
 
@@ -36,10 +35,74 @@ const STATS_KEYS  = ['language', 'reasoning', 'memory', 'thinking', 'physical', 
    Order must match STATS_KEYS exactly.                                            */
 const RADAR_LABELS = ['言語', '推論', '記憶', '思考', '身体', '精神'];
 const MONTHS_JP   = ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'];
+
+/* ── v7.8: Special Trait catalogue — 30 traits in 6 categories ────
+   cat key maps directly to CSS .tc-{cat} classes on tags and chips.
+   Sensory has 5 items (not 6) per spec; all others have 6.         */
+const SPECIAL_TRAITS = [
+  /* Brain */
+  {id:'lang_acq',   label:'多言語習得', cat:'brain'},
+  {id:'memorize',   label:'記憶術',     cat:'brain'},
+  {id:'fast_calc',  label:'高速演算',   cat:'brain'},
+  {id:'medicine',   label:'医学知識',   cat:'brain'},
+  {id:'law',        label:'法律知識',   cat:'brain'},
+  {id:'cipher',     label:'暗号解読',   cat:'brain'},
+  /* Physical */
+  {id:'track',      label:'陸上',       cat:'physical'},
+  {id:'swim',       label:'水泳',       cat:'physical'},
+  {id:'gymnastics', label:'体操',       cat:'physical'},
+  {id:'ballgame',   label:'球技',       cat:'physical'},
+  {id:'reflex',     label:'超反射神経', cat:'physical'},
+  {id:'recovery',   label:'超回復力',   cat:'physical'},
+  /* Artistic */
+  {id:'art',        label:'美術',       cat:'artistic'},
+  {id:'calligraphy',label:'書道',       cat:'artistic'},
+  {id:'music',      label:'音楽演奏',   cat:'artistic'},
+  {id:'singing',    label:'歌唱',       cat:'artistic'},
+  {id:'writing',    label:'執筆',       cat:'artistic'},
+  {id:'cooking',    label:'料理',       cat:'artistic'},
+  /* Strategic */
+  {id:'leadership', label:'リーダーシップ',  cat:'strategic'},
+  {id:'strategy',   label:'戦略的思考',      cat:'strategic'},
+  {id:'logic',      label:'論理的思考',      cat:'strategic'},
+  {id:'negotiate',  label:'交渉術',          cat:'strategic'},
+  {id:'persuade',   label:'説得術',          cat:'strategic'},
+  {id:'situate',    label:'状況判断力',      cat:'strategic'},
+  /* Skill */
+  {id:'disguise',   label:'変装',       cat:'skill'},
+  {id:'machine',    label:'機械操作',   cat:'skill'},
+  {id:'hacking',    label:'ハッキング', cat:'skill'},
+  {id:'tracking',   label:'追跡',       cat:'skill'},
+  {id:'taming',     label:'動物調教',   cat:'skill'},
+  {id:'survival',   label:'サバイバル', cat:'skill'},
+  /* Sensory (5 items per spec) */
+  {id:'sixthsense', label:'第六感',     cat:'sensory'},
+  {id:'empathy',    label:'共感力',     cat:'sensory'},
+  {id:'foresight',  label:'未来予知',   cat:'sensory'},
+  {id:'luck',       label:'幸運補正',   cat:'sensory'},
+  {id:'tenacity',   label:'不屈の精神', cat:'sensory'},
+];
+
+/* Category display metadata — ordered for the accordion */
+/* v8.0: TRAIT_CATEGORIES — labels fully localized to Japanese */
+const TRAIT_CATEGORIES = [
+  {key:'brain',    label:'頭脳系'},
+  {key:'physical', label:'身体能力系'},
+  {key:'artistic', label:'芸術系'},
+  {key:'strategic',label:'戦略系'},
+  {key:'skill',    label:'特殊技能系'},
+  {key:'sensory',  label:'特殊感覚系'},
+];
+
+/* v7.8: traitCategoryCollapsedState — persists open/closed status of
+   each trait-category accordion panel in the profile edit view.
+   Key = category key string (e.g. "brain"), value = true means collapsed.
+   Written by toggleTraitCat; read by renderProfile to restore state.  */
+const traitCategoryCollapsedState = new Map();
 const HISTORY_MAX = 120;
 const NUM_SLOTS   = 12;
 const TOP_N       = 100;
-const APP_VER     = '7.7';
+const APP_VER     = '8.0';
 const THEME_KEY   = 'CoteOS_theme';
 const SLOT_META_KEY = 'CoteOS_v7_SlotMeta';
 const BGM_KEY       = 'CoteOS_v7_BGM';
@@ -118,6 +181,38 @@ const SURNAMES = [
   "塩田","上田","国本","長井","江川","佐古","赤羽","森口","桂","細野",
   "石橋","外山","長浜","松尾","宇田","竹ノ内","浅田","玉田","岩瀬","藤野",
   "仲田","清野","境","矢吹","丸岡","杉野","荒城","大川","渡里","曲木",
+  /* Extended batch D */
+  "安田","川田","岩井","堀口","末松","塚本","増田","中西","宮本","西尾",
+  "大森","山本","吉村","橋田","野澤","向山","平尾","田所","木原","坂上",
+  "原島","神山","峯岸","田辺","大久保","松島","草間","久保田","日比野","杉原",
+  "村松","小池","永野","森山","白井","奥平","野沢","梅田","谷川","沼田",
+  "原口","中尾","手塚","大城","森本","今田","岡島","横川","春日","北野",
+  "土井","坂井","毛利","川岸","村井","島津","本多","山岸","里見","内藤",
+  "広瀬","立川","根来","丹野","猪股","菅井","柿沼","飯野","浦田","染谷",
+  "阿久津","角井","松葉","深見","加賀","中田","西沢","大曽根","戸塚","相川",
+  "池谷","松波","永峰","葛城","大野木","中筋","石山","高野","宇川","角野",
+  "中嶋","遠山","川添","武内","牛山","荒田","岡林","東出","浅沼","古田",
+  "増山","枝川","川野","伊東","大庭","西島","矢田","梅野","中地","木田",
+  "坂野","深沢","折戸","道上","秋田","糸井","梶田","瀬川","橋部","穂積",
+  "長岡","飯田","丸田","村岡","林田","田島","下山","本橋","田尻","筒井",
+  "尾上","栗田","和田","根田","広田","里中","光安","海老名","浜名","峠",
+  "富岡","津島","岡林","有田","牧田","嶋崎","城山","楠田","由良","竹下",
+  "石飛","高木","坂道","吉留","村居","中嶋","宮城","小野寺","沓掛","赤塚",
+  "北川","今立","鈴原","由比","宮古","中道","宇山","村里","岩本","田城",
+  "神保","兒玉","石崎","奥島","猿渡","浜松","吉岡","渋谷","加納","筒本",
+  "藤浦","矢代","東坂","田主","森浦","塩川","丹羽","成田","栗林","平塚",
+  "東川","舘野","仙田","里路","光田","福地","宮岡","中道","浦野","阿藤",
+  /* Extended batch E */
+  "竹上","橋立","中浜","東原","野原","夏目","水谷","鹿島","土橋","神田",
+  "柴田","早川","尾形","岩見","横田","玉木","高岸","水島","八島","細田",
+  "大里","川北","正木","本庄","鈴江","真壁","磯野","吉浦","原坂","谷本",
+  "木佐","熊本","石塚","加茂","柚原","長尾","野々村","太田野","蛭田","成島",
+  "中市","稲葉","丸野","宮内","金森","角田","内藤","末田","梅原","柳田",
+  "出口","樋田","尾本","渋野","有泉","荒居","本間","佐治","平原","大谷",
+  "宮腰","上条","黒須","小浜","安達","北岡","三橋","戸次","清重","米澤",
+  "岩澤","川本","桑名","細谷","谷野","上西","大沢","西垣","水上","竹島",
+  "伊庭","小名木","三枝","堀田","和賀","大矢","熊坂","西坂","高巻","千葉",
+  "柏木","石元","吉松","森崎","古澤","末吉","林口","大和田","松尾","嶺岸",
 ];
 
 const MALE_NAMES = [
@@ -167,6 +262,36 @@ const MALE_NAMES = [
   "颯雅","雄飛","大央","玄太","優仁","絃","紅士","悠士","大心","愛士",
   "瞬太","幸太","勇汰","将輝","海音","洸斗","弓人","輝音","光義","凛人",
   "快人","純之介","輝斗","真輝","秋士","心太","龍輝","淳士","綾斗","光弦",
+  /* Extended batch D */
+  "拓斗","蒼空","陽介","和真","勇人","光輝","晴也","颯士","永翔","柊平",
+  "悠真","大樹","一颯","拓磨","秀斗","凜士","真登","海渡","壮士","颯輝",
+  "暁斗","紘太","隆斗","陽斗","蒼介","哉太","宙斗","唯翔","倫太","響士",
+  "渉人","光晴","章人","航斗","真咲","駿人","敬太","昌輝","篤人","慶太",
+  "孝輝","雅斗","祐人","和輝","寛太","大晴","弘毅","成海","凛之介","翔斗",
+  "陽輝","海晴","遼斗","廉太","純也","透","正輝","逸人","亮人","桐斗",
+  "真輝","奏也","稔","了","力斗","太晴","天翔","大晴","晃人","崚太",
+  "一翔","勝斗","汐","悠也","貫太","歩武","清太","颯斗","透暉","旺太",
+  "文輝","博人","勘太","正也","研人","一志","元気","望","瑞希","良一",
+  "守人","武典","亨","寿斗","勝利","和平","泰己","孝人","定","進",
+  "勇也","直輝","忠道","武平","雄輝","達郎","忠孝","和斗","盛人","尚輝",
+  "国雄","義己","博","勝輝","秀人","剛志","正道","公一","成斗","英輝",
+  "輝之介","渚人","空翔","幸輝","永史","湊人","颯大","海人","勢人","光一",
+  "澄空","陸翔","耀","一太朗","陽道","蒼汰郎","麻斗","翼人","皓","凛大",
+  "晴輝","理玖","暖斗","碧翔","燦","雅輝","蒼大","光男","和彦","健司",
+  "誠輝","知輝","宏平","隼士","純輝","翔輝","弦輝","孝司","文也","亮斗",
+  /* Extended batch E */
+  "泰雄","武晴","壱","凛翔","新太","友輝","翔太郎","日向人","颯矢","空人",
+  "岳翔","湊斗","璃久","宙人","陽晴","真海","光明","恵輝","賢太","聖輝",
+  "春輝","創","永輝","悠暉","藍斗","祥太","宜斗","柊人","士朗","世斗",
+  "颯一","凌斗","竜平","輝彦","光道","義樹","誠斗","守輝","武輝","貴司",
+  "広輝","信人","建人","朗","創太","凱人","羅偉","力翔","海慶","夢人",
+  "暁人","聡人","巧斗","陽祐","明人","幸斗","太智","万人","透也","純平",
+  "実輝","剣斗","煌輝","颯彦","蒼輝","永也","信輝","岳人","剣翔","湊輝",
+  "武蔵斗","大道","長輝","理斗","翔夢","光士","大空","奏輝","勝太","一輝",
+  "翔人","亘輝","春斗","義輝","健道","秀輝","渉輝","真道","剛輝","直斗",
+  "真輝斗","澄人","祐輝","敏人","紳太","大翔","勇翔","雄人","博輝","翔祐",
+  "幸平","朋輝","宙斗","天輝","勇真","英人","和道","颯聖","仁輝","光翔",
+  "星輝","弘輝","礼斗","心輝","響輝","実斗","澪輝","誠翔","翼斗","啓輝",
 ];
 
 const FEMALE_NAMES = [
@@ -216,6 +341,36 @@ const FEMALE_NAMES = [
   "舞","舞花","舞音","舞菜","舞香","舞奈","舞佳","舞葉","舞夏","舞乃",
   "歌","歌花","歌音","歌菜","歌乃","歌奈","歌美","歌帆","歌月","歌晴",
   "奏花","奏音","奏菜","奏乃","奏佳","奏香","奏美","奏葉","奏月","奏晴",
+  /* Extended batch D */
+  "結愛","心結","陽菜","美桜","凛花","紗希","柚花","莉愛","琴葉","日菜",
+  "陽花","心咲","美羽","柚月","莉花","花恵","瑞希","彩希","優菜","七海",
+  "芽衣","さくら","ゆな","みお","まりん","かえで","すずな","ことね","あかね","ひまり",
+  "つばき","こはる","のぞみ","あやか","まいか","みく","いろは","ことは","りおな","さな",
+  "はるな","ゆみ","ともか","みほ","なつき","あおい","かほ","れな","えみ","しおり",
+  "愛花","美穂","香奈恵","由衣","千恵","静","佳代","直子","典子","美代",
+  "春花","夏花","秋花","冬花","光花","陽花","風花","雨花","雪花","水花",
+  "桃菜","桃音","桃乃","桃香","桃愛","桃実","桃希","桃美","桃奈","桃花",
+  "朱音","朱菜","朱乃","朱香","朱美","朱奈","朱花","朱実","朱希","朱愛",
+  "碧菜","碧音","碧乃","碧香","碧愛","碧実","碧希","碧美","碧奈","碧花",
+  "珠菜","珠音","珠乃","珠香","珠愛","珠実","珠希","珠美","珠奈","珠花",
+  "つむぎ","みなみ","ゆいな","かのん","りこ","まな","ひなた","あんな","さき","めい",
+  "らん","えな","るな","ちひろ","みりん","のん","ねね","ここ","ももか","はな",
+  "さつき","うみ","そら","にこ","みつき","かんな","なな","ゆき","きわ","もも",
+  "和歌","美和","真子","明子","恵子","節子","幸子","雪子","文子","道子",
+  /* Extended batch E */
+  "彩夢","詩音","緋奈","澄花","晴佳","望","汐里","羽菜","芳","翠奈",
+  "空乃","夢叶","陽毬","花帆","綺羅","泉奈","霞","真珠","白雪","紫",
+  "柊菜","柊音","柊乃","柊香","柊花","柊愛","柊実","柊希","柊美","柊奈",
+  "椿菜","椿音","椿乃","椿香","椿花","椿愛","椿実","椿希","椿美","椿奈",
+  "芙蓉","葵花","向日葵","夾竹桃","金木犀","百合花","桔梗","彼岸花","竜胆","牡丹",
+  "麻友","由香里","美佐子","智恵","亜希子","裕子","順子","寿美","芳恵","光恵",
+  "美々","花々","鈴々","音々","咲々","彩々","華々","星々","雪々","月々",
+  "莉沙","愛沙","彩沙","詩沙","琴沙","香沙","花沙","夢沙","光沙","空沙",
+  "菜々美","咲々美","花々美","愛々美","星々美","雪々美","月々美","音々美","鈴々美","光々美",
+  "悠花","悠菜","悠音","悠乃","悠香","悠美","悠奈","悠愛","悠実","悠希",
+  "彩花","彩音","彩菜","彩乃","彩香","彩奈","彩実","彩希","彩美","彩愛",
+  "晴花","晴音","晴菜","晴乃","晴香","晴奈","晴実","晴希","晴美","晴愛",
+  "澪花","澪音","澪菜","澪乃","澪香","澪奈","澪実","澪希","澪美","澪愛",
 ];
 
 const CLASS_STAT_CFG = {
@@ -237,13 +392,17 @@ function genStat(cid,key){
   const [lo,hi]=rare?cfg.rare:cfg.avg; let v=lo===hi?lo:rndInt(lo,hi);
   if(cfg.focus.includes(key)) v=Math.min(15,v+1); return v;
 }
+/* v7.9: base year shifted 2010 → 2000 (−10 years).
+   Benchmark: grade=6, sysYear=1 → y=2000+(6-6)+(1-1)=2000;
+   m≤3 bumps to 2001 → born Apr 2000 – Mar 2001 ✓           */
 function genDOB(grade,sysYear){
-  let y=2010+(6-grade)+(sysYear-1); const m=rndInt(1,12),d=rndInt(1,28);
+  let y=2000+(6-grade)+(sysYear-1); const m=rndInt(1,12),d=rndInt(1,28);
   if(m<=3) y+=1;
   return `${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
 }
+/* v7.8: half-width space " " inserted between surname and given name */
 function genStudentName(gender){
-  return rndPick(SURNAMES)+rndPick(gender==='M'?MALE_NAMES:FEMALE_NAMES);
+  return rndPick(SURNAMES)+' '+rndPick(gender==='M'?MALE_NAMES:FEMALE_NAMES);
 }
 
 /* ──────────────────────────────────────────────────────────────────
@@ -271,6 +430,16 @@ let isGuestMode     = false;   // true when currentSlot === 0
 let bgmWidget   = null;
 let bgmReady    = false;
 let bgmEnabled  = false;
+
+/* v7.10: checkedClasses — Set of "grade_classId" strings for multi-select
+   batch operations. Persists across re-renders; renderHome re-applies
+   .chk-selected styling and restores checkbox state from this Set.    */
+const checkedClasses = new Set();
+
+/* v7.11: editMode — boolean tracking whether Edit Mode is active on the
+   Home screen. When true, the PP/CP dist row and cls-sel-bars are visible.
+   Persists across renderHome re-renders (preserved by navigate calls).    */
+let editMode = false;
 
 function newState(){
   return { year:1, month:4, students:[], classes:[], history:[], nextId:1, slotName:'' };
@@ -486,8 +655,10 @@ function clsName(grade,classId){
 ────────────────────────────────────────────────────────────────── */
 function blankStudent(grade,classId){
   const stats=Object.fromEntries(STATS_KEYS.map(k=>[k,1]));
+  /* v7.8: traits[] — array of trait id strings from SPECIAL_TRAITS */
   return { id:genStudentId(grade), name:'', gender:'M', dob:'', grade, classId, stats,
-           specialAbility:'', privatePoints:0, protectPoints:0, contracts:[], isExpelled:false };
+           specialAbility:'', privatePoints:0, protectPoints:0, contracts:[],
+           isExpelled:false, traits:[] };
 }
 function blankClass(grade,classId,rankLabel){
   const name=rankLabel?JP.clsDef(grade,rankLabel):'';
@@ -612,17 +783,18 @@ window.deleteIncomingCohort=function(cg){
   });
 };
 
-/* v7.5: randomizeIncomingCohort — fills all 200 slots of the given cohort
+/* v8.0: randomizeIncomingCohort — fills all 200 slots of the given cohort
    with randomised name, gender, DOB, PP (by class config), and stats.
-   Stat range: 40–90 on a 0–100 scale mapped to the 1–15 stat range:
-     raw 0–100  →  stat = round(raw / 100 * 14) + 1  (gives 1–15)
-   With range 40–90: min stat ≈ 7, max stat ≈ 14 (strong incoming class). */
+   v8.0 BALANCE FIX: stat generation now uses genStat(cid, key) — same
+   as active students — replacing the inflated raw 40–90 formula that
+   produced min≈7, max≈14 stats regardless of class. Incoming students
+   are now balanced equivalently to a newly-promoted Grade-1 class.    */
 window.randomizeIncomingCohort=function(cg){
   const cohortStudents = state.students.filter(s=>s.grade==='Incoming'&&s.cohortGrade===cg);
   if(!cohortStudents.length){
     toast(`✗ 第${cg}期に生徒がいません`,'err'); return;
   }
-  /* Group by classId so we can apply PP_RANGE per-class */
+  /* Group by classId so we can apply PP_RANGE and CLASS_STAT_CFG per-class */
   const byClass = {};
   CLASS_IDS.forEach(cid=>{ byClass[cid]=[]; });
   cohortStudents.forEach(s=>{ if(byClass[s.classId]!==undefined) byClass[s.classId].push(s); });
@@ -648,10 +820,10 @@ window.randomizeIncomingCohort=function(cg){
       /* Incoming students: estimated DOB as if entering grade 1 next year */
       s.dob    = genDOB(1, state.year + 1);
       s.privatePoints = rndInt(ppLo, ppHi);
-      /* Stats: raw 40–90 range → mapped to 1–15 scale */
+      /* v8.0: stats now use genStat(cid, key) — balanced per-class,
+         identical method to active student randomization (randomizeGrade). */
       STATS_KEYS.forEach(k=>{
-        const raw  = rndInt(40, 90);
-        s.stats[k] = Math.min(15, Math.max(1, Math.round(raw / 100 * 14) + 1));
+        s.stats[k] = genStat(cid, k);
       });
       s.specialAbility = '';
     });
@@ -1246,6 +1418,7 @@ function doGradeUp(){
 
   // v7.4: Promote Incoming → Grade 1, assigning fresh Grade-1 IDs
   // cohortGrade is cleared after promotion (no longer needed)
+  const hadIncoming = state.students.some(s=>s.grade==='Incoming');
   state.students.forEach(s=>{
     if(s.grade==='Incoming'){
       s.grade=1;
@@ -1262,6 +1435,16 @@ function doGradeUp(){
   });
   CLASS_IDS.forEach(id=>kept.push(blankClass(1,id,RANK_LABELS[id])));
   state.classes=kept;
+
+  /* v7.9: Auto-fill — if no Incoming cohort was prepared, generate
+     200 EMPTY Grade-1 slots (IDs assigned, all other fields blank).
+     No randomiseGrade call — slots are left for manual/random fill.  */
+  if(!hadIncoming){
+    CLASS_IDS.forEach(cid=>{
+      for(let i=0;i<40;i++) state.students.push(blankStudent(1,cid));
+    });
+    toast('⚡ 入学予定者なし — 1年生の空枠200名を自動作成しました','warn',4000);
+  }
 }
 function revertMonth(){
   if(!state){toast('✗ データがありません','err');return;}
@@ -1402,6 +1585,10 @@ function renderPage(page,params){
     afterRender();
     return;
   }
+  /* v7.11: remove edit-mode body class when navigating away from home */
+  if(page!=='home'){
+    document.body.classList.remove('edit-mode');
+  }
   switch(page){
     case 'home':         app.innerHTML=renderHome(); break;
     case 'grade':        app.innerHTML=renderGrade(params.grade); break;
@@ -1424,6 +1611,11 @@ function renderHome(){
   const activeCount=state.students.filter(s=>typeof s.grade==='number').length;
   const grads=state.students.filter(s=>s.grade==='Graduate').length;
   const inc=state.students.filter(s=>s.grade==='Incoming').length;
+  const chkCount=checkedClasses.size;
+  const selInfoCls=chkCount>0?'hcb-sel-info':'hcb-sel-info none';
+  const selInfoTxt=chkCount>0?`${chkCount} クラス選択中`:'0 クラス選択中';
+  /* v7.11: sync body.edit-mode class to current editMode state */
+  document.body.classList.toggle('edit-mode', editMode);
 
   let h=`
     <div class="home-bar">
@@ -1439,71 +1631,267 @@ function renderHome(){
       <span class="pg-title">システム概要</span>
       <span class="pg-sub">6学年 · 5クラス統合管理 v${APP_VER}${isGuestMode?' · <span style="color:var(--yw)">ゲストモード（未保存）</span>':''}</span>
     </div>
-  `;
 
+    <!-- v7.11: Home Control Bar — Edit Mode toggle (left) + nav buttons (right) -->
+    <div class="home-ctrl-bar">
+
+      <!-- LEFT: Edit Mode toggle + integrated PP/CP dist row -->
+      <div class="hcb-half hcb-left">
+        <!-- Top row: Edit Mode button + selection info -->
+        <div class="hcb-left-top">
+          <button class="btn-edit-mode${editMode?' edit-active':''}"
+                  onclick="toggleEditMode()"
+                  title="${editMode?'編集モード終了':'クラスを選択して一括操作'}">
+            ${editMode?'編集終了':'クラスを選択'}
+          </button>
+          <span class="${selInfoCls}" id="hcb-sel-info">${selInfoTxt}</span>
+        </div>
+
+        <!-- v7.11: Integrated PP + CP dist row — hidden by default, shown in edit-mode via CSS -->
+        <div class="hcb-dist-row" id="hcb-dist-row">
+          <span class="hcb-dist-lbl">PP：</span>
+          <input class="hcb-inp" type="number" id="hcb-pp-inp" placeholder="量" />
+          <button class="hcb-btn pp-give" onclick="hcbDistPP(1)">配布</button>
+          <button class="hcb-btn pp-take" onclick="hcbDistPP(-1)">剥奪</button>
+
+          <span class="hcb-dist-sep"></span>
+
+          <span class="hcb-dist-lbl">CP：</span>
+          <input class="hcb-inp" type="number" id="hcb-cp-inp" placeholder="量" />
+          <button class="hcb-btn cp-give" onclick="hcbDistCP(1)">配布</button>
+          <button class="hcb-btn cp-take" onclick="hcbDistCP(-1)">剥奪</button>
+        </div>
+      </div>
+
+      <!-- RIGHT: Navigate to Graduates / Incoming -->
+      <div class="hcb-half" style="gap:7px">
+        <button class="hcb-nav-btn nav-grad" onclick="navigate('graduates',{},false)">
+          <span class="hcb-nav-cnt">${grads}</span>
+          <span class="hcb-nav-lbl">${JP.graduates}</span>
+        </button>
+        <button class="hcb-nav-btn nav-inc" onclick="navigate('incoming',{},false)">
+          <span class="hcb-nav-cnt">${inc}</span>
+          <span class="hcb-nav-lbl">${JP.incoming2}</span>
+        </button>
+      </div>
+
+    </div>`;
+
+  /* Grade blocks — cls-mini cards with checkboxes + per-grade sel-bar */
   GRADES.forEach(grade=>{
     const ranked=getRanked(grade);
+    /* Count how many of this grade's 5 classes are checked */
+    const gradeTotalCls=ranked.length;
+    const gradeChkCls=ranked.filter(c=>checkedClasses.has(`${grade}_${c.classId}`)).length;
+
     h+=`
       <div class="grade-block">
         <div class="grade-hdr" onclick="navigate('grade',{grade:${grade}},false)">
           <span class="grade-lbl">${JP.gradeN(grade)}</span>
           <span class="grade-hint">▶ 詳細を見る</span>
         </div>
+        <!-- v7.11: per-grade select-all bar — hidden by default, shown via body.edit-mode CSS -->
+        <div class="cls-sel-bar" onclick="event.stopPropagation()">
+          <span class="cls-sel-bar-lbl">一括選択：</span>
+          <button class="cls-sel-btn sel-all-btn" onclick="hcbSelGrade(${grade},true)">全選択</button>
+          <button class="cls-sel-btn sel-none-btn" onclick="hcbSelGrade(${grade},false)">全解除</button>
+          ${gradeChkCls>0?`<span style="font-size:.6rem;color:var(--ac);margin-left:4px">${gradeChkCls}/${gradeTotalCls} 選択中</span>`:''}
+        </div>
         <div class="cls-strip">`;
+
     ranked.forEach((cls,ri)=>{
       const rank=RANK_LABELS[ri], nm=clsName(grade,cls.classId);
+      const key=`${grade}_${cls.classId}`;
+      const isChk=checkedClasses.has(key);
       h+=`
-        <div class="cls-mini" onclick="navigate('class',{grade:${grade},classId:${cls.classId}},false)">
+        <div class="cls-mini${isChk?' chk-selected':''}"
+             onclick="navigate('class',{grade:${grade},classId:${cls.classId}},false)">
+          <!-- v7.12: checkbox hidden by default; CSS shows via body.edit-mode -->
+          <label class="mini-chk-wrap" onclick="event.stopPropagation()">
+            <input class="mini-chk" type="checkbox" ${isChk?'checked':''}
+                   onchange="toggleMiniChk(${grade},${cls.classId},event)" />
+          </label>
+          <!-- Rank badge — absolute top-right -->
           <span class="mini-rank r${rank}">${rank}</span>
-          <div class="mini-name">${esc(nm)}</div>
-          <div class="mini-cp">${cls.classPoints.toLocaleString()}</div>
-          <div class="mini-cplbl">CP</div>
-          <div class="dist-row" onclick="event.stopPropagation()">
-            <input class="dist-inp" type="number" id="di-${grade}-${cls.classId}" placeholder="PP" />
-            <button class="dist-btn" onclick="homeDistPP(${grade},${cls.classId})">配布</button>
+          <!-- v7.12: Top section — class name with right padding to clear rank badge -->
+          <div class="mini-top">
+            <div class="mini-name">${esc(nm)}</div>
+          </div>
+          <!-- v7.12: Bottom section — CP value pinned to bottom-left -->
+          <div class="mini-bottom">
+            <div class="mini-cp">${cls.classPoints.toLocaleString()}</div>
+            <div class="mini-cplbl">CP</div>
           </div>
         </div>`;
     });
     h+=`</div></div>`;
   });
 
-  h+=`
-    <div class="sp-tiles">
-      <div class="sp-tile" style="border-color:var(--yw)" onclick="navigate('graduates',{},false)">
-        <div class="sp-cnt" style="color:var(--yw)">${grads}</div>
-        <div class="sp-lbl">${JP.graduates}</div>
-      </div>
-      <div class="sp-tile" style="border-color:var(--ac)" onclick="navigate('incoming',{},false)">
-        <div class="sp-cnt" style="color:var(--ac)">${inc}</div>
-        <div class="sp-lbl">${JP.incoming2}</div>
-      </div>
-    </div>`;
-
   return h;
 }
 
-window.homeDistPP=function(grade,classId){
-  const inp=document.getElementById(`di-${grade}-${classId}`);
-  const amt=parseInt(inp?.value);
-  if(isNaN(amt)){toast('✗ 有効な数値を入力してください','err');return;}
-  const nm=clsName(grade,classId);
-  const cnt=getStudentsOf(grade,classId).filter(s=>!s.isExpelled).length;
+/* ── v7.11: Home Control Bar — Edit Mode + multi-class batch actions ──
+   editMode bool controls body.edit-mode CSS class, which shows/hides
+   .hcb-dist-row and .cls-sel-bar via CSS selectors.
+   checkedClasses (Set<"grade_classId">) is the single source of truth.
+   All actions operate on every checked class at once.
+   toggleMiniChk / hcbSelGrade update the Set and patch the DOM
+   reactively (no full renderApp) for snappy feedback.                  */
+
+/* v7.11: toggleEditMode — toggle editMode state, sync body class and button UI */
+window.toggleEditMode=function(){
+  editMode=!editMode;
+  document.body.classList.toggle('edit-mode', editMode);
+  /* Patch the toggle button in-place for instant feedback */
+  const btn=document.querySelector('.btn-edit-mode');
+  if(btn){
+    btn.classList.toggle('edit-active', editMode);
+    btn.textContent=editMode?'編集終了':'クラスを選択';
+    btn.title=editMode?'編集モード終了':'クラスを選択して一括操作';
+  }
+  /* When turning OFF: clear checked classes and re-render home cleanly */
+  if(!editMode){
+    checkedClasses.clear();
+    renderApp();
+  }
+};
+
+/* Helper: convert checkedClasses Set → Array<{grade,classId}> */
+function hcbGetCheckedClasses(){
+  return Array.from(checkedClasses).map(key=>{
+    const [g,c]=key.split('_').map(Number);
+    return {grade:g, classId:c};
+  }).filter(x=>!isNaN(x.grade)&&!isNaN(x.classId));
+}
+
+/* toggleMiniChk — fired by checkbox onchange inside .cls-mini.
+   Updates checkedClasses, toggles .chk-selected on the card,
+   and refreshes the #hcb-sel-info badge. No full re-render.     */
+window.toggleMiniChk=function(grade,classId,ev){
+  ev.stopPropagation();
+  const key=`${grade}_${classId}`;
+  const card=ev.target.closest('.cls-mini');
+  if(ev.target.checked){
+    checkedClasses.add(key);
+    card?.classList.add('chk-selected');
+  } else {
+    checkedClasses.delete(key);
+    card?.classList.remove('chk-selected');
+  }
+  /* Refresh selection counter in ctrl bar */
+  const info=document.getElementById('hcb-sel-info');
+  if(info){
+    const n=checkedClasses.size;
+    info.textContent=`${n} クラス選択中`;
+    info.className=n>0?'hcb-sel-info':'hcb-sel-info none';
+  }
+};
+
+/* hcbSelGrade — 全選択 / 全解除 for one grade row */
+window.hcbSelGrade=function(grade,select){
+  CLASS_IDS.forEach(cid=>{
+    const key=`${grade}_${cid}`;
+    if(select) checkedClasses.add(key); else checkedClasses.delete(key);
+  });
+  /* Re-render home to reflect updated checkbox states */
+  renderApp();
+};
+
+/* hcbDistPP(sign): sign=+1 配布, sign=-1 剥奪 — all checked classes */
+window.hcbDistPP=function(sign){
+  const classes=hcbGetCheckedClasses();
+  if(!classes.length){toast('✗ クラスをチェックしてください','err');return;}
+  const raw=parseInt(document.getElementById('hcb-pp-inp')?.value);
+  if(isNaN(raw)||raw<=0){toast('✗ 有効なPP量を入力してください','err');return;}
+  const amt=raw*sign;
+  const verb=sign>0?'配布':'剥奪';
+  /* Count total affected students */
+  let totalStu=0;
+  const clsLines=classes.map(({grade,classId})=>{
+    const cnt=getStudentsOf(grade,classId).filter(s=>!s.isExpelled).length;
+    totalStu+=cnt;
+    return `<li><span style="color:var(--t1)">${esc(clsName(grade,classId))}</span> (${cnt}名)</li>`;
+  }).join('');
+  /* JSON-encode class list for execDistPP — avoids multi-arg onclick limits */
+  const encoded=encodeURIComponent(JSON.stringify(classes));
   openModal(`
-    <div class="m-title">クラス全員にPP配布</div>
+    <div class="m-title">一括PP${verb} — ${classes.length}クラス</div>
     <div class="m-body">
-      <p><strong style="color:var(--ac)">${esc(nm)}</strong> の全生徒 (${cnt}名) に<br>
+      <ul style="font-size:.72rem;margin:6px 0 8px 16px;line-height:1.7">${clsLines}</ul>
+      <p>対象 <strong style="color:var(--t0)">${totalStu}名</strong> に
          <strong style="color:${amt>=0?'var(--gn)':'var(--rd)'}">
-           ${amt>=0?'+':''}${amt.toLocaleString()} PP</strong> を配布しますか？</p>
+           ${amt>=0?'+':''}${amt.toLocaleString()} PP</strong> を${verb}しますか？</p>
       <div class="btn-row">
-        <button class="btn btn-ac" onclick="execHomeDist(${grade},${classId},${amt})">実行</button>
+        <button class="btn ${sign>0?'btn-ac':'btn-dn'}"
+                onclick="hcbExecDistPP('${encoded}',${amt})">実行</button>
         <button class="btn" onclick="closeModal()">キャンセル</button>
       </div>
     </div>`);
 };
-window.execHomeDist=function(grade,classId,amt){
-  getStudentsOf(grade,classId).filter(s=>!s.isExpelled).forEach(s=>{s.privatePoints+=amt;});
+
+window.hcbExecDistPP=function(encoded,amt){
+  const classes=JSON.parse(decodeURIComponent(encoded));
+  let totalStu=0;
+  classes.forEach(({grade,classId})=>{
+    const sts=getStudentsOf(grade,classId).filter(s=>!s.isExpelled);
+    sts.forEach(s=>{s.privatePoints+=amt;});
+    totalStu+=sts.length;
+  });
   closeModal(); saveState(true); renderApp();
-  toast(`✓ PP配布完了 (${amt>=0?'+':''}${amt.toLocaleString()})`,'ok');
+  toast(`✓ PP${amt>=0?'配布':'剥奪'}完了 — ${classes.length}クラス / ${totalStu}名 (${amt>=0?'+':''}${amt.toLocaleString()})`,'ok');
+};
+
+/* v7.11: hcbDistCP(sign): sign=+1 配布, sign=-1 剥奪 for CP — all checked classes.
+   Adds/subtracts amt to/from classPoints (delta, not set). Mirrors hcbDistPP.    */
+window.hcbDistCP=function(sign){
+  const classes=hcbGetCheckedClasses();
+  if(!classes.length){toast('✗ クラスをチェックしてください','err');return;}
+  const raw=parseInt(document.getElementById('hcb-cp-inp')?.value);
+  if(isNaN(raw)||raw<=0){toast('✗ 有効なCP量を入力してください','err');return;}
+  const amt=raw*sign;
+  const verb=sign>0?'配布':'剥奪';
+  const clsLines=classes.map(({grade,classId})=>{
+    return `<li><span style="color:var(--t1)">${esc(clsName(grade,classId))}</span></li>`;
+  }).join('');
+  const encoded=encodeURIComponent(JSON.stringify(classes));
+  openModal(`
+    <div class="m-title">一括CP${verb} — ${classes.length}クラス</div>
+    <div class="m-body">
+      <ul style="font-size:.72rem;margin:6px 0 8px 16px;line-height:1.7">${clsLines}</ul>
+      <p>選択クラスに
+         <strong style="color:${amt>=0?'var(--ac)':'var(--rd)'}">
+           ${amt>=0?'+':''}${amt.toLocaleString()} CP</strong> を${verb}しますか？</p>
+      <div class="btn-row">
+        <button class="btn ${sign>0?'btn-ac':'btn-dn'}"
+                onclick="hcbExecDistCP('${encoded}',${amt})">実行</button>
+        <button class="btn" onclick="closeModal()">キャンセル</button>
+      </div>
+    </div>`);
+};
+
+window.hcbExecDistCP=function(encoded,amt){
+  const classes=JSON.parse(decodeURIComponent(encoded));
+  classes.forEach(({grade,classId})=>{
+    const c=state.classes.find(x=>x.grade===grade&&x.classId===classId);
+    if(c) c.classPoints+=amt;
+  });
+  closeModal(); saveState(true); renderApp();
+  toast(`✓ CP${amt>=0?'配布':'剥奪'}完了 — ${classes.length}クラス (${amt>=0?'+':''}${amt.toLocaleString()})`,'ok');
+};
+
+/* hcbSetCP: LEGACY — kept for any external references; now delegates to hcbDistCP(+1)
+   Note: in v7.11 the "設定" button was replaced by 配布/剥奪. This stub remains for safety. */
+window.hcbSetCP=function(){
+  const classes=hcbGetCheckedClasses();
+  if(!classes.length){toast('✗ クラスをチェックしてください','err');return;}
+  const val=parseInt(document.getElementById('hcb-cp-inp')?.value);
+  if(isNaN(val)){toast('✗ 有効なCP値を入力してください','err');return;}
+  classes.forEach(({grade,classId})=>{
+    const c=state.classes.find(x=>x.grade===grade&&x.classId===classId);
+    if(c) c.classPoints=val;
+  });
+  saveState(true); renderApp();
+  toast(`✓ CP設定完了 — ${classes.length}クラス → ${val.toLocaleString()}`,'ok');
 };
 
 /* ──────────────────────────────────────────────────────────────────
@@ -1887,6 +2275,100 @@ window.addStudent=function(grade,classId){
 };
 
 /* ──────────────────────────────────────────────────────────────────
+   SPECIAL TRAIT HELPERS — v7.8
+────────────────────────────────────────────────────────────────── */
+
+/* Build the read-only tag strip for the profile sidebar */
+function buildTraitTagStrip(s){
+  const traits = Array.isArray(s.traits) ? s.traits : [];
+  if(!traits.length)
+    return `<span class="trait-display-empty">特性未設定</span>`;
+  return traits.map(id=>{
+    const def = SPECIAL_TRAITS.find(t=>t.id===id);
+    if(!def) return '';
+    return `<span class="trait-tag tc-${def.cat}">${esc(def.label)}</span>`;
+  }).filter(Boolean).join('');
+}
+
+/* Build the collapsible category accordion for the profile edit panel */
+function buildTraitAccordion(s){
+  const selected = new Set(Array.isArray(s.traits) ? s.traits : []);
+  const sid = s.id;
+
+  return `<div class="trait-edit-wrap">`+TRAIT_CATEGORIES.map(({key,label})=>{
+    const catTraits = SPECIAL_TRAITS.filter(t=>t.cat===key);
+    const selCount  = catTraits.filter(t=>selected.has(t.id)).length;
+    const isCollapsed = traitCategoryCollapsedState.get(key) === true;
+    const bodyClass   = isCollapsed ? 'trait-cat-body cat-collapsed' : 'trait-cat-body';
+    const arrowChar   = isCollapsed ? '▶' : '▼';
+    const openClass   = isCollapsed ? '' : ' tc-open';
+    const badgeCls    = selCount > 0 ? 'trait-cat-badge has-sel' : 'trait-cat-badge';
+
+    const chips = catTraits.map(t=>{
+      const isSel = selected.has(t.id);
+      return `<span class="trait-chip${isSel?' selected':''}"
+                    onclick="toggleTrait('${escA(sid)}','${t.id}')">${esc(t.label)}</span>`;
+    }).join('');
+
+    return `
+      <div class="trait-cat-block tc-${key}${openClass}" id="tcat-block-${key}">
+        <div class="trait-cat-hdr" onclick="toggleTraitCat('${key}')">
+          <span class="trait-cat-lbl">${label}</span>
+          <span class="${badgeCls}" id="tcat-badge-${key}">${selCount||''}</span>
+          <span class="trait-cat-arrow">${arrowChar}</span>
+        </div>
+        <div class="${bodyClass}" id="tcat-body-${key}">${chips}</div>
+      </div>`;
+  }).join('')+`</div>`;
+}
+
+/* Toggle a trait on a student — live-saves and reactively updates
+   only the tag strip and badge counts (no full page re-render).   */
+window.toggleTrait=function(sid, traitId){
+  const s=state.students.find(x=>x.id===sid); if(!s) return;
+  if(!Array.isArray(s.traits)) s.traits=[];
+  const idx=s.traits.indexOf(traitId);
+  if(idx>=0) s.traits.splice(idx,1);
+  else        s.traits.push(traitId);
+
+  /* Update the sidebar tag strip reactively */
+  const strip=document.getElementById('trait-display-'+sid);
+  if(strip) strip.innerHTML=buildTraitTagStrip(s);
+
+  /* Update the chip appearance and the category badge count */
+  const def=SPECIAL_TRAITS.find(t=>t.id===traitId);
+  if(def){
+    const chip=Array.from(document.querySelectorAll(
+      `#tcat-body-${def.cat} .trait-chip`
+    )).find(el=>el.textContent.trim()===def.label);
+    if(chip) chip.classList.toggle('selected', idx<0);
+
+    const badge=document.getElementById('tcat-badge-'+def.cat);
+    if(badge){
+      const catTraits=SPECIAL_TRAITS.filter(t=>t.cat===def.cat);
+      const count=catTraits.filter(t=>s.traits.includes(t.id)).length;
+      badge.textContent=count||'';
+      badge.className=count>0?'trait-cat-badge has-sel':'trait-cat-badge';
+    }
+  }
+
+  saveState(true);
+};
+
+/* Toggle trait-category accordion panel; persists collapsed state */
+window.toggleTraitCat=function(key){
+  const body =document.getElementById('tcat-body-'+key);
+  const block=document.getElementById('tcat-block-'+key);
+  if(!body||!block) return;
+  const isOpen=!body.classList.contains('cat-collapsed');
+  body.classList.toggle('cat-collapsed', isOpen);
+  block.classList.toggle('tc-open', !isOpen);
+  const arrow=block.querySelector('.trait-cat-arrow');
+  if(arrow) arrow.textContent=isOpen?'▶':'▼';
+  traitCategoryCollapsedState.set(key, isOpen);
+};
+
+/* ──────────────────────────────────────────────────────────────────
    PROFILE PAGE — v6.5
    • プロフィール header color → var(--t1) via CSS
    • .fr label min-width:96px for flush alignment
@@ -1966,6 +2448,10 @@ function renderProfile(sid){
             <canvas id="pf-radar-canvas" data-sid="${escA(sid)}" width="220" height="220"></canvas>
           </div>
         </div>
+        <!-- v7.8: Trait tag strip — reactive display of selected traits -->
+        <div class="trait-display-wrap" id="trait-display-${escA(sid)}">
+          ${buildTraitTagStrip(s)}
+        </div>
         <div style="margin-top:12px">
           ${s.isExpelled
             ?`<button class="btn-expel" style="border-color:var(--gn);color:var(--gn)" onclick="reinstateStudent('${sid}')">↩ ${JP.reinstate}</button>`
@@ -2020,10 +2506,8 @@ function renderProfile(sid){
         </div>
 
         <div class="prof-sec">
-          <div class="sec-ttl">${JP.specialAbility}（最大300文字）</div>
-          <textarea class="sa-area fta" id="pf-sa" maxlength="300"
-                    placeholder="特殊能力を記載...">${esc(s.specialAbility||'')}</textarea>
-          <div class="sa-cnt" id="sa-ct">${(s.specialAbility||'').length}/300</div>
+          <div class="sec-ttl">特殊能力 — 特性選択</div>
+          ${buildTraitAccordion(s)}
         </div>
 
         <button class="btn-save-prof" onclick="saveProfile('${sid}')">✓ プロフィールを保存</button>
@@ -2127,7 +2611,7 @@ window.saveProfile=function(sid){
   s.classId=+(document.getElementById('pf-cls')?.value)||0;
   const ppv=parseInt(document.getElementById('pf-pp')?.value); if(!isNaN(ppv)) s.privatePoints=ppv;
   const prv=parseInt(document.getElementById('pf-prot')?.value); if(!isNaN(prv)) s.protectPoints=Math.max(0,prv);
-  s.specialAbility=document.getElementById('pf-sa')?.value||'';
+  /* v7.9: specialAbility memo field removed from profile UI — field preserved in data, not overwritten */
   STATS_KEYS.forEach(k=>{const e=document.getElementById(`st-${k}`);if(e)s.stats[k]=+e.value;});
   saveState(true); renderApp(); toast('✓ プロフィールを保存しました：'+(s.name||s.id),'ok');
 };
@@ -2742,9 +3226,7 @@ window.closeModal=function(){ document.getElementById('modal-overlay').classList
    POST-RENDER
 ────────────────────────────────────────────────────────────────── */
 function afterRender(){
-  const ta=document.getElementById('pf-sa'), ct=document.getElementById('sa-ct');
-  if(ta&&ct) ta.addEventListener('input',()=>{ ct.textContent=ta.value.length+'/300'; });
-
+  /* v7.9: pf-sa/sa-ct binding removed — specialAbility memo section deleted */
   const cur=navStack[navStack.length-1];
   if(cur?.page==='profile'){
     drawProfileRadar();
@@ -2901,7 +3383,20 @@ function finishBoot(){
   bindEvents();
   updateSlotButtons();
   updateDateDisplay();
+  /* v8.0: apply mobile-mode class on load and wire resize listener */
+  updateMobileMode();
+  window.addEventListener('resize', updateMobileMode, {passive:true});
   navigate('home',{},true);
+}
+
+/* v8.0: updateMobileMode — detects portrait orientation or narrow viewport
+   (≤768px) and toggles 'mobile-mode' class on <body>. CSS uses this class
+   to activate all mobile-specific layout rules (@media queries are also
+   present as a complementary approach for viewport-width-only triggers).   */
+function updateMobileMode(){
+  const narrow = window.innerWidth <= 768;
+  const portrait = window.matchMedia('(orientation: portrait)').matches;
+  document.body.classList.toggle('mobile-mode', narrow || portrait);
 }
 
 if(document.readyState==='loading')
