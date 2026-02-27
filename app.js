@@ -1,26 +1,26 @@
 /* ================================================================
-   Cote-OS v8.0  ·  app.js  "Mobile Foundation & Localization"
+   Cote-OS v8.5  ·  app.js  "Visual Overhaul + Contract Refinement"
    ─────────────────────────────────────────────────────────────────
-   Changes vs v7.12:
-   • APP_VER → '8.0'
-   • TRAIT_CATEGORIES labels fully localized to Japanese:
-       Brain     → 頭脳系
-       Physical  → 身体能力系
-       Artistic  → 芸術系
-       Strategic → 戦略系
-       Skill     → 特殊技能系
-       Sensory   → 特殊感覚系
-   • randomizeIncomingCohort stat generation balanced:
-     Previous formula (raw 40–90 → 1–15 scale) produced inflated
-     stats (min ≈7, max ≈14). Replaced with genStat(cid, key) which
-     uses CLASS_STAT_CFG per-class averages — same as active students.
-   • updateMobileMode(): new function — detects portrait orientation
-     or narrow viewport (≤768px) and toggles 'mobile-mode' class on
-     <body>. Called on boot and on window resize.
-   • finishBoot: calls updateMobileMode() and attaches resize listener.
-   • All v7.12 logic preserved: editMode, checkedClasses, hcbDistPP,
-     hcbDistCP, .mini-top/.mini-bottom HTML structure, 1.5× names,
-     genDOB −10yr shift, "Year X, Month Y" date format.
+   Changes vs v8.4:
+   • APP_VER → '8.5'
+   • renderCards — text scaled ×1.15; s-name ×1.4; compact padding;
+     NO top-border accent (border-top-color inline style removed).
+     Unified HTML structure (s-card-inner / s-col-left / s-col-right)
+     used for Current Students, Graduates, and Incoming pages.
+   • buildContractAccordion:
+     - Issue panel: replaced [role select] + [＋発行] with two
+       independent buttons [支払 (SEND)] and [受取 (RECV)].
+       Badge counter removed from issue header.
+     - Confirm panel: balance HTML now shows only
+       "月毎の変化: ±X PP" — formula hidden.
+     - Delete button (✕) now works for RECV contracts too
+       (bidirectional deletion: rmContract handles both directions).
+   • addContract(sid, role) — now takes explicit role parameter
+     ('pay'|'recv') so each button calls directly with its role.
+   • rmContract — extended to handle both SEND (on s) and RECV
+     (on the other party's contracts array).
+   • Profile nav bug fix: navigateReplace used throughout contract
+     actions to prevent stack growth.
    ================================================================ */
 'use strict';
 
@@ -85,6 +85,7 @@ const SPECIAL_TRAITS = [
 
 /* Category display metadata — ordered for the accordion */
 /* v8.0: TRAIT_CATEGORIES — labels fully localized to Japanese */
+/* v8.1: 'custom' category added for user-created traits (always last) */
 const TRAIT_CATEGORIES = [
   {key:'brain',    label:'頭脳系'},
   {key:'physical', label:'身体能力系'},
@@ -92,6 +93,7 @@ const TRAIT_CATEGORIES = [
   {key:'strategic',label:'戦略系'},
   {key:'skill',    label:'特殊技能系'},
   {key:'sensory',  label:'特殊感覚系'},
+  {key:'custom',   label:'その他 (カスタム)'},
 ];
 
 /* v7.8: traitCategoryCollapsedState — persists open/closed status of
@@ -99,10 +101,14 @@ const TRAIT_CATEGORIES = [
    Key = category key string (e.g. "brain"), value = true means collapsed.
    Written by toggleTraitCat; read by renderProfile to restore state.  */
 const traitCategoryCollapsedState = new Map();
+/* v8.3: contractAccCollapsedState — persists open/closed state of the
+   two contract accordion panels: 'issue' and 'confirm'.
+   Default: issue open, confirm open. */
+const contractAccCollapsedState = new Map([['issue',false],['confirm',false]]);
 const HISTORY_MAX = 120;
 const NUM_SLOTS   = 12;
 const TOP_N       = 100;
-const APP_VER     = '8.0';
+const APP_VER     = '8.5';
 const THEME_KEY   = 'CoteOS_theme';
 const SLOT_META_KEY = 'CoteOS_v7_SlotMeta';
 const BGM_KEY       = 'CoteOS_v7_BGM';
@@ -133,86 +139,90 @@ const JP = {
 /* ──────────────────────────────────────────────────────────────────
    RANDOMISER DATA — ×5 expanded name arrays
 ────────────────────────────────────────────────────────────────── */
-const SURNAMES = [
-  /* Top 130 — v5.4 originals */
+/* ── v8.1: SURNAMES — split into MAJOR (common) and RARE groups
+   Total count ≈ 1.5× v8.0. Selection: 2:1 weighted — Major is
+   picked 2 out of 3 times, Rare 1 out of 3 times.             */
+const SURNAMES_MAJOR = [
+  /* Top-60 ultra-common Japanese surnames */
   "佐藤","鈴木","高橋","田中","渡辺","伊藤","山本","中村","小林","加藤",
   "吉田","山田","佐々木","山口","松本","井上","木村","林","斎藤","清水",
   "山崎","池田","橋本","阿部","森","石川","前田","藤田","小川","岡田",
   "後藤","長谷川","石井","村上","近藤","坂本","遠藤","青木","藤井","西村",
   "福田","太田","三浦","岡本","松田","中島","中川","原田","小野","竹内",
-  "金子","和田","中野","原","藤原","村田","上田","横山","宮崎","谷口",
-  "大野","高木","宮本","久保","松井","内田","工藤","野口","杉山","吉川",
-  "菊地","千葉","桐島","大塚","平野","市川","成田","須藤","杉本","片山",
-  "土屋","川口","米田","菅原","服部","河野","中山","石田","丸山","松尾",
-  "今井","河合","藤本","田村","安藤","永田","古川","石原","長田","武田",
-  "岩田","水野","沢田","中井","福島","辻","大西","浜田","西田","松岡",
-  "北村","相沢","桑原","黒田","新井","宮田","山内","堀","野田","菅野",
-  "川上","榎本","大島","飯田","岸","南","上野","泉","田口","高田",
-  /* Extended batch A */
-  "白石","大谷","西山","西川","神田","岡崎","五十嵐","熊谢","野中","松浦",
-  "伏見","川村","徳田","橘","比企","東","新谷","滝沢","津田","工藤",
-  "波多野","志村","根本","関口","瀬戸","畑","神谷","保坂","奥田","深沢",
-  "二宮","三好","菱田","品川","八木","千代","磯部","上原","奥村","黒岩",
-  "小山","吉原","沖","花田","本田","長嶋","平田","橋爪","荒木","久米",
-  "下村","横田","片岡","尾崎","角田","内山","和泉","三宅","萩原","立花",
-  "荒井","入江","大塩","羽田","久野","清田","曽根","湯浅","西本","宮下",
-  "矢野","平井","吉野","細川","木下","杉田","高山","田畑","丸岡","竹田",
-  "飯島","上杉","小松","秋山","笠原","大石","島村","奥山","古屋","長野",
-  "矢島","酒井","桑田","富田","浅野","海老原","真田","岩崎","稲垣","浜口",
-  /* Extended batch B */
-  "原口","松下","樋口","山崎","野村","三田","椎名","石黒","市原","藤沢",
-  "冨田","嶋田","水口","池上","宇野","城戸","木田","西岡","越智","砂田",
-  "飯塚","泉谷","赤坂","角谷","別府","深田","粟田","玉置","松永","宮島",
-  "向井","大倉","赤井","浜崎","戸田","国分","竹山","黒沢","川崎","高田",
-  "宮地","福井","東野","稲田","今村","小泉","松村","西澤","篠田","富山",
-  "津川","北島","澤田","坂口","塚田","富永","安部","矢口","天野","萩野",
-  "中本","福本","笹田","尾野","平松","野上","内海","横尾","手塚","岡部",
-  "石倉","杉浦","山ノ内","板垣","蒲田","奥野","永井","古賀","渡部","川端",
-  "黒田","柳澤","岩本","沢村","三上","長沢","奥田","大村","千田","坂田",
-  "幸田","大沼","西本","今泉","竹中","橋口","薄田","塩谷","大久保","小泉",
-  /* Extended batch C */
-  "香西","児玉","高村","折戸","末廣","光永","住田","蒔田","村瀬","横路",
-  "田代","中尾","仁村","荒川","小倉","松岡","御手洗","石坂","上島","田原",
-  "藪田","宇佐美","奥田","川畑","宮内","白川","西田","高岡","太刀川","三谷",
-  "近松","藤川","成瀬","福永","宮里","有村","久田","根岸","長尾","岸本",
-  "下田","牧野","植田","原田","伊勢","千田","後藤","西廣","山室","佐田",
-  "竹腰","恩田","笠間","大橋","遠山","石部","牛島","石丸","神崎","浅川",
-  "中谷","小澤","宮沢","阿部","田嶋","川本","鏡","伊原","前原","山地",
-  "塩田","上田","国本","長井","江川","佐古","赤羽","森口","桂","細野",
-  "石橋","外山","長浜","松尾","宇田","竹ノ内","浅田","玉田","岩瀬","藤野",
-  "仲田","清野","境","矢吹","丸岡","杉野","荒城","大川","渡里","曲木",
-  /* Extended batch D */
-  "安田","川田","岩井","堀口","末松","塚本","増田","中西","宮本","西尾",
-  "大森","山本","吉村","橋田","野澤","向山","平尾","田所","木原","坂上",
-  "原島","神山","峯岸","田辺","大久保","松島","草間","久保田","日比野","杉原",
-  "村松","小池","永野","森山","白井","奥平","野沢","梅田","谷川","沼田",
-  "原口","中尾","手塚","大城","森本","今田","岡島","横川","春日","北野",
-  "土井","坂井","毛利","川岸","村井","島津","本多","山岸","里見","内藤",
-  "広瀬","立川","根来","丹野","猪股","菅井","柿沼","飯野","浦田","染谷",
-  "阿久津","角井","松葉","深見","加賀","中田","西沢","大曽根","戸塚","相川",
-  "池谷","松波","永峰","葛城","大野木","中筋","石山","高野","宇川","角野",
-  "中嶋","遠山","川添","武内","牛山","荒田","岡林","東出","浅沼","古田",
-  "増山","枝川","川野","伊東","大庭","西島","矢田","梅野","中地","木田",
-  "坂野","深沢","折戸","道上","秋田","糸井","梶田","瀬川","橋部","穂積",
-  "長岡","飯田","丸田","村岡","林田","田島","下山","本橋","田尻","筒井",
-  "尾上","栗田","和田","根田","広田","里中","光安","海老名","浜名","峠",
-  "富岡","津島","岡林","有田","牧田","嶋崎","城山","楠田","由良","竹下",
-  "石飛","高木","坂道","吉留","村居","中嶋","宮城","小野寺","沓掛","赤塚",
-  "北川","今立","鈴原","由比","宮古","中道","宇山","村里","岩本","田城",
-  "神保","兒玉","石崎","奥島","猿渡","浜松","吉岡","渋谷","加納","筒本",
-  "藤浦","矢代","東坂","田主","森浦","塩川","丹羽","成田","栗林","平塚",
-  "東川","舘野","仙田","里路","光田","福地","宮岡","中道","浦野","阿藤",
-  /* Extended batch E */
-  "竹上","橋立","中浜","東原","野原","夏目","水谷","鹿島","土橋","神田",
-  "柴田","早川","尾形","岩見","横田","玉木","高岸","水島","八島","細田",
-  "大里","川北","正木","本庄","鈴江","真壁","磯野","吉浦","原坂","谷本",
-  "木佐","熊本","石塚","加茂","柚原","長尾","野々村","太田野","蛭田","成島",
-  "中市","稲葉","丸野","宮内","金森","角田","内藤","末田","梅原","柳田",
-  "出口","樋田","尾本","渋野","有泉","荒居","本間","佐治","平原","大谷",
+  "金子","和田","中野","藤原","村田","上田","横山","宮崎","谷口","大野",
+  /* Next-60 very common */
+  "高木","宮本","久保","松井","内田","工藤","野口","杉山","吉川","菊地",
+  "千葉","大塚","平野","市川","成田","須藤","杉本","片山","土屋","川口",
+  "米田","菅原","服部","河野","中山","石田","丸山","松尾","今井","河合",
+  "藤本","田村","安藤","永田","古川","石原","長田","武田","岩田","水野",
+  "沢田","中井","福島","辻","大西","浜田","西田","松岡","北村","相沢",
+  "桑原","黒田","新井","宮田","山内","堀","野田","菅野","川上","榎本",
+  /* Common-60 */
+  "大島","飯田","岸","南","上野","泉","田口","高田","白石","大谷",
+  "西山","西川","神田","岡崎","五十嵐","野中","松浦","伏見","川村","徳田",
+  "橘","東","新谷","滝沢","津田","波多野","志村","根本","関口","瀬戸",
+  "神谷","保坂","奥田","深沢","二宮","三好","品川","八木","上原","奥村",
+  "小山","吉原","本田","長嶋","平田","橋爪","荒木","久米","下村","横田",
+  "片岡","尾崎","角田","内山","和泉","三宅","萩原","立花","荒井","入江",
+  /* Extended-60 */
+  "羽田","久野","清田","曽根","湯浅","西本","宮下","矢野","平井","吉野",
+  "細川","木下","杉田","高山","田畑","丸岡","竹田","飯島","上杉","小松",
+  "秋山","笠原","大石","島村","奥山","古屋","長野","酒井","桑田","富田",
+  "浅野","真田","岩崎","稲垣","浜口","松下","樋口","野村","椎名","石黒",
+  "市原","藤沢","嶋田","水口","池上","宇野","城戸","西岡","飯塚","泉谷",
+  "赤坂","角谷","別府","深田","玉置","松永","宮島","向井","大倉","赤井",
+];
+
+const SURNAMES_RARE = [
+  /* Rare batch A */
+  "浜崎","戸田","国分","竹山","黒沢","川崎","宮地","福井","東野","稲田",
+  "今村","小泉","松村","西澤","篠田","富山","津川","北島","澤田","坂口",
+  "塚田","富永","安部","矢口","天野","萩野","中本","福本","笹田","尾野",
+  "平松","野上","内海","横尾","手塚","岡部","石倉","杉浦","板垣","蒲田",
+  "奥野","永井","古賀","渡部","川端","柳澤","岩本","沢村","三上","長沢",
+  "大村","千田","坂田","幸田","大沼","今泉","竹中","橋口","薄田","塩谷",
+  /* Rare batch B */
+  "大久保","香西","児玉","高村","折戸","末廣","光永","住田","蒔田","村瀬",
+  "横路","田代","中尾","仁村","荒川","小倉","御手洗","石坂","上島","田原",
+  "藪田","宇佐美","川畑","宮内","白川","高岡","太刀川","三谷","近松","藤川",
+  "成瀬","福永","宮里","有村","久田","根岸","長尾","岸本","下田","牧野",
+  "植田","伊勢","千田","西廣","山室","佐田","竹腰","恩田","笠間","大橋",
+  "遠山","石部","牛島","石丸","神崎","浅川","中谷","小澤","宮沢","田嶋",
+  /* Rare batch C */
+  "川本","鏡","伊原","前原","山地","塩田","国本","長井","江川","佐古",
+  "赤羽","森口","桂","細野","石橋","外山","長浜","宇田","浅田","玉田",
+  "岩瀬","藤野","仲田","清野","境","矢吹","杉野","荒城","大川","渡里",
+  "曲木","安田","川田","岩井","堀口","末松","塚本","増田","中西","西尾",
+  "大森","吉村","橋田","野澤","向山","平尾","田所","木原","坂上","原島",
+  "神山","峯岸","田辺","松島","草間","久保田","日比野","杉原","村松","小池",
+  /* Rare batch D */
+  "永野","森山","白井","奥平","野沢","梅田","谷川","沼田","大城","森本",
+  "今田","岡島","横川","春日","北野","土井","坂井","毛利","川岸","村井",
+  "島津","本多","山岸","里見","内藤","広瀬","立川","根来","丹野","猪股",
+  "菅井","柿沼","飯野","浦田","染谷","阿久津","角井","松葉","深見","加賀",
+  "中田","西沢","大曽根","戸塚","相川","池谷","松波","永峰","葛城","大野木",
+  "中筋","石山","高野","宇川","角野","中嶋","武内","牛山","荒田","岡林",
+  /* Rare batch E */
+  "東出","浅沼","古田","増山","枝川","川野","大庭","西島","矢田","梅野",
+  "坂野","折戸","道上","秋田","糸井","梶田","瀬川","橋部","穂積","長岡",
+  "丸田","村岡","林田","田島","下山","本橋","田尻","筒井","尾上","栗田",
+  "広田","里中","光安","海老名","浜名","富岡","津島","有田","牧田","嶋崎",
+  "城山","楠田","由良","竹下","石飛","宮城","小野寺","沓掛","赤塚","北川",
+  "今立","鈴原","由比","宮古","中道","宇山","村里","岩本","田城","神保",
+  /* Rare batch F */
+  "兒玉","石崎","奥島","猿渡","浜松","吉岡","渋谷","加納","筒本","藤浦",
+  "矢代","東坂","田主","森浦","塩川","丹羽","栗林","平塚","東川","舘野",
+  "仙田","里路","光田","福地","宮岡","浦野","阿藤","竹上","橋立","中浜",
+  "東原","野原","夏目","水谷","鹿島","土橋","柴田","早川","尾形","岩見",
+  "玉木","高岸","水島","八島","細田","大里","川北","正木","本庄","鈴江",
+  "真壁","磯野","吉浦","原坂","谷本","木佐","熊本","石塚","加茂","柚原",
+  /* Rare batch G */
+  "野々村","太田野","蛭田","成島","中市","稲葉","金森","内藤","末田","梅原",
+  "柳田","出口","樋田","尾本","渋野","有泉","荒居","本間","佐治","平原",
   "宮腰","上条","黒須","小浜","安達","北岡","三橋","戸次","清重","米澤",
   "岩澤","川本","桑名","細谷","谷野","上西","大沢","西垣","水上","竹島",
   "伊庭","小名木","三枝","堀田","和賀","大矢","熊坂","西坂","高巻","千葉",
-  "柏木","石元","吉松","森崎","古澤","末吉","林口","大和田","松尾","嶺岸",
+  "柏木","石元","吉松","森崎","古澤","末吉","林口","大和田","嶺岸","曲木",
 ];
 
 const MALE_NAMES = [
@@ -380,6 +390,82 @@ const CLASS_STAT_CFG = {
   3:{ avg:[5,5],  rare:[3,8],  focus:['physical','mental'] },
   4:{ avg:[1,6],  rare:[7,13], focus:[] },
 };
+/* ── v8.2: X-SUM BINOMIAL DISTRIBUTION CONFIG ────────────────────
+   Updated per spec — tighter individual stat bounds:
+     Class A: sMin:5, sMax:8  → X feasible [30,48], mean≈40
+     Class B: sMin:5, sMax:7  → X feasible [30,42], mean≈37
+     Class C: sMin:4, sMax:7  → X feasible [24,42], mean≈34
+     Class D: sMin:4, sMax:6  → X feasible [24,36], mean≈31
+     Class E: sMin:2, sMax:8  → X feasible [12,48], mean≈28
+   xMin = sMin×6, xMax = sMax×6  (hard feasibility bounds)
+   xMean tuned for balanced distribution within each class tier.  */
+const XSUM_CFG = {
+  0: { xMin:30, xMax:48, xMean:40, sMin:5, sMax:8  }, /* Class A: 5–8  */
+  1: { xMin:30, xMax:42, xMean:37, sMin:5, sMax:7  }, /* Class B: 5–7  */
+  2: { xMin:24, xMax:42, xMean:34, sMin:4, sMax:7  }, /* Class C: 4–7  */
+  3: { xMin:24, xMax:36, xMean:31, sMin:4, sMax:6  }, /* Class D: 4–6  */
+  4: { xMin:12, xMax:48, xMean:28, sMin:2, sMax:8  }, /* Class E: 2–8  */
+};
+
+/* v8.1: binomialSample — approximate a binomial-shaped value in [lo, hi]
+   centred near mean. Uses sum of 12 uniform [0,1] samples (CLT) scaled
+   to the desired range, then clamps. n=12 gives excellent bell shape.  */
+function binomialSample(lo, hi, mean){
+  /* Map the target mean as a proportion p within [lo,hi] */
+  const range = hi - lo;
+  if(range <= 0) return lo;
+  const p = (mean - lo) / range;            /* 0..1 */
+  /* Sum 12 uniform draws, normalise → mean=p, then scale to [lo,hi] */
+  let s = 0;
+  for(let i = 0; i < 12; i++) s += Math.random();
+  s /= 12;                                  /* now ≈ 0.5 */
+  /* Shift so mean matches p */
+  s = s + (p - 0.5);
+  s = Math.max(0, Math.min(1, s));          /* clamp to [0,1] */
+  return Math.round(lo + s * range);
+}
+
+/* v8.1: genStatXSum(cid) — generate all 6 stats for one student.
+   1. Draw X (total) from binomial distribution for class cid.
+   2. Shuffle stat order randomly (no focus bias — stats are allocated
+      randomly so the sum constraint is the dominant shaping force).
+   3. Greedily allocate X across 6 stats:
+      - Each stat gets at minimum sMin.
+      - Remaining budget is distributed randomly within [0, sMax-sMin]
+        per stat; final stat absorbs remainder, clamped to [sMin, sMax].
+   Returns an object keyed by STATS_KEYS.                            */
+function genStatXSum(cid){
+  const cfg = XSUM_CFG[cid] ?? XSUM_CFG[4];
+  const X   = binomialSample(cfg.xMin, cfg.xMax, cfg.xMean);
+  const n   = STATS_KEYS.length; /* 6 */
+  const {sMin, sMax} = cfg;
+
+  /* Start each stat at minimum */
+  const vals = STATS_KEYS.map(() => sMin);
+  let budget = X - sMin * n;   /* total remaining to distribute */
+
+  /* Distribute budget in random order */
+  const order = [...Array(n).keys()].sort(() => Math.random() - 0.5);
+  for(let i = 0; i < n; i++){
+    const idx   = order[i];
+    const room  = sMax - sMin;
+    const last  = (i === n - 1);
+    let   give;
+    if(last){
+      give = budget;
+    } else {
+      /* Random share of remaining budget, leave at least 0 for others */
+      const maxGive = Math.min(room, budget);
+      give = maxGive <= 0 ? 0 : rndInt(0, maxGive);
+    }
+    vals[idx] = Math.max(sMin, Math.min(sMax, sMin + give));
+    budget   -= give;
+    if(budget <= 0) break;
+  }
+
+  return Object.fromEntries(STATS_KEYS.map((k, i) => [k, vals[i]]));
+}
+
 const PP_RANGE = {
   0:[50000,100000], 1:[30000,80000], 2:[20000,60000],
   3:[10000,50000],  4:[0,50000],
@@ -387,11 +473,13 @@ const PP_RANGE = {
 
 function rndInt(lo,hi){ return Math.floor(Math.random()*(hi-lo+1))+lo; }
 function rndPick(arr){ return arr[Math.floor(Math.random()*arr.length)]; }
+/* v8.0 legacy genStat — kept for backwards compat / any manual use */
 function genStat(cid,key){
   const cfg=CLASS_STAT_CFG[cid], rare=Math.random()<0.20;
   const [lo,hi]=rare?cfg.rare:cfg.avg; let v=lo===hi?lo:rndInt(lo,hi);
   if(cfg.focus.includes(key)) v=Math.min(15,v+1); return v;
 }
+
 /* v7.9: base year shifted 2010 → 2000 (−10 years).
    Benchmark: grade=6, sysYear=1 → y=2000+(6-6)+(1-1)=2000;
    m≤3 bumps to 2001 → born Apr 2000 – Mar 2001 ✓           */
@@ -400,9 +488,16 @@ function genDOB(grade,sysYear){
   if(m<=3) y+=1;
   return `${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
 }
+/* v8.1: genSurname — 2:1 weighted selection: Major (2/3 chance) vs Rare (1/3).
+   This reflects realistic surname frequency distribution in Japanese society. */
+function genSurname(){
+  return Math.random() < 0.667
+    ? rndPick(SURNAMES_MAJOR)
+    : rndPick(SURNAMES_RARE);
+}
 /* v7.8: half-width space " " inserted between surname and given name */
 function genStudentName(gender){
-  return rndPick(SURNAMES)+' '+rndPick(gender==='M'?MALE_NAMES:FEMALE_NAMES);
+  return genSurname()+' '+rndPick(gender==='M'?MALE_NAMES:FEMALE_NAMES);
 }
 
 /* ──────────────────────────────────────────────────────────────────
@@ -656,9 +751,10 @@ function clsName(grade,classId){
 function blankStudent(grade,classId){
   const stats=Object.fromEntries(STATS_KEYS.map(k=>[k,1]));
   /* v7.8: traits[] — array of trait id strings from SPECIAL_TRAITS */
+  /* v8.1: customTraits[] — array of {id, label, cat:'custom'} objects */
   return { id:genStudentId(grade), name:'', gender:'M', dob:'', grade, classId, stats,
            specialAbility:'', privatePoints:0, protectPoints:0, contracts:[],
-           isExpelled:false, traits:[] };
+           isExpelled:false, traits:[], customTraits:[] };
 }
 function blankClass(grade,classId,rankLabel){
   const name=rankLabel?JP.clsDef(grade,rankLabel):'';
@@ -820,11 +916,9 @@ window.randomizeIncomingCohort=function(cg){
       /* Incoming students: estimated DOB as if entering grade 1 next year */
       s.dob    = genDOB(1, state.year + 1);
       s.privatePoints = rndInt(ppLo, ppHi);
-      /* v8.0: stats now use genStat(cid, key) — balanced per-class,
-         identical method to active student randomization (randomizeGrade). */
-      STATS_KEYS.forEach(k=>{
-        s.stats[k] = genStat(cid, k);
-      });
+      /* v8.1: stats now use genStatXSum(cid) — binomial X-Sum algorithm */
+      const xStats = genStatXSum(cid);
+      STATS_KEYS.forEach(k=>{ s.stats[k] = xStats[k]; });
       s.specialAbility = '';
     });
   });
@@ -845,7 +939,9 @@ function randomizeGrade(grade){
       const gender=gend[idx]||'M';
       s.name=genStudentName(gender); s.gender=gender; s.dob=genDOB(grade,state.year);
       const [lo,hi]=PP_RANGE[cid]||[0,50000]; s.privatePoints=rndInt(lo,hi);
-      STATS_KEYS.forEach(k=>{s.stats[k]=genStat(cid,k);}); s.specialAbility='';
+      /* v8.1: use genStatXSum for binomial X-Sum distribution */
+      const xStats=genStatXSum(cid);
+      STATS_KEYS.forEach(k=>{s.stats[k]=xStats[k];}); s.specialAbility='';
     });
   });
 }
@@ -1509,8 +1605,20 @@ function closeThemeFly(){
 /* ──────────────────────────────────────────────────────────────────
    NAVIGATION
 ────────────────────────────────────────────────────────────────── */
+/* v8.5: navigate — deduplicate consecutive same-page pushes.
+   If the top of the stack is already the same page+params, replace
+   instead of push (prevents duplicate profile entries from card clicks). */
 function navigate(page,params={},reset=false){
   if(reset) navStack=[];
+  const top=navStack[navStack.length-1];
+  /* Dedup: same page + same sid (profile) → replace instead of push */
+  if(!reset && top && top.page===page){
+    if(page==='profile' && top.params?.sid===params?.sid){
+      navStack[navStack.length-1]={page,params};
+      renderPage(page,params); updateBreadcrumb();
+      return;
+    }
+  }
   navStack.push({page,params});
   renderPage(page,params); updateBreadcrumb();
 }
@@ -2124,12 +2232,39 @@ function renderClass(grade,classId){
   return h;
 }
 
-/* s-card renderer */
+/* ── v8.2: RANK ACCENT COLOURS — top border of each card reflects
+   the class rank. classId 0=A(cyan), 1=B(gold), 2=C(lime),
+   3=D(orange), 4=E(dim). Used as inline border-top-color.        */
+const RANK_ACCENT = {
+  0:'var(--ac)',          /* A — cyan  */
+  1:'var(--yw)',          /* B — gold  */
+  2:'var(--gn)',          /* C — green */
+  3:'#ff9944',            /* D — orange */
+  4:'var(--t3)',          /* E — muted  */
+};
+
+/* ── v8.5: s-card renderer — clean 2-column layout
+   ┌─────────────────────┬──────────────┐  ← NO top-border accent (removed)
+   │  .s-col-left        │ .s-col-right │
+   │  ID    (top)        │  PRP  (top)  │
+   │                     │  OV   (mid)  │  ← blue value only, no label
+   │  Name  (bot)        │  PP   (bot)  │
+   └─────────────────────┴──────────────┘
+   No center column. No 総合力 label. Space defines the sections.
+   Right col uses CSS space-between to vertically distribute 3 items.
+   PRP slot always rendered (dash placeholder when protectPoints===0)
+   so the three-tier stack stays evenly spaced regardless of PRP.
+   v8.5: text scaled ×1.15 (via CSS). s-name ×1.4 (via CSS).
+   v8.5: border-top-color inline style removed — no rank accent border.
+   v8.5: unified structure used for Current/Incoming/Graduates cards. */
 function renderCards(students,{draggable=false}={}){
   if(!students.length)
     return `<div class="dim" style="grid-column:1/-1;padding:8px;font-size:.7rem">生徒なし</div>`;
+  const pool=getSchoolRankingPool();
   return students.map(s=>{
-    const sel=selectedIds.has(s.id), hasPrp=s.protectPoints>0;
+    const sel    = selectedIds.has(s.id);
+    const hasPrp = s.protectPoints>0;
+    const ov     = calcOverallScore(s,pool);
     return `
       <div class="s-card ${s.isExpelled?'expelled':''} ${sel?'selected':''}"
            data-name="${escA((s.name||'').toLowerCase())}"
@@ -2137,18 +2272,25 @@ function renderCards(students,{draggable=false}={}){
            ${draggable&&!s.isExpelled?'draggable="true"':''}
            onclick="cardClick('${s.id}')">
         <div class="s-chk">${sel?'✓':''}</div>
-        <div class="s-top-left">
-          <span class="s-sid">${s.id}</span>
-          <span class="s-gender">${s.gender==='M'?JP.male:JP.female}</span>
-        </div>
-        <div class="s-top-right">
-          ${hasPrp?`<span class="s-prp-val">${s.protectPoints}<span class="s-prp-unit">PRP</span></span>`:''}
-        </div>
-        <div class="s-bot-left">
-          <div class="s-name">${esc(s.name)||'<span class="dim">(未記入)</span>'}</div>
-        </div>
-        <div class="s-bot-right">
-          <span class="s-pp-val ${ppCol(s.privatePoints)}">${fmtPP(s.privatePoints)}<span class="s-pp-unit">PP</span></span>
+        <div class="s-card-inner">
+          <!-- Left: ID (top) + Name (bottom) -->
+          <div class="s-col-left">
+            <span class="s-sid">${s.id}</span>
+            <div class="s-name">${esc(s.name)||'<span class="dim">(未記入)</span>'}</div>
+          </div>
+          <!-- Right: PRP (top) / Overall Power (mid) / PP (bot) -->
+          <div class="s-col-right">
+            <div class="s-prp-wrap">
+              ${hasPrp
+                ?`<span class="s-prp-val">${s.protectPoints}</span><span class="s-prp-unit">PRP</span>`
+                :`<span class="s-prp-val" style="opacity:.18">—</span>`}
+            </div>
+            <span class="s-ov-val">${ov}</span>
+            <div class="s-pp-wrap">
+              <span class="s-pp-val ${ppCol(s.privatePoints)}">${fmtPP(s.privatePoints)}</span>
+              <span class="s-pp-unit">PP</span>
+            </div>
+          </div>
         </div>
       </div>`;
   }).join('');
@@ -2278,15 +2420,30 @@ window.addStudent=function(grade,classId){
    SPECIAL TRAIT HELPERS — v7.8
 ────────────────────────────────────────────────────────────────── */
 
+/* ── v8.1: sortTraitIds — sorts trait IDs in master SPECIAL_TRAITS order.
+   Custom traits (cat==='custom') always come last, in insertion order. */
+function sortTraitIds(traitIds, student){
+  const masterOrder = new Map(SPECIAL_TRAITS.map((t,i)=>[t.id, i]));
+  const standard = traitIds.filter(id => masterOrder.has(id))
+    .sort((a,b) => masterOrder.get(a) - masterOrder.get(b));
+  const custom   = traitIds.filter(id => !masterOrder.has(id));
+  return [...standard, ...custom];
+}
+
 /* Build the read-only tag strip for the profile sidebar */
 function buildTraitTagStrip(s){
   const traits = Array.isArray(s.traits) ? s.traits : [];
   if(!traits.length)
     return `<span class="trait-display-empty">特性未設定</span>`;
-  return traits.map(id=>{
+  const sorted = sortTraitIds(traits, s);
+  return sorted.map(id=>{
+    /* Check standard catalogue first */
     const def = SPECIAL_TRAITS.find(t=>t.id===id);
-    if(!def) return '';
-    return `<span class="trait-tag tc-${def.cat}">${esc(def.label)}</span>`;
+    if(def) return `<span class="trait-tag tc-${def.cat}">${esc(def.label)}</span>`;
+    /* Custom trait — look up in student's customTraits array */
+    const custom = (s.customTraits||[]).find(c=>c.id===id);
+    if(custom) return `<span class="trait-tag tc-custom">${esc(custom.label)}</span>`;
+    return '';
   }).filter(Boolean).join('');
 }
 
@@ -2294,21 +2451,55 @@ function buildTraitTagStrip(s){
 function buildTraitAccordion(s){
   const selected = new Set(Array.isArray(s.traits) ? s.traits : []);
   const sid = s.id;
+  const customTraits = Array.isArray(s.customTraits) ? s.customTraits : [];
 
   return `<div class="trait-edit-wrap">`+TRAIT_CATEGORIES.map(({key,label})=>{
-    const catTraits = SPECIAL_TRAITS.filter(t=>t.cat===key);
-    const selCount  = catTraits.filter(t=>selected.has(t.id)).length;
+    const isCustomCat = (key === 'custom');
+    /* For standard categories, chips come from SPECIAL_TRAITS catalogue */
+    const catTraits = isCustomCat
+      ? customTraits
+      : SPECIAL_TRAITS.filter(t=>t.cat===key);
+
+    const selCount  = isCustomCat
+      ? customTraits.filter(t=>selected.has(t.id)).length
+      : catTraits.filter(t=>selected.has(t.id)).length;
+
     const isCollapsed = traitCategoryCollapsedState.get(key) === true;
     const bodyClass   = isCollapsed ? 'trait-cat-body cat-collapsed' : 'trait-cat-body';
     const arrowChar   = isCollapsed ? '▶' : '▼';
     const openClass   = isCollapsed ? '' : ' tc-open';
     const badgeCls    = selCount > 0 ? 'trait-cat-badge has-sel' : 'trait-cat-badge';
 
-    const chips = catTraits.map(t=>{
-      const isSel = selected.has(t.id);
-      return `<span class="trait-chip${isSel?' selected':''}"
-                    onclick="toggleTrait('${escA(sid)}','${t.id}')">${esc(t.label)}</span>`;
-    }).join('');
+    let chips;
+    if(isCustomCat){
+      /* Custom chips — each has a × delete button and a toggle */
+      chips = customTraits.map(t=>{
+        const isSel = selected.has(t.id);
+        return `<span class="trait-chip tc-custom-chip${isSel?' selected':''}"
+                      onclick="toggleTrait('${escA(sid)}','${escA(t.id)}')">
+                  ${esc(t.label)}
+                  <button class="trait-chip-del"
+                          onclick="event.stopPropagation();deleteCustomTrait('${escA(sid)}','${escA(t.id)}')"
+                          title="削除">×</button>
+                </span>`;
+      }).join('');
+      /* Add the text-input row for creating new custom traits */
+      chips += `
+        <div class="trait-custom-input-wrap">
+          <input type="text" id="trait-custom-input"
+                 placeholder="特性名を入力 (最大16文字)"
+                 maxlength="16"
+                 onkeydown="if(event.key==='Enter'){event.preventDefault();addCustomTrait('${escA(sid)}')}" />
+          <button class="btn-add-custom-trait"
+                  onclick="addCustomTrait('${escA(sid)}')">追加</button>
+        </div>`;
+    } else {
+      chips = catTraits.map(t=>{
+        const isSel = selected.has(t.id);
+        return `<span class="trait-chip${isSel?' selected':''}"
+                      onclick="toggleTrait('${escA(sid)}','${t.id}')">${esc(t.label)}</span>`;
+      }).join('');
+    }
 
     return `
       <div class="trait-cat-block tc-${key}${openClass}" id="tcat-block-${key}">
@@ -2331,12 +2522,18 @@ window.toggleTrait=function(sid, traitId){
   if(idx>=0) s.traits.splice(idx,1);
   else        s.traits.push(traitId);
 
+  /* v8.1: auto-sort traits after every toggle */
+  s.traits = sortTraitIds(s.traits, s);
+
   /* Update the sidebar tag strip reactively */
   const strip=document.getElementById('trait-display-'+sid);
   if(strip) strip.innerHTML=buildTraitTagStrip(s);
 
   /* Update the chip appearance and the category badge count */
+  /* Check standard catalogue first, then custom */
   const def=SPECIAL_TRAITS.find(t=>t.id===traitId);
+  const catKey = def ? def.cat : 'custom';
+
   if(def){
     const chip=Array.from(document.querySelectorAll(
       `#tcat-body-${def.cat} .trait-chip`
@@ -2347,6 +2544,18 @@ window.toggleTrait=function(sid, traitId){
     if(badge){
       const catTraits=SPECIAL_TRAITS.filter(t=>t.cat===def.cat);
       const count=catTraits.filter(t=>s.traits.includes(t.id)).length;
+      badge.textContent=count||'';
+      badge.className=count>0?'trait-cat-badge has-sel':'trait-cat-badge';
+    }
+  } else {
+    /* Custom trait — find chip by id data attribute */
+    const chip=document.querySelector(`#tcat-body-custom .trait-chip[data-tid="${CSS.escape(traitId)}"]`);
+    if(chip) chip.classList.toggle('selected', idx<0);
+
+    const badge=document.getElementById('tcat-badge-custom');
+    if(badge){
+      const customTraits=Array.isArray(s.customTraits)?s.customTraits:[];
+      const count=customTraits.filter(t=>s.traits.includes(t.id)).length;
       badge.textContent=count||'';
       badge.className=count>0?'trait-cat-badge has-sel':'trait-cat-badge';
     }
@@ -2368,11 +2577,185 @@ window.toggleTraitCat=function(key){
   traitCategoryCollapsedState.set(key, isOpen);
 };
 
+/* ── v8.1: CUSTOM TRAIT CREATION & DELETION ─────────────────────
+   Custom traits are stored directly on the student:
+     s.customTraits = [{ id:'custom_N', label:'ラベル', cat:'custom' }]
+     s.traits       = [...standardIds, ...'custom_N']
+   IDs are auto-generated using a timestamp + random suffix.       */
+
+window.addCustomTrait=function(sid){
+  const s=state.students.find(x=>x.id===sid); if(!s) return;
+  const inp=document.getElementById('trait-custom-input');
+  if(!inp) return;
+  const label=(inp.value||'').trim();
+  if(!label){ toast('✗ 特性名を入力してください','err'); return; }
+  if(label.length>16){ toast('✗ 特性名は16文字以内にしてください','err'); return; }
+
+  /* Prevent duplicates */
+  if(!Array.isArray(s.customTraits)) s.customTraits=[];
+  if(s.customTraits.some(c=>c.label===label)){
+    toast('✗ 同名の特性が既に存在します','err'); return;
+  }
+
+  /* Generate a unique ID */
+  const id=`custom_${Date.now()}_${Math.floor(Math.random()*9999)}`;
+  s.customTraits.push({id, label, cat:'custom'});
+
+  /* Auto-select the new trait */
+  if(!Array.isArray(s.traits)) s.traits=[];
+  s.traits.push(id);
+  s.traits = sortTraitIds(s.traits, s);
+
+  inp.value='';
+  saveState(true);
+
+  /* Re-render the profile page to reflect the new chip */
+  const cur=navStack[navStack.length-1];
+  if(cur&&cur.page==='profile') renderPage('profile',{sid});
+  toast(`✓ カスタム特性「${label}」を追加しました`,'ok',2000);
+};
+
+window.deleteCustomTrait=function(sid, traitId){
+  const s=state.students.find(x=>x.id===sid); if(!s) return;
+  if(Array.isArray(s.customTraits)) s.customTraits=s.customTraits.filter(c=>c.id!==traitId);
+  if(Array.isArray(s.traits))       s.traits=s.traits.filter(id=>id!==traitId);
+  saveState(true);
+  const cur=navStack[navStack.length-1];
+  if(cur&&cur.page==='profile') renderPage('profile',{sid});
+  toast('✓ カスタム特性を削除しました','warn',1800);
+};
+
 /* ──────────────────────────────────────────────────────────────────
-   PROFILE PAGE — v6.5
-   • プロフィール header color → var(--t1) via CSS
-   • .fr label min-width:96px for flush alignment
+   v8.3: CONTRACT HELPERS
 ────────────────────────────────────────────────────────────────── */
+
+/* calcMonthlyBalance(sid) — sums all active contracts involving student sid.
+   Returns { income, expense, net } where:
+     income  = sum of amounts where another student pays sid (RECV)
+     expense = sum of amounts where sid pays another (SEND)
+     net     = income − expense                                      */
+function calcMonthlyBalance(sid){
+  let income=0, expense=0;
+  /* SEND: this student's own contracts[] */
+  const s=state.students.find(x=>x.id===sid);
+  if(s) (s.contracts||[]).forEach(c=>{ expense+=c.amount; });
+  /* RECV: other students whose contracts target sid */
+  state.students.forEach(o=>{
+    if(o.id===sid) return;
+    (o.contracts||[]).forEach(c=>{ if(c.targetId===sid) income+=c.amount; });
+  });
+  return { income, expense, net:income-expense };
+}
+
+/* buildContractAccordion(s) — generates the full contract UI as a pair
+   of accordion panels, matching the Special Traits accordion style.
+   v8.5 Panel 1: 契約の発行 — [Target ID] [PP/月] [支払] [受取]
+                 No role dropdown. No badge counter on issue header.
+   v8.5 Panel 2: 契約の確認 — all contracts + "月毎の変化: ±X PP" (no formula).
+                 Both SEND and RECV items have a delete (✕) button.   */
+function buildContractAccordion(s){
+  const sid = s.id;
+
+  /* ── Collect contract data ──────────────────────────────────── */
+  const allCtr=[];
+  (s.contracts||[]).forEach((c,i)=>{
+    const t=state.students.find(x=>x.id===c.targetId);
+    const tn=t?(t.name||t.id):`[不明 ${c.targetId}]`;
+    allCtr.push({dir:'send',label:esc(tn),amt:c.amount,ownerSid:sid,idx:i});
+  });
+  state.students.forEach(o=>{
+    if(o.id===sid) return;
+    (o.contracts||[]).forEach((c,i)=>{
+      if(c.targetId===sid){
+        allCtr.push({dir:'recv',label:esc(o.name||o.id),amt:c.amount,ownerSid:o.id,idx:i});
+      }
+    });
+  });
+
+  /* ── Financial summary (v8.5: show only net change, no formula) ─ */
+  const {income,expense,net}=calcMonthlyBalance(sid);
+  const netSign = net>0?'+':net<0?'−':'±';
+  const netAbs  = Math.abs(net).toLocaleString();
+  const netCls  = net>0?'cb-pos':net<0?'cb-neg':'cb-zero';
+  const balanceHtml=allCtr.length
+    ? `<span class="ctr-balance">
+         月毎の変化：<span class="${netCls}">${netSign}${netAbs} PP</span>
+       </span>`
+    : '';
+
+  /* ── Accordion open/close states ───────────────────────────── */
+  const issueColl   = contractAccCollapsedState.get('issue')   === true;
+  const confirmColl = contractAccCollapsedState.get('confirm') === true;
+
+  /* ── Panel 1: 契約の発行 (v8.5: Pay/Recv buttons, no dropdown, no badge) ── */
+  const issueBody=`
+    <div class="ctr-issue-row">
+      <input  id="ct-tgt" class="fi ctr-id-inp" placeholder="相手の生徒ID"
+              onkeydown="if(event.key==='Enter'){event.preventDefault();addContract('${escA(sid)}','pay')}"/>
+      <input  id="ct-amt" class="fi ctr-amt-inp" type="number" placeholder="PP/月" min="1"/>
+      <button class="ctr-issue-btn ctr-pay-btn" onclick="addContract('${escA(sid)}','pay')">支払<br><span style="font-size:.55rem;opacity:.75">SEND</span></button>
+      <button class="ctr-issue-btn ctr-recv-btn" onclick="addContract('${escA(sid)}','recv')">受取<br><span style="font-size:.55rem;opacity:.75">RECV</span></button>
+    </div>`;
+
+  /* ── Panel 2: 契約の確認 (v8.5: both SEND and RECV have delete btn) ─ */
+  const contractItems = allCtr.length
+    ? allCtr.map(c=>{
+        const isSend=c.dir==='send';
+        const amtStr=isSend
+          ? `<span class="ctr-amt ctr-amt-out">−${c.amt.toLocaleString()}</span>`
+          : `<span class="ctr-amt ctr-amt-in">+${c.amt.toLocaleString()}</span>`;
+        /* v8.5: delete button on BOTH send and recv */
+        const delBtn=`<button class="ctr-del" onclick="rmContract('${escA(c.ownerSid)}',${c.idx},'${escA(sid)}')" title="契約を解除">✕</button>`;
+        return `
+          <div class="ctr-item ${isSend?'ctr-send':'ctr-recv'}">
+            <span class="ctr-dir ${isSend?'ctr-dir-send':'ctr-dir-recv'}">${isSend?'SEND':'RECV'}</span>
+            <span class="ctr-name">${c.label}</span>
+            ${amtStr} <span style="font-family:var(--fm);font-size:.58rem;color:var(--t3);flex-shrink:0">PP/月</span>
+            ${delBtn}
+          </div>`;
+      }).join('')
+    : `<div class="ctr-empty">契約なし</div>`;
+
+  /* ── Assemble accordion ─────────────────────────────────────── */
+  return `
+    <div class="ctr-accordion-wrap">
+      <!-- Panel 1: 契約の発行 (v8.5: no badge counter) -->
+      <div class="ctr-acc-block ctr-issue ${!issueColl?'ctr-open':''}" id="ctr-acc-issue">
+        <div class="ctr-acc-hdr" onclick="toggleContractAcc('issue')">
+          <span class="ctr-acc-lbl">契約の発行</span>
+          <span class="ctr-acc-arrow">▶</span>
+        </div>
+        <div class="ctr-acc-body${issueColl?' ctr-collapsed':''}" id="ctr-acc-body-issue">
+          ${issueBody}
+        </div>
+      </div>
+      <!-- Panel 2: 契約の確認 -->
+      <div class="ctr-acc-block ctr-confirm ${!confirmColl?'ctr-open':''}" id="ctr-acc-confirm">
+        <div class="ctr-acc-hdr" onclick="toggleContractAcc('confirm')">
+          <span class="ctr-acc-lbl">契約の確認</span>
+          <span class="ctr-acc-badge ${allCtr.length?'has-items':''}">${allCtr.length}</span>
+          ${balanceHtml}
+          <span class="ctr-acc-arrow">▶</span>
+        </div>
+        <div class="ctr-acc-body${confirmColl?' ctr-collapsed':''}" id="ctr-acc-body-confirm">
+          <div class="ctr-list">${contractItems}</div>
+        </div>
+      </div>
+    </div>`;
+}
+
+/* toggleContractAcc — mirrors toggleTraitCat; persists collapsed state */
+window.toggleContractAcc=function(key){
+  const body =document.getElementById('ctr-acc-body-'+key);
+  const block=document.getElementById('ctr-acc-'+key);
+  if(!body||!block) return;
+  const isOpen=!body.classList.contains('ctr-collapsed');
+  body.classList.toggle('ctr-collapsed',isOpen);
+  block.classList.toggle('ctr-open',!isOpen);
+  const arrow=block.querySelector('.ctr-acc-arrow');
+  if(arrow) arrow.textContent=isOpen?'▶':'▼';
+  contractAccCollapsedState.set(key,isOpen);
+};
 function renderProfile(sid){
   const s=state.students.find(x=>x.id===sid);
   if(!s) return `<p style="color:var(--rd)">生徒が見つかりません</p>`;
@@ -2403,18 +2786,7 @@ function renderProfile(sid){
   ].join('');
   const clsOpts=CLASS_IDS.map(id=>`<option value="${id}" ${s.classId===id?'selected':''}>${id}</option>`).join('');
 
-  const ctrOut=s.contracts.length
-    ?s.contracts.map((c,i)=>{
-        const t=state.students.find(x=>x.id===c.targetId), tn=t?(t.name||t.id):`[不明 ${c.targetId}]`;
-        return `<div class="ctr-item"><span>→ ${esc(tn)}</span><span class="ctr-amt">${c.amount.toLocaleString()} PP/月</span><button class="ctr-del" onclick="rmContract('${sid}',${i})">✕</button></div>`;
-      }).join('')
-    :`<div class="dim" style="font-size:.71rem">送信契約なし</div>`;
-
-  const ctrIn=[];
-  state.students.forEach(o=>o.contracts.forEach(c=>{if(c.targetId===sid)ctrIn.push({from:o.name||o.id,amt:c.amount});}));
-  const ctrInHtml=ctrIn.length
-    ?ctrIn.map(c=>`<div class="ctr-item"><span>← ${esc(c.from)}</span><span class="ctr-amt pos">+${c.amt.toLocaleString()} PP/月</span></div>`).join('')
-    :`<div class="dim" style="font-size:.71rem">受信契約なし</div>`;
+  /* v8.3: contract accordion built by buildContractAccordion(s) below */
 
   return `
     <button class="back-btn" onclick="goBack()">◀ 戻る</button>
@@ -2491,18 +2863,8 @@ function renderProfile(sid){
         </div>
 
         <div class="prof-sec">
-          <div class="sec-ttl">送信コントラクト（支出）</div>
-          <div class="ctr-list">${ctrOut}</div>
-          <div class="ctr-add">
-            <input id="ct-tgt" class="fi" placeholder="生徒IDまたは氏名..." style="flex:2" />
-            <input id="ct-amt" class="fi" type="number" placeholder="PP/月" style="flex:1" />
-            <button class="btn btn-sm" onclick="addContract('${sid}')">＋ 追加</button>
-          </div>
-        </div>
-
-        <div class="prof-sec">
-          <div class="sec-ttl">受信コントラクト（収入）</div>
-          <div class="ctr-list">${ctrInHtml}</div>
+          <div class="sec-ttl">プライベートコントラクト</div>
+          ${buildContractAccordion(s)}
         </div>
 
         <div class="prof-sec">
@@ -2615,23 +2977,52 @@ window.saveProfile=function(sid){
   STATS_KEYS.forEach(k=>{const e=document.getElementById(`st-${k}`);if(e)s.stats[k]=+e.value;});
   saveState(true); renderApp(); toast('✓ プロフィールを保存しました：'+(s.name||s.id),'ok');
 };
-window.rmContract=function(sid,idx){
-  const s=state.students.find(x=>x.id===sid); if(s) s.contracts.splice(idx,1);
-  saveState(true); navigate('profile',{sid},false); updateBreadcrumb();
+/* v8.5: rmContract(ownerSid, idx, viewSid) — deletes contract at idx from
+   ownerSid's contracts array. ownerSid may be the current student (SEND)
+   or another student (RECV). viewSid is the profile we're viewing so we
+   navigateReplace back to it after deletion.                           */
+window.rmContract=function(ownerSid, idx, viewSid){
+  const owner=state.students.find(x=>x.id===ownerSid);
+  if(owner && Array.isArray(owner.contracts)) owner.contracts.splice(idx,1);
+  saveState(true);
+  /* Return to the profile we were viewing (may differ from ownerSid) */
+  const targetSid = viewSid || ownerSid;
+  navigateReplace('profile',{sid:targetSid}); updateBreadcrumb();
   toast('✓ コントラクトを削除しました','ok');
 };
-window.addContract=function(sid){
+/* v8.5: addContract(sid, role) — role is 'pay'|'recv', passed directly
+   by the 支払/受取 buttons. No dropdown read needed.                  */
+window.addContract=function(sid, role='pay'){
   const s=state.students.find(x=>x.id===sid); if(!s) return;
-  const ti=document.getElementById('ct-tgt')?.value?.trim();
-  const amt=parseInt(document.getElementById('ct-amt')?.value);
-  if(!ti||isNaN(amt)||amt<=0){toast('✗ 入力が無効です','err');return;}
-  let t=state.students.find(x=>x.id===ti);
-  if(!t) t=state.students.find(x=>x.name.toLowerCase().includes(ti.toLowerCase()));
-  if(!t){toast('✗ 生徒が見つかりません','err');return;}
-  if(t.id===sid){toast('✗ 自分自身にコントラクトできません','err');return;}
-  s.contracts.push({targetId:t.id,amount:amt});
-  saveState(true); navigate('profile',{sid},false); updateBreadcrumb();
-  toast(`✓ コントラクト設定 → ${t.name||t.id}: ${amt} PP/月`,'ok');
+
+  /* Read unified issuance row inputs */
+  const ti   = (document.getElementById('ct-tgt')?.value||'').trim();
+  const amt  = parseInt(document.getElementById('ct-amt')?.value);
+
+  /* Validate */
+  if(!ti){ toast('✗ 相手の生徒IDを入力してください','err'); return; }
+  if(isNaN(amt)||amt<=0){ toast('✗ 有効なPP/月を入力してください','err'); return; }
+
+  /* Strict ID-only lookup */
+  const t=state.students.find(x=>x.id===ti);
+  if(!t){ toast(`✗ ID「${ti}」の生徒が見つかりません`,'err'); return; }
+  if(t.id===sid){ toast('✗ 自分自身にコントラクトできません','err'); return; }
+
+  if(role==='pay'){
+    /* s pays t — contract on s */
+    if(!Array.isArray(s.contracts)) s.contracts=[];
+    s.contracts.push({targetId:t.id, amount:amt});
+    saveState(true);
+    navigateReplace('profile',{sid});
+    toast(`✓ 契約発行 → ${t.name||t.id}：${amt.toLocaleString()} PP/月（支払い）`,'ok');
+  } else {
+    /* t pays s — contract on t */
+    if(!Array.isArray(t.contracts)) t.contracts=[];
+    t.contracts.push({targetId:s.id, amount:amt});
+    saveState(true);
+    navigateReplace('profile',{sid});
+    toast(`✓ 契約発行 ← ${t.name||t.id}：${amt.toLocaleString()} PP/月（受取）`,'ok');
+  }
 };
 window.confirmExpel=function(sid){
   const s=state.students.find(x=>x.id===sid); if(!s) return;
@@ -3011,22 +3402,30 @@ function renderGraduates(){
         <div class="${bodyClass}" id="cohort-body-${cohortId}" onclick="event.stopPropagation()">`;
     cohort.forEach(s=>{
       const hasPrp=s.protectPoints>0;
+      const pool=getSchoolRankingPool();
+      const ov=calcOverallScore(s,pool);
       h+=`
         <div class="s-card ${s.isExpelled?'expelled':''}"
-             data-name="${escA(s.name.toLowerCase())}"
+             data-name="${escA((s.name||'').toLowerCase())}"
+             data-sid="${s.id}"
              onclick="navigate('profile',{sid:'${s.id}'},false)">
-          <div class="s-top-left">
-            <span class="s-sid">${s.id}</span>
-            <span class="s-gender">${s.gender==='M'?JP.male:JP.female}</span>
-          </div>
-          <div class="s-top-right">
-            ${hasPrp?`<span class="s-prp-val">${s.protectPoints}<span class="s-prp-unit">PRP</span></span>`:''}
-          </div>
-          <div class="s-bot-left">
-            <div class="s-name">${esc(s.name)||'<span class="dim">(未記入)</span>'}</div>
-          </div>
-          <div class="s-bot-right">
-            <span class="s-pp-val ${ppCol(s.privatePoints)}">${fmtPP(s.privatePoints)}<span class="s-pp-unit">PP</span></span>
+          <div class="s-card-inner">
+            <div class="s-col-left">
+              <span class="s-sid">${s.id}</span>
+              <div class="s-name">${esc(s.name)||'<span class="dim">(未記入)</span>'}</div>
+            </div>
+            <div class="s-col-right">
+              <div class="s-prp-wrap">
+                ${hasPrp
+                  ?`<span class="s-prp-val">${s.protectPoints}</span><span class="s-prp-unit">PRP</span>`
+                  :`<span class="s-prp-val" style="opacity:.18">—</span>`}
+              </div>
+              <span class="s-ov-val">${ov}</span>
+              <div class="s-pp-wrap">
+                <span class="s-pp-val ${ppCol(s.privatePoints)}">${fmtPP(s.privatePoints)}</span>
+                <span class="s-pp-unit">PP</span>
+              </div>
+            </div>
           </div>
         </div>`;
     });
@@ -3116,20 +3515,31 @@ function renderIncoming(){
         h+=`<div class="dim" style="grid-column:1/-1;padding:10px;font-size:.7rem">生徒なし</div>`;
       } else {
         clsSts.forEach(s=>{
+          const hasPrp=s.protectPoints>0;
+          const pool=getSchoolRankingPool();
+          const ov=calcOverallScore(s,pool);
           h+=`
               <div class="s-card"
-                   data-name="${escA(s.name.toLowerCase())}"
+                   data-name="${escA((s.name||'').toLowerCase())}"
+                   data-sid="${s.id}"
                    onclick="navigate('profile',{sid:'${s.id}'},false)">
-                <div class="s-top-left">
-                  <span class="s-sid">${s.id}</span>
-                  <span class="s-gender">${s.gender==='M'?JP.male:JP.female}</span>
-                </div>
-                <div class="s-top-right"></div>
-                <div class="s-bot-left">
-                  <div class="s-name">${esc(s.name)||'<span class="dim">(未記入)</span>'}</div>
-                </div>
-                <div class="s-bot-right">
-                  <span class="s-pp-val ${ppCol(s.privatePoints)}">${fmtPP(s.privatePoints)}<span class="s-pp-unit">PP</span></span>
+                <div class="s-card-inner">
+                  <div class="s-col-left">
+                    <span class="s-sid">${s.id}</span>
+                    <div class="s-name">${esc(s.name)||'<span class="dim">(未記入)</span>'}</div>
+                  </div>
+                  <div class="s-col-right">
+                    <div class="s-prp-wrap">
+                      ${hasPrp
+                        ?`<span class="s-prp-val">${s.protectPoints}</span><span class="s-prp-unit">PRP</span>`
+                        :`<span class="s-prp-val" style="opacity:.18">—</span>`}
+                    </div>
+                    <span class="s-ov-val">${ov}</span>
+                    <div class="s-pp-wrap">
+                      <span class="s-pp-val ${ppCol(s.privatePoints)}">${fmtPP(s.privatePoints)}</span>
+                      <span class="s-pp-unit">PP</span>
+                    </div>
+                  </div>
                 </div>
               </div>`;
         });
