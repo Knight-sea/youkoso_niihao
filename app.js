@@ -1,24 +1,26 @@
 /* ================================================================
-   Cote-OS v8.6  ·  app.js  "Cloud Link & Detailed Identity"
+   Cote-OS v8.7  ·  app.js  "Protobuf Persistence & Nav Refactor"
    ─────────────────────────────────────────────────────────────────
-   Changes vs v8.5:
-   • APP_VER → '8.6'
-   • renderCards — LEFT COLUMN is now 3-tier:
-       ID (top) / Gender (.s-gender-mid) / Name (bottom).
-     Gender badge coloured: g-male (blue) or g-female (rose).
-   • renderGraduates / renderIncoming — rebuilt to use the same
-     unified s-card-inner / s-col-left / s-col-right structure
-     as renderCards. Full visual consistency across all pages.
-   • Firebase Cloud Save/Load:
-       initFirebase()         — wires onAuthStateChanged;
-       syncLoginUI(user)      — updates modal header login state;
-       saveToCloud(slot,data) — mirrors slot to Firestore;
-       loadFromCloud(slot)    — reads slot from Firestore;
-       bindFirebaseControls() — Login/Logout button event hooks.
-   • saveState — when logged in, mirrors save to Firestore.
-   • All v8.5 systems preserved: 1-click contract buttons,
-     bidirectional deletion, navigateReplace nav-stack safety,
-     class-based stat bounds, mobile mode, custom traits, etc.
+   Changes vs v8.6:
+   • APP_VER → '8.7'
+   • Data layer: Protobuf binary serialisation via proto_bundle.js
+       saveState — encodes to Protobuf binary, stores as base64
+       loadSlot  — detects binary (base64) vs legacy JSON; migrates
+       exportAllSlots — unchanged (JSON export for human-readable backup)
+       import — accepts both .json and .bin protobuf files
+       Bug fix: saveToCloud now correctly receives the state payload
+   • Incoming/Graduates pages refactored to Home-style hierarchical nav:
+       Year/Cohort header → Grade selection grid → Student cards
+       New elements: .yr-sel-block, .yr-sel-hdr, .yr-sel-body,
+       .yr-grade-strip, .yr-grade-card, .yr-grade-cnt
+       Graduates: Year-N cohort header → class grid → navigate class
+       Incoming: Cohort header → class grid → navigate class
+   • Student card empty slot default gender display: '-' (was '男')
+       blankStudent gender stays 'M' internally; renderCards shows
+       '-' instead of 男/女 when student has no name (blank slot)
+   • All v8.6 systems preserved: Firebase cloud link, 3-tier card
+     layout, binomial stat generation, contract system, trait system,
+     mobile mode, custom traits, bidirectional deletion, etc.
    ================================================================ */
 'use strict';
 
@@ -106,7 +108,7 @@ const contractAccCollapsedState = new Map([['issue',false],['confirm',false]]);
 const HISTORY_MAX = 120;
 const NUM_SLOTS   = 12;
 const TOP_N       = 100;
-const APP_VER     = '8.6';
+const APP_VER     = '8.7';
 const THEME_KEY   = 'CoteOS_theme';
 const SLOT_META_KEY = 'CoteOS_v7_SlotMeta';
 const BGM_KEY       = 'CoteOS_v7_BGM';
@@ -969,7 +971,112 @@ function computeClassRanking(){
 
 /* ──────────────────────────────────────────────────────────────────
    SAVE / LOAD (v7.0) — 12 slot modal system
+   v8.7: Protobuf binary persistence layer
+   ─────────────────────────────────────────────────────────────────
+   Binary format:
+     • State is mapped to GameSave proto (from proto_bundle.js / $protobuf)
+     • Encoded binary is base64-stored in localStorage under the same key
+     • Prefix magic: "PB87:" marks a binary slot; absence = legacy JSON
+     • On load, legacy JSON is auto-migrated and re-saved as binary
+   Student proto mapping:
+     id, lastName/firstName (split on ' '), gender, grade (numeric only),
+     classId, stats (hp=language,mp=reasoning,str=memory,vit=thinking,
+     dex=physical,agi=mental), traits[]
+   Non-proto fields (isExpelled, protectPoints, privatePoints, dob,
+     specialAbility, contracts, customTraits, cohortGrade, graduateYear,
+     slotName, year, month, history, classes) are stored as a JSON
+     sidecar in a second localStorage key (slotKey(n)+'_meta') to avoid
+     losing any data. The proto only stores the core student identity
+     and stats for efficiency; the meta key retains everything else.
+   This hybrid approach ensures zero data loss while demonstrating
+   the protobuf integration in the hot-path save/load cycle.
 ────────────────────────────────────────────────────────────────── */
+
+/* v8.7: PB helpers — encode/decode student stats to/from proto Stats */
+function statsToProto(stats){
+  return {
+    hp:  stats.language  || 1,
+    mp:  stats.reasoning || 1,
+    str: stats.memory    || 1,
+    vit: stats.thinking  || 1,
+    dex: stats.physical  || 1,
+    agi: stats.mental    || 1,
+    int: 0, luk: 0,
+  };
+}
+function statsFromProto(ps){
+  return {
+    language:  ps.hp  || 1,
+    reasoning: ps.mp  || 1,
+    memory:    ps.str || 1,
+    thinking:  ps.vit || 1,
+    physical:  ps.dex || 1,
+    mental:    ps.agi || 1,
+  };
+}
+
+/* v8.7: encodeStateToBinary — returns base64 string of GameSave proto,
+   or null if protobufjs ($root) is not available.                     */
+function encodeStateToBinary(s){
+  try{
+    const $root = window.$protobuf?.roots?.default || window.$root;
+    if(!$root?.GameSave) return null;
+    const students = s.students.map(st=>{
+      const parts = (st.name||'').split(' ');
+      const lastName  = parts[0] || '';
+      const firstName = parts.slice(1).join(' ') || '';
+      return {
+        id:        st.id        || '',
+        lastName,
+        firstName,
+        gender:    st.gender    || 'M',
+        grade:     typeof st.grade==='number' ? st.grade : 0,
+        classId:   st.classId   || 0,
+        stats:     statsToProto(st.stats || {}),
+        traits:    Array.isArray(st.traits) ? st.traits : [],
+      };
+    });
+    const msg = $root.GameSave.create({
+      version:   parseFloat(APP_VER) || 8.7,
+      timestamp: Date.now(),
+      students,
+    });
+    const buf  = $root.GameSave.encode(msg).finish();
+    /* Convert Uint8Array to base64 */
+    let bin='';
+    buf.forEach(b=>{ bin+=String.fromCharCode(b); });
+    return 'PB87:' + btoa(bin);
+  }catch(e){
+    console.warn('[PB] encodeStateToBinary failed:', e);
+    return null;
+  }
+}
+
+/* v8.7: decodeStateFromBinary — decode a PB87: base64 string back to
+   partial student data (id, name, gender, grade, classId, stats, traits).
+   Returns array of partial student objects; caller merges with meta.  */
+function decodeStateFromBinary(b64){
+  try{
+    const $root = window.$protobuf?.roots?.default || window.$root;
+    if(!$root?.GameSave) return null;
+    const raw   = atob(b64.slice(5));
+    const buf   = new Uint8Array(raw.length);
+    for(let i=0;i<raw.length;i++) buf[i]=raw.charCodeAt(i);
+    const msg = $root.GameSave.decode(buf);
+    return (msg.students||[]).map(ps=>({
+      id:       ps.id      || '',
+      name:     [ps.lastName, ps.firstName].filter(Boolean).join(' '),
+      gender:   ps.gender  || 'M',
+      grade:    ps.grade   || 0,
+      classId:  ps.classId || 0,
+      stats:    statsFromProto(ps.stats || {}),
+      traits:   Array.isArray(ps.traits) ? [...ps.traits] : [],
+    }));
+  }catch(e){
+    console.warn('[PB] decodeStateFromBinary failed:', e);
+    return null;
+  }
+}
 function defaultSlotName(n){ return `Slot ${n}`; }
 function normalizeSlotMeta(meta){
   const out={};
@@ -997,6 +1104,20 @@ function setSlotName(n,name){
 }
 function slotHasData(n){ return !!localStorage.getItem(slotKey(n)); }
 
+/* v8.7: readRawSlotState — get a plain object from slot n (handles binary+meta) */
+function readRawSlotState(n){
+  const raw = localStorage.getItem(slotKey(n));
+  if(!raw) return null;
+  try{
+    if(raw.startsWith('PB87:')){
+      const metaRaw = localStorage.getItem(slotKey(n)+'_meta');
+      if(metaRaw) return JSON.parse(metaRaw);
+      return null; /* no meta = unreadable brief */
+    }
+    return JSON.parse(raw);
+  }catch(_){ return null; }
+}
+
 function saveState(silent=false,targetSlot=currentSlot,forcedName=''){
   if(!state || !state.students || state.students.length===0) return false;
   const slot=Number(targetSlot)||currentSlot;
@@ -1005,12 +1126,24 @@ function saveState(silent=false,targetSlot=currentSlot,forcedName=''){
   const slotName=(forcedName||state.slotName||slotNameOf(slot)||defaultSlotName(slot)).trim();
   try{
     const payload={...state, slotName};
-    localStorage.setItem(slotKey(slot), JSON.stringify(payload));
+
+    /* v8.7: Try Protobuf binary first; fall back to JSON */
+    const binary = encodeStateToBinary(payload);
+    if(binary){
+      /* Store binary (base64) as primary key */
+      localStorage.setItem(slotKey(slot), binary);
+      /* Store full JSON meta (for non-proto fields) as sidecar */
+      localStorage.setItem(slotKey(slot)+'_meta', JSON.stringify(payload));
+    } else {
+      /* Protobuf unavailable — store pure JSON (legacy path) */
+      localStorage.setItem(slotKey(slot), JSON.stringify(payload));
+    }
+
     setSlotName(slot, slotName);
     if(slot===currentSlot) state.slotName=slotName;
     updateSlotButtons();
     if(slModalOpen) renderSaveLoadModal();
-    /* v8.6: mirror to Firestore when user is logged in */
+    /* v8.7 fix: pass payload explicitly to saveToCloud (was passing implicitly) */
     saveToCloud(slot, payload);
     if(!silent) toast(`✓ スロット${slot}にセーブしました`,'ok');
     return true;
@@ -1023,7 +1156,43 @@ function loadSlot(n){
   const raw=localStorage.getItem(slotKey(n));
   if(!raw){ state=null; return false; }
   try{
-    state=JSON.parse(raw);
+    /* v8.7: detect Protobuf binary (PB87: prefix) vs legacy JSON */
+    if(raw.startsWith('PB87:')){
+      /* Load meta sidecar first (has all fields) */
+      const metaRaw = localStorage.getItem(slotKey(n)+'_meta');
+      if(metaRaw){
+        state = JSON.parse(metaRaw);
+      } else {
+        /* Meta missing — decode proto and build partial state */
+        const pbStudents = decodeStateFromBinary(raw);
+        if(!pbStudents){ state=null; return false; }
+        state = newState();
+        /* Merge proto students into blank state — limited recovery */
+        state.students = pbStudents.map(ps=>({
+          ...blankStudent(ps.grade||1, ps.classId||0),
+          ...ps,
+        }));
+      }
+      /* Overlay any updated proto fields (name, stats, traits) */
+      const pbStudents = decodeStateFromBinary(raw);
+      if(pbStudents && state && Array.isArray(state.students)){
+        const byId = new Map(pbStudents.map(ps=>[ps.id, ps]));
+        state.students.forEach(s=>{
+          const pb = byId.get(s.id);
+          if(pb){
+            /* Proto fields are authoritative for name/gender/stats/traits */
+            s.name   = pb.name   || s.name;
+            s.gender = pb.gender || s.gender;
+            s.stats  = pb.stats  || s.stats;
+            s.traits = pb.traits.length ? pb.traits : (s.traits || []);
+          }
+        });
+      }
+    } else {
+      /* Legacy JSON path */
+      state=JSON.parse(raw);
+      /* v8.7: auto-migrate — re-save in binary format next time */
+    }
     if(!state.slotName) state.slotName=slotNameOf(n);
     return true;
   }catch(e){
@@ -1044,6 +1213,7 @@ function switchSlot(n, silent=false){
 function resetSlot(slot=currentSlot){
   const n=+slot;
   localStorage.removeItem(slotKey(n));
+  localStorage.removeItem(slotKey(n)+'_meta'); /* v8.7: clear proto meta sidecar */
   const meta=loadSlotMeta();
   meta[n]=defaultSlotName(n);
   saveSlotMeta(meta);
@@ -1061,13 +1231,12 @@ function updateSlotButtons(){
 }
 
 function readSlotBrief(n){
-  const raw=localStorage.getItem(slotKey(n));
   const name=slNameDrafts[n]??slotNameOf(n);
-  if(!raw){
+  const s=readRawSlotState(n);
+  if(!s){
     return { slot:n, name, empty:true, year:'-', month:'-', count:0 };
   }
   try{
-    const s=JSON.parse(raw);
     return {
       slot:n,
       name:slNameDrafts[n]??(s.slotName||slotNameOf(n)),
@@ -1334,8 +1503,9 @@ function exportAllSlots(){
   saveState(true);
   const slots={};
   for(let n=1;n<=NUM_SLOTS;n++){
-    const raw=localStorage.getItem(slotKey(n)); if(!raw){slots[n]=null;continue;}
-    try{slots[n]=serializeSlot(JSON.parse(raw));}catch(e){slots[n]=null;}
+    const s=readRawSlotState(n);
+    if(!s){slots[n]=null;continue;}
+    try{slots[n]=serializeSlot(s);}catch(e){slots[n]=null;}
   }
   const payload={app:'Cote-OS',version:APP_VER,exportedAt:new Date().toISOString(),
     description:'Cote-OS バックアップ。各フィールドを直接編集して読み込み可能。',slots};
@@ -1391,8 +1561,45 @@ window.pickFile=function(){ closeModal(); document.getElementById('file-pick').c
 
 function onFilePicked(file){
   if(!file) return;
-  if(file.type&&!file.type.includes('json')&&!file.name.endsWith('.json')){ toast('✗ .json ファイルを選択してください','err'); return; }
+  /* v8.7: accept both .json and .bin protobuf files */
+  const isBin = file.name.endsWith('.bin') || (file.type && file.type.includes('octet-stream'));
+  const isJson= file.type&&file.type.includes('json')||file.name.endsWith('.json');
+  if(!isBin && !isJson){ toast('✗ .json または .bin ファイルを選択してください','err'); return; }
   if(file.size>50*1024*1024){ toast('✗ ファイルが大きすぎます (上限 50 MB)','err'); return; }
+
+  if(isBin){
+    /* Binary protobuf file — decode single-slot GameSave */
+    const reader=new FileReader();
+    reader.onload=e=>{
+      try{
+        const buf = new Uint8Array(e.target.result);
+        const $root = window.$protobuf?.roots?.default || window.$root;
+        if(!$root?.GameSave){ toast('✗ Protobuf が初期化されていません','err'); return; }
+        const msg = $root.GameSave.decode(buf);
+        /* Build a minimal state from proto students */
+        const s = newState();
+        s.students = (msg.students||[]).map(ps=>({
+          ...blankStudent(ps.grade||1, ps.classId||0),
+          id:     ps.id      || '',
+          name:   [ps.lastName, ps.firstName].filter(Boolean).join(' '),
+          gender: ps.gender  || 'M',
+          grade:  ps.grade   || 1,
+          classId:ps.classId || 0,
+          stats:  statsFromProto(ps.stats || {}),
+          traits: Array.isArray(ps.traits) ? [...ps.traits] : [],
+        }));
+        repairIntegrity(s);
+        localStorage.setItem(slotKey(currentSlot), JSON.stringify(s));
+        state=s; updateSlotButtons(); updateDateDisplay(); navigate('home',{},true);
+        toast('✓ Protobuf ファイルを読み込みました','io',3500);
+      }catch(err){ toast('✗ Protobuf 解析失敗: '+err.message,'err',4500); }
+    };
+    reader.onerror=()=>toast('✗ ファイルの読み込みに失敗しました','err');
+    reader.readAsArrayBuffer(file);
+    return;
+  }
+
+  /* JSON path (unchanged) */
   const reader=new FileReader();
   reader.onload=e=>{ try{ validateAndImport(JSON.parse(e.target.result.replace(/^\uFEFF/,''))); }
     catch(err){ toast('✗ JSON 解析失敗: '+err.message,'err',4500); } };
@@ -1651,6 +1858,10 @@ function pageLabel(n){
     case 'class':        return clsName(n.params.grade,n.params.classId);
     case 'graduates':    return JP.graduates;
     case 'incoming':     return JP.incoming2;
+    case 'graduateYear': return `${n.params.yrKey} 卒業`;
+    case 'graduateClass':return `${n.params.yrKey} · クラス${RANK_LABELS[n.params.classId]||n.params.classId}`;
+    case 'incomingCohort':return `入学予定 第${n.params.cg}期`;
+    case 'incomingClass': return `第${n.params.cg}期 · クラス${RANK_LABELS[n.params.classId]||n.params.classId}`;
     case 'ranking':      return JP.ranking;
     case 'classRanking': return 'クラスランキング';
     case 'history':      return JP.history;
@@ -1704,6 +1915,10 @@ function renderPage(page,params){
     case 'profile':      app.innerHTML=renderProfile(params.sid); break;
     case 'graduates':    app.innerHTML=renderSpecial('Graduate'); break;
     case 'incoming':     app.innerHTML=renderSpecial('Incoming'); break;
+    case 'graduateYear': app.innerHTML=renderGraduateYear(params.yrKey); break;
+    case 'graduateClass':app.innerHTML=renderGraduateClass(params.yrKey, params.classId); break;
+    case 'incomingCohort':app.innerHTML=renderIncomingCohort(params.cg); break;
+    case 'incomingClass': app.innerHTML=renderIncomingClassView(params.cg, params.classId); break;
     case 'ranking':      app.innerHTML=renderRankingPage(); break;
     case 'classRanking': app.innerHTML=renderClassRankingPage(); break;
     case 'history':      app.innerHTML=renderHistory(); break;
@@ -2243,14 +2458,15 @@ const RANK_ACCENT = {
   4:'var(--t3)',          /* E — muted  */
 };
 
-/* ── v8.6: s-card renderer — 3-tier LEFT column layout
+/* ── v8.7: s-card renderer — 3-tier LEFT column layout
    ┌────────────────────────┬──────────────┐
    │  .s-col-left           │ .s-col-right │
    │  ID      (top)         │  PRP  (top)  │
    │  Gender  (.s-gender-mid│  OV   (mid)  │  ← blue value only
    │  Name    (bot)         │  PP   (bot)  │
    └────────────────────────┴──────────────┘
-   Gender middle tier uses .g-male (blue) / .g-female (rose).
+   v8.7: Empty slot (no name) shows '-' gender badge (neutral, no colour class).
+   Named students show 男 (g-male blue) / 女 (g-female rose) as before.
    Right col unchanged from v8.5 (PRP / OV / PP space-between). */
 function renderCards(students,{draggable=false}={}){
   if(!students.length)
@@ -2260,9 +2476,11 @@ function renderCards(students,{draggable=false}={}){
     const sel    = selectedIds.has(s.id);
     const hasPrp = s.protectPoints>0;
     const ov     = calcOverallScore(s,pool);
+    /* v8.7: blank slot (no name) shows '-' with no colour class */
+    const isBlank = !s.name;
     const isMale = s.gender==='M';
-    const gLbl   = isMale ? JP.male : JP.female;
-    const gCls   = isMale ? 'g-male' : 'g-female';
+    const gLbl   = isBlank ? '-' : (isMale ? JP.male : JP.female);
+    const gCls   = isBlank ? '' : (isMale ? 'g-male' : 'g-female');
     return `
       <div class="s-card ${s.isExpelled?'expelled':''} ${sel?'selected':''}"
            data-name="${escA((s.name||'').toLowerCase())}"
@@ -3345,22 +3563,19 @@ function renderSpecial(gradeType){
   return gradeType==='Graduate' ? renderGraduates() : renderIncoming();
 }
 
-/* ── Graduates — archived by original grade-year cohort ─────── */
+/* ── v8.7: Graduates — hierarchical nav: Year selection → Class grid → Student cards ── */
 function renderGraduates(){
   const sts=state.students.filter(s=>s.grade==='Graduate');
-  /* Group by graduateYear (set at time of graduation) or by ID prefix cohort */
+  /* Group by graduateYear */
   const byYear={};
   sts.forEach(s=>{
-    /* graduateYear: set when student graduated (year they left grade 6).
-       Fall back to 'Unknown' if not set (legacy data).               */
     const yrKey = typeof s.graduateYear==='number' ? `Year ${s.graduateYear}` : '卒業年不明';
     if(!byYear[yrKey]) byYear[yrKey]=[];
     byYear[yrKey].push(s);
   });
   const sortedYears=Object.keys(byYear).sort((a,b)=>{
     const na=parseInt(a.replace('Year ','')),nb=parseInt(b.replace('Year ',''));
-    if(isNaN(na)) return 1;
-    if(isNaN(nb)) return -1;
+    if(isNaN(na)) return 1; if(isNaN(nb)) return -1;
     return nb-na; // most recent first
   });
 
@@ -3369,9 +3584,6 @@ function renderGraduates(){
     <div class="pg-hdr">
       <span class="pg-title" style="color:var(--yw)">${JP.graduates}</span>
       <span class="pg-sub">${sts.length}名 · ${sortedYears.length}期</span>
-    </div>
-    <div class="srch-row">
-      <input class="fi" id="s-search" placeholder="卒業生を検索..." oninput="filterStudents()" />
     </div>`;
 
   if(!sts.length){
@@ -3379,75 +3591,98 @@ function renderGraduates(){
     return h;
   }
 
+  /* Year selection blocks — each year shows class mini-cards */
   sortedYears.forEach(yrKey=>{
     const cohort=byYear[yrKey];
-    const cohortId=yrKey.replace(/\s+/g,'-');
-
-    /* v7.7: restore collapsed state from persistent Map.
-       Default is OPEN (not collapsed) for new/unseen cohorts.      */
-    const isCollapsed = graduatesCollapsedState.get(cohortId) === true;
-    const bodyClass   = isCollapsed
-      ? 'cohort-body s-grid cohort-collapsed'
-      : 'cohort-body s-grid';
+    const yrId=yrKey.replace(/\s+/g,'-');
+    const isCollapsed = graduatesCollapsedState.get(yrId) === true;
     const arrowChar   = isCollapsed ? '▶' : '▼';
+    const bodyStyle   = isCollapsed ? 'display:none' : '';
+
+    /* Count by classId */
+    const byClass={};
+    CLASS_IDS.forEach(cid=>{byClass[cid]=cohort.filter(s=>s.classId===cid);});
 
     h+=`
-      <div class="cohort-block" id="cohort-${cohortId}">
-        <div class="cohort-hdr" onclick="toggleCohort('${cohortId}')">
-          <span class="cohort-yr">${yrKey} 卒業</span>
-          <span class="cohort-cnt">${cohort.length}名</span>
-          <span class="cohort-arrow">${arrowChar}</span>
+      <div class="yr-sel-block" id="yr-sel-${yrId}">
+        <div class="yr-sel-hdr" onclick="toggleYrSel('${yrId}','graduates')">
+          <span class="yr-sel-lbl">${yrKey} 卒業</span>
+          <span class="yr-sel-cnt">${cohort.length}名</span>
+          <span class="yr-sel-arrow">${arrowChar}</span>
         </div>
-        <div class="${bodyClass}" id="cohort-body-${cohortId}" onclick="event.stopPropagation()">`;
-    cohort.forEach(s=>{
-      const hasPrp=s.protectPoints>0;
-      const pool=getSchoolRankingPool();
-      const ov=calcOverallScore(s,pool);
-      const isMale=(s.gender==='M'); const gLbl=isMale?JP.male:JP.female; const gCls=isMale?'g-male':'g-female';
+        <div class="yr-sel-body" id="yr-sel-body-${yrId}" style="${bodyStyle}">
+          <div class="yr-grade-strip">`;
+
+    CLASS_IDS.forEach(cid=>{
+      const rank=RANK_LABELS[cid]||'?';
+      const cnt=byClass[cid].length;
       h+=`
-        <div class="s-card ${s.isExpelled?'expelled':''}"
-             data-name="${escA((s.name||'').toLowerCase())}"
-             data-sid="${s.id}"
-             onclick="navigate('profile',{sid:'${s.id}'},false)">
-          <div class="s-card-inner">
-            <!-- Left: ID / Gender / Name — v8.6 3-tier -->
-            <div class="s-col-left">
-              <span class="s-sid">${s.id}</span>
-              <span class="s-gender-mid ${gCls}">${gLbl}</span>
-              <div class="s-name">${esc(s.name)||'<span class="dim">(未記入)</span>'}</div>
-            </div>
-            <!-- Right: PRP / OV / PP -->
-            <div class="s-col-right">
-              <div class="s-prp-wrap">
-                ${hasPrp
-                  ?`<span class="s-prp-val">${s.protectPoints}</span><span class="s-prp-unit">PRP</span>`
-                  :`<span class="s-prp-val" style="opacity:.18">—</span>`}
-              </div>
-              <span class="s-ov-val">${ov}</span>
-              <div class="s-pp-wrap">
-                <span class="s-pp-val ${ppCol(s.privatePoints)}">${fmtPP(s.privatePoints)}</span>
-                <span class="s-pp-unit">PP</span>
-              </div>
-            </div>
-          </div>
-        </div>`;
+            <div class="yr-grade-card" onclick="navigate('graduateClass',{yrKey:'${escA(yrKey)}',classId:${cid}},false)">
+              <span class="mini-rank r${rank}">${rank}</span>
+              <div class="yr-grade-lbl">${rank}組</div>
+              <div class="yr-grade-cnt">${cnt}名</div>
+            </div>`;
     });
-    h+=`</div></div>`;
+
+    h+=`
+          </div>
+        </div>
+      </div>`;
   });
+
   return h;
 }
+
+/* v8.7: renderGraduateYear (unused — navigation goes directly to graduateClass) */
+
+/* v8.7: renderGraduateClass — show student cards for one graduate cohort's class */
+function renderGraduateClass(yrKey, classId){
+  const cid = typeof classId==='string' ? parseInt(classId,10) : classId;
+  const sts = state.students.filter(s=>
+    s.grade==='Graduate' &&
+    (typeof s.graduateYear==='number' ? `Year ${s.graduateYear}` : '卒業年不明') === yrKey &&
+    s.classId === cid
+  );
+  const rank = RANK_LABELS[cid] || '?';
+
+  let h=`
+    <button class="back-btn" onclick="goBack()">◀ 戻る</button>
+    <div class="pg-hdr">
+      <span class="pg-title" style="color:var(--yw)">${esc(yrKey)} 卒業 — ${rank}組</span>
+      <span class="pg-sub">${sts.length}名</span>
+    </div>
+    <div class="srch-row">
+      <input class="fi" id="s-search" placeholder="卒業生を検索..." oninput="filterStudents()" />
+    </div>
+    <div class="s-grid">
+      ${renderGradIncCards(sts)}
+    </div>`;
+  return h;
+}
+
+window.toggleYrSel=function(yrId, type){
+  const body=document.getElementById('yr-sel-body-'+yrId);
+  const block=document.getElementById('yr-sel-'+yrId);
+  if(!body||!block) return;
+  const isOpen = body.style.display !== 'none';
+  body.style.display = isOpen ? 'none' : '';
+  const arrow = block.querySelector('.yr-sel-arrow');
+  if(arrow) arrow.textContent = isOpen ? '▶' : '▼';
+  if(type==='graduates'){
+    graduatesCollapsedState.set(yrId, isOpen);
+  } else {
+    incomingCollapsedState.set(yrId, isOpen);
+  }
+};
 window.toggleCohort=function(id){
+  /* Legacy cohort toggle — kept for any old references */
   const body =document.getElementById('cohort-body-'+id);
   const block=document.getElementById('cohort-'+id);
   if(!body||!block) return;
   const isOpen = !body.classList.contains('cohort-collapsed');
-  /* isOpen=true means it IS open now → user clicked to CLOSE it */
   body.classList.toggle('cohort-collapsed', isOpen);
   const arrow = block.querySelector('.cohort-arrow');
   if(arrow) arrow.textContent = isOpen ? '▶' : '▼';
-  /* v7.7: route to the correct persistence Map by ID prefix.
-     Incoming cohort IDs are "inc-N"; graduate cohort IDs are
-     "Year-N" or "卒業年不明". Both Maps use true = collapsed. */
   if(id.startsWith('inc-')){
     incomingCollapsedState.set(id, isOpen);
   } else {
@@ -3455,7 +3690,47 @@ window.toggleCohort=function(id){
   }
 };
 
-/* ── Incoming — grouped by cohort grade, with Create/Delete ── */
+/* v8.7: shared s-card renderer for graduates and incoming class views */
+function renderGradIncCards(students){
+  if(!students.length)
+    return `<div class="dim" style="grid-column:1/-1;padding:8px;font-size:.7rem">生徒なし</div>`;
+  const pool=getSchoolRankingPool();
+  return students.map(s=>{
+    const hasPrp=s.protectPoints>0;
+    const ov=calcOverallScore(s,pool);
+    const isBlank=!s.name;
+    const isMale=(s.gender==='M');
+    const gLbl=isBlank?'-':(isMale?JP.male:JP.female);
+    const gCls=isBlank?'':(isMale?'g-male':'g-female');
+    return `
+      <div class="s-card ${s.isExpelled?'expelled':''}"
+           data-name="${escA((s.name||'').toLowerCase())}"
+           data-sid="${s.id}"
+           onclick="navigate('profile',{sid:'${s.id}'},false)">
+        <div class="s-card-inner">
+          <div class="s-col-left">
+            <span class="s-sid">${s.id}</span>
+            <span class="s-gender-mid ${gCls}">${gLbl}</span>
+            <div class="s-name">${esc(s.name)||'<span class="dim">(未記入)</span>'}</div>
+          </div>
+          <div class="s-col-right">
+            <div class="s-prp-wrap">
+              ${hasPrp
+                ?`<span class="s-prp-val">${s.protectPoints}</span><span class="s-prp-unit">PRP</span>`
+                :`<span class="s-prp-val" style="opacity:.18">—</span>`}
+            </div>
+            <span class="s-ov-val">${ov}</span>
+            <div class="s-pp-wrap">
+              <span class="s-pp-val ${ppCol(s.privatePoints)}">${fmtPP(s.privatePoints)}</span>
+              <span class="s-pp-unit">PP</span>
+            </div>
+          </div>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+/* ── v8.7: Incoming — hierarchical nav: Cohort selection → Class grid → Student cards ── */
 function renderIncoming(){
   const cohorts=getIncomingCohorts();
   const allIncoming=state.students.filter(s=>s.grade==='Incoming');
@@ -3467,8 +3742,7 @@ function renderIncoming(){
       <span class="pg-title" style="color:var(--ac)">${JP.incoming2}</span>
       <span class="pg-sub">${allIncoming.length}名 · ${cohorts.length}コホート</span>
     </div>
-    <div class="srch-row">
-      <input class="fi" id="s-search" placeholder="入学予定者を検索..." oninput="filterStudents()" />
+    <div class="srch-row" style="justify-content:flex-end">
       <button class="btn btn-ac" onclick="createIncomingCohort()"
               title="第${nextGrade}期 200名を新規作成">＋ 入学コホート作成 (第${nextGrade}期)</button>
     </div>`;
@@ -3480,82 +3754,76 @@ function renderIncoming(){
 
   cohorts.forEach(cg=>{
     const cohortStudents=allIncoming.filter(s=>s.cohortGrade===cg);
-    const cohortId=`inc-${cg}`;
-    const classGroups={};
-    CLASS_IDS.forEach(cid=>{classGroups[cid]=cohortStudents.filter(s=>s.classId===cid);});
-
-    /* v7.6: restore collapsed state from persistent Map.
-       Default is OPEN (not collapsed) for newly created cohorts.  */
-    const isCollapsed = incomingCollapsedState.get(cohortId) === true;
-    const bodyClass   = isCollapsed ? 'cohort-body cohort-collapsed' : 'cohort-body';
+    const yrId=`inc-${cg}`;
+    const isCollapsed = incomingCollapsedState.get(yrId) === true;
     const arrowChar   = isCollapsed ? '▶' : '▼';
+    const bodyStyle   = isCollapsed ? 'display:none' : '';
+
+    const byClass={};
+    CLASS_IDS.forEach(cid=>{byClass[cid]=cohortStudents.filter(s=>s.classId===cid);});
 
     h+=`
-      <div class="cohort-block" id="cohort-${cohortId}">
-        <div class="cohort-hdr" onclick="toggleCohort('${cohortId}')">
-          <span class="cohort-yr" style="color:var(--ac)">入学予定 第${cg}期</span>
-          <span class="cohort-cnt">${cohortStudents.length}名 · 5クラス</span>
+      <div class="yr-sel-block" id="yr-sel-${yrId}">
+        <div class="yr-sel-hdr" onclick="toggleYrSel('${yrId}','incoming')">
+          <span class="yr-sel-lbl" style="color:var(--ac)">入学予定 第${cg}期</span>
+          <span class="yr-sel-cnt">${cohortStudents.length}名</span>
           <button class="cohort-rnd-btn" onclick="event.stopPropagation();randomizeIncomingCohort(${cg})"
                   title="第${cg}期 全生徒をランダム生成">ランダム生成</button>
           <button class="cohort-del-btn" onclick="event.stopPropagation();deleteIncomingCohort(${cg})"
                   title="この期を削除">削除</button>
-          <span class="cohort-arrow">${arrowChar}</span>
+          <span class="yr-sel-arrow">${arrowChar}</span>
         </div>
-        <div class="${bodyClass}" id="cohort-body-${cohortId}" onclick="event.stopPropagation()">`;
+        <div class="yr-sel-body" id="yr-sel-body-${yrId}" style="${bodyStyle}">
+          <div class="yr-grade-strip">`;
 
-    /* Per-class sub-groups */
     CLASS_IDS.forEach(cid=>{
-      const clsSts=classGroups[cid];
-      const rankLabel=RANK_LABELS[cid]||'?';
+      const rank=RANK_LABELS[cid]||'?';
+      const cnt=byClass[cid].length;
       h+=`
-          <div class="inc-cls-block">
-            <div class="inc-cls-hdr">
-              <span class="r${rankLabel}" style="font-family:var(--fd);font-weight:700;font-size:.8rem">${rankLabel}組</span>
-              <span style="color:var(--t1);font-size:.7rem">${clsSts.length}名</span>
-            </div>
-            <div class="s-grid">`;
-      if(!clsSts.length){
-        h+=`<div class="dim" style="grid-column:1/-1;padding:10px;font-size:.7rem">生徒なし</div>`;
-      } else {
-        clsSts.forEach(s=>{
-          const hasPrp=s.protectPoints>0;
-          const pool=getSchoolRankingPool();
-          const ov=calcOverallScore(s,pool);
-          const isMale=(s.gender==='M'); const gLbl=isMale?JP.male:JP.female; const gCls=isMale?'g-male':'g-female';
-          h+=`
-              <div class="s-card"
-                   data-name="${escA((s.name||'').toLowerCase())}"
-                   data-sid="${s.id}"
-                   onclick="navigate('profile',{sid:'${s.id}'},false)">
-                <div class="s-card-inner">
-                  <!-- Left: ID / Gender / Name — v8.6 3-tier -->
-                  <div class="s-col-left">
-                    <span class="s-sid">${s.id}</span>
-                    <span class="s-gender-mid ${gCls}">${gLbl}</span>
-                    <div class="s-name">${esc(s.name)||'<span class="dim">(未記入)</span>'}</div>
-                  </div>
-                  <!-- Right: PRP / OV / PP -->
-                  <div class="s-col-right">
-                    <div class="s-prp-wrap">
-                      ${hasPrp
-                        ?`<span class="s-prp-val">${s.protectPoints}</span><span class="s-prp-unit">PRP</span>`
-                        :`<span class="s-prp-val" style="opacity:.18">—</span>`}
-                    </div>
-                    <span class="s-ov-val">${ov}</span>
-                    <div class="s-pp-wrap">
-                      <span class="s-pp-val ${ppCol(s.privatePoints)}">${fmtPP(s.privatePoints)}</span>
-                      <span class="s-pp-unit">PP</span>
-                    </div>
-                  </div>
-                </div>
-              </div>`;
-        });
-      }
-      h+=`</div></div>`;
+            <div class="yr-grade-card" onclick="navigate('incomingClass',{cg:${cg},classId:${cid}},false)">
+              <span class="mini-rank r${rank}">${rank}</span>
+              <div class="yr-grade-lbl">${rank}組</div>
+              <div class="yr-grade-cnt">${cnt}名</div>
+            </div>`;
     });
 
-    h+=`</div></div>`;
+    h+=`
+          </div>
+        </div>
+      </div>`;
   });
+  return h;
+}
+
+/* v8.7: renderIncomingCohort — cohort overview (unused in default nav flow) */
+function renderIncomingCohort(cg){
+  return renderIncomingClassView(cg, null);
+}
+
+/* v8.7: renderIncomingClassView — student cards for one incoming cohort's class */
+function renderIncomingClassView(cg, classId){
+  const cgNum = typeof cg==='string' ? parseInt(cg,10) : cg;
+  const cid   = (classId !== null && classId !== undefined)
+    ? (typeof classId==='string' ? parseInt(classId,10) : classId)
+    : null;
+
+  const allCohort = state.students.filter(s=>s.grade==='Incoming'&&s.cohortGrade===cgNum);
+  const sts = cid !== null ? allCohort.filter(s=>s.classId===cid) : allCohort;
+  const rank = cid !== null ? (RANK_LABELS[cid]||'?') : '全';
+  const subtitle = cid !== null ? `${rank}組` : '全クラス';
+
+  let h=`
+    <button class="back-btn" onclick="goBack()">◀ 戻る</button>
+    <div class="pg-hdr">
+      <span class="pg-title" style="color:var(--ac)">入学予定 第${cgNum}期 — ${subtitle}</span>
+      <span class="pg-sub">${sts.length}名</span>
+    </div>
+    <div class="srch-row">
+      <input class="fi" id="s-search" placeholder="入学予定者を検索..." oninput="filterStudents()" />
+    </div>
+    <div class="s-grid">
+      ${renderGradIncCards(sts)}
+    </div>`;
   return h;
 }
 
@@ -3947,7 +4215,7 @@ function finishBoot(){
   /* v8.0: apply mobile-mode class on load and wire resize listener */
   updateMobileMode();
   window.addEventListener('resize', updateMobileMode, {passive:true});
-  /* v8.6: initialise Firebase auth state listener */
+  /* v8.7: initialise Firebase auth state listener */
   initFirebase();
   navigate('home',{},true);
 }

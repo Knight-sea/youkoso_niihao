@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Cote-OS v8.6</title>
+  <title>Cote-OS v8.7</title>
   <link rel="icon" href="images/favicon.ico" />
   <link rel="preconnect" href="https://fonts.googleapis.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&family=Noto+Sans+JP:wght@300;400;500;700&display=swap" rel="stylesheet" />
@@ -11,17 +11,17 @@
 </head>
 <body>
 
-<!-- TASKBAR: 3 non-overlapping flex zones. No position:absolute. -->
+<!-- タスクバー: 3分割フレックスゾーン。position:absoluteなし。-->
 <header id="taskbar">
 
-  <!-- LEFT: flex:1 -->
+  <!-- 左: flex:1 -->
   <div id="tb-left">
     <span id="logo">COTE<span class="ac">OS</span></span>
-    <span id="ver">v8.6</span>
+    <span id="ver">v8.7</span>
     <nav id="breadcrumb" aria-label="パンくずリスト"></nav>
   </div>
 
-  <!-- CENTER: flex:0, always clickable -->
+  <!-- 中央: flex:0、常にクリック可能 -->
   <div id="tb-center">
     <button id="btn-prev" class="tb-btn" title="前月へ (Ctrl+Left)">&#171;&nbsp;前月</button>
     <div id="date-block">
@@ -31,14 +31,14 @@
     <button id="btn-next" class="tb-btn" title="次月へ (Ctrl+Right)">次月&nbsp;&#187;</button>
   </div>
 
-  <!-- RIGHT: flex:1, gear accordion -->
+  <!-- 右: flex:1、ギアアコーディオン -->
   <div id="tb-right">
     <div id="gear-wrap">
 
-      <!-- Tray: slides LEFT on .open -->
+      <!-- トレイ: .open時に左へスライド -->
       <div id="gear-tray" aria-hidden="true">
 
-        <!-- Theme flyout -->
+        <!-- テーマフライアウト -->
         <div id="theme-wrap" class="gt-item-wrap">
           <button id="btn-theme" class="gt-btn theme-btn" title="テーマ切替">テーマ</button>
           <div id="theme-flyout" class="gt-flyout" aria-hidden="true">
@@ -48,7 +48,7 @@
           </div>
         </div>
 
-        <!-- History -->
+        <!-- 履歴 -->
         <button id="btn-history" class="gt-btn hist-btn" title="月次履歴">履歴</button>
 
         <!-- BGM -->
@@ -65,16 +65,16 @@
 
         <span class="gt-div"></span>
 
-        <!-- Save button -->
+        <!-- セーブボタン -->
         <button id="btn-save" class="gt-btn sl-btn" title="セーブ">セーブ</button>
 
       </div><!-- /gear-tray -->
 
-      <!-- Gear toggle -->
+      <!-- ギアトグル -->
       <button id="gear-btn" aria-label="設定メニュー" aria-expanded="false" title="設定">⚙</button>
     </div><!-- /gear-wrap -->
 
-    <input type="file" id="file-pick" accept=".json,application/json"
+    <input type="file" id="file-pick" accept=".json,application/json,.bin,application/octet-stream"
            aria-hidden="true" tabindex="-1" />
   </div><!-- /tb-right -->
 
@@ -82,7 +82,7 @@
 
 <main id="app"></main>
 
-<!-- Standard modal (confirmations, profile actions, etc.) -->
+<!-- 標準モーダル (確認、プロフィール操作など) -->
 <div id="modal-overlay" class="hidden" role="dialog" aria-modal="true">
   <div id="modal-box">
     <button id="modal-x" aria-label="閉じる">✕</button>
@@ -90,17 +90,17 @@
   </div>
 </div>
 
-<!-- Save/Load modal — v8.6: header now holds Login button on the right -->
+<!-- セーブ/ロードモーダル — v8.7: ヘッダー右側にログインボタン -->
 <div id="sl-overlay" class="hidden" role="dialog" aria-modal="true" aria-labelledby="sl-title">
   <div id="sl-box">
     <div id="sl-header">
       <span id="sl-title">セーブ／ロード</span>
-      <!-- v8.6: Cloud Login button — right side of save modal header -->
+      <!-- v8.6: クラウドログインボタン — セーブモーダルヘッダー右側 -->
       <button id="sl-btn-login" class="sl-login-btn" title="Googleアカウントでログインしてクラウド同期">
         <span class="sl-login-icon">☁</span>
         <span class="sl-login-lbl">ログイン</span>
       </button>
-      <!-- v8.6: logged-in user display (JS shows/hides) -->
+      <!-- v8.6: ログイン済みユーザー表示 (JS側で表示/非表示を切替) -->
       <div id="sl-user-info" class="sl-user-info hidden">
         <span class="sl-user-icon">●</span>
         <span id="sl-user-name" class="sl-user-name"></span>
@@ -111,12 +111,12 @@
     <div id="sl-slots" aria-label="データスロット"></div>
 
     <div id="sl-controls" aria-label="操作パネル">
-      <!-- Row 1: Save · Export · Import · Delete -->
+      <!-- 行1: セーブ・書き出し・読み込み・削除 -->
       <button id="sl-btn-save"   class="sl-act ac">セーブ</button>
       <button id="sl-btn-export" class="sl-act io">書き出し</button>
       <button id="sl-btn-import" class="sl-act io">読み込み</button>
       <button id="sl-btn-delete" class="sl-act dn">削除</button>
-      <!-- Row 2: Play · Play New · [empty] · Back -->
+      <!-- 行2: プレイ・新しくプレイ・[空]・戻る -->
       <button id="sl-btn-play"     class="sl-act gn">プレイ</button>
       <button id="sl-btn-new-play" class="sl-act gn sl-act-new"
               title="スロットを使わずゲストとして1,200名の新規データでプレイ">新しくプレイ</button>
@@ -126,7 +126,7 @@
   </div>
 </div>
 
-<!-- v7.5: Custom UI confirm/alert modal -->
+<!-- v7.5: カスタムUI確認/アラートモーダル -->
 <div id="uic-overlay" class="hidden" role="dialog" aria-modal="true" aria-labelledby="uic-title-el">
   <div id="uic-box">
     <div id="uic-header">
@@ -142,7 +142,7 @@
 
 <div id="toast" role="status" aria-live="polite"></div>
 
-<!-- v8.6: Firebase SDK (module) — initialises fbAuth, fbDb, fbProvider on window -->
+<!-- v8.7: Firebase SDK (モジュール) — fbAuth, fbDb, fbProviderをwindowに公開 -->
 <script type="module">
   import { initializeApp }                    from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
   import { getAuth, GoogleAuthProvider,
@@ -165,7 +165,7 @@
   const db       = getFirestore(app);
   const provider = new GoogleAuthProvider();
 
-  /* ── Expose to app.js (non-module) via window ── */
+  /* ── app.js (非モジュール) からwindow経由でアクセス可能にする ── */
   window.fbAuth            = auth;
   window.fbDb              = db;
   window.fbProvider        = provider;
@@ -176,8 +176,11 @@
   window.fbSetDoc          = setDoc;
   window.fbOnAuthChanged   = (cb) => onAuthStateChanged(auth, cb);
 
-  console.log("Firebase v8.6 initialized — Cote-OS Cloud Link ready.");
+  console.log("Firebase v8.7 initialized — Cote-OS Cloud Link ready.");
 </script>
+
+<!-- v8.7: protobufjs — データシリアライゼーション用 -->
+<script src="https://cdn.jsdelivr.net/npm/protobufjs@7.2.5/dist/protobuf.min.js"></script>
 
 <script src="https://w.soundcloud.com/player/api.js"></script>
 <script src="app.js"></script>
