@@ -1,15 +1,18 @@
 /* ═══════════════════════════════════════════════════════════════
-   Cote-OS v8.5  ·  Stylesheet  "Visual Overhaul + Contract Refinement"
+   Cote-OS v8.6  ·  Stylesheet  "Cloud Link & Detailed Identity"
    Themes: classic | light | dark
-   Changes vs v8.4:
-   • s-card: scaled text ×1.15; s-name ×1.4; compact vertical padding.
-     Removed blue accent top border — border-top stays 1px solid var(--bd).
-     Unified structure for Current / Incoming / Graduates cards.
-   • Contract: 1-click issuance with [支払] [受取] buttons (no dropdown).
-     Removed badge counter from issue accordion header.
-     ctr-del works for both SEND and RECV.
-     Confirm modal shows "月毎の変化: ±X PP" only (no formula).
-   • Bug fix: profile nav history deduplication.
+   Changes vs v8.5:
+   • s-card LEFT column upgraded to 3-TIER vertical stack:
+       Top:    Student ID  (.s-sid)
+       Middle: Gender      (.s-gender-mid)   ← NEW
+       Bottom: Name        (.s-name)
+     Card height stays compact: s-card-inner min-height reduced,
+     all padding tightened to match v8.0 density.
+     Name font-size ×1.1 from v8.5 (1.05rem → 1.155rem).
+   • Save/Load modal header: Login button + user-info strip.
+     .sl-login-btn, .sl-user-info, .sl-user-name, .sl-logout-btn
+   • Special Traits "その他 (カスタム)" — .tc-custom — recoloured
+     to light gray: chips, tags, selected states, header label.
    ═══════════════════════════════════════════════════════════════ */
 
 /* ── THEME: Classic ──────────────────────────────────────────── */
@@ -438,12 +441,7 @@ input,select,textarea{font-family:var(--fm)}
   /* Stop clicks inside modal from reaching overlay */
   pointer-events:all;
 }
-#sl-header{
-  display:flex;align-items:center;
-  /* v7.1: no close button, so title is alone */
-  justify-content:flex-start;
-  padding-bottom:10px;border-bottom:1px solid var(--bd2);
-}
+
 #sl-title{
   font-family:var(--fd);font-size:.82rem;color:var(--ac);
   letter-spacing:.18em;
@@ -451,7 +449,47 @@ input,select,textarea{font-family:var(--fm)}
 /* v7.1: #sl-close removed from HTML; keep rule harmless if JS re-adds it */
 #sl-close{display:none}
 
-/* v7.1: Slot area — 4 columns × 3 rows */
+/* ── v8.6: Save modal header Login button ───────────────────── */
+#sl-header{
+  display:flex;align-items:center;
+  justify-content:space-between;        /* v8.6: space-between for title + login */
+  padding-bottom:10px;border-bottom:1px solid var(--bd2);
+  gap:10px;
+}
+/* Login button — cloud icon + label, cyan accent like セーブ btn */
+.sl-login-btn{
+  display:flex;align-items:center;gap:5px;
+  background:var(--acd);border:1px solid var(--ac);color:var(--ac);
+  font-family:var(--fm);font-size:.67rem;letter-spacing:.06em;
+  padding:4px 11px;
+  transition:background var(--tr),box-shadow var(--tr);
+  white-space:nowrap;flex-shrink:0;
+}
+.sl-login-btn:hover{background:var(--acg);box-shadow:0 0 8px var(--acg)}
+.sl-login-icon{font-size:.76rem;opacity:.85;line-height:1}
+.sl-login-lbl{}  /* inherits from .sl-login-btn */
+
+/* Logged-in state — shows user name + logout button */
+.sl-user-info{
+  display:flex;align-items:center;gap:7px;
+  flex-shrink:0;
+}
+.sl-user-icon{
+  font-size:.62rem;color:var(--gn);opacity:.8;line-height:1;
+}
+.sl-user-name{
+  font-family:var(--fm);font-size:.67rem;color:var(--t0);
+  letter-spacing:.03em;white-space:nowrap;max-width:160px;
+  overflow:hidden;text-overflow:ellipsis;
+}
+.sl-logout-btn{
+  background:none;border:1px solid var(--rdd);color:var(--rd);
+  font-family:var(--fm);font-size:.60rem;letter-spacing:.04em;
+  padding:2px 8px;
+  transition:background var(--tr),border-color var(--tr);
+  white-space:nowrap;flex-shrink:0;
+}
+.sl-logout-btn:hover{background:rgba(255,51,85,.1);border-color:var(--rd)}
 #sl-slots{
   display:grid;
   grid-template-columns:repeat(4,minmax(0,1fr));
@@ -1144,7 +1182,7 @@ body.edit-mode .hcb-dist-row{
 @media(max-width:560px){.s-grid{grid-template-columns:repeat(2,1fr)}}
 
 /* ═══════════════════════════════════════════════════════════════
-   v8.5 STUDENT CARD — Classic Clean 2-Column Layout
+   v8.4 STUDENT CARD — Classic Clean 2-Column Layout
    ┌─────────────────────┬──────────────┐
    │ .s-col-left         │ .s-col-right │
    │  top:  Student ID   │  top:  PRP   │
@@ -1153,24 +1191,24 @@ body.edit-mode .hcb-dist-row{
    └─────────────────────┴──────────────┘
    • Two columns: left flex ~55%, right flex ~45%.
    • No internal dividers, borders, or separator lines whatsoever.
-   • Right column: 3-tier vertical stack (space-between):
+     Space alone defines the layout.
+   • Right column is a 3-tier vertical stack (space-between):
        PRP (top) — Overall Power blue value only (mid) — PP (bot).
-   • 「総合力」label REMOVED from card.
+     「総合力」label is REMOVED from the card entirely.
    • Checkbox (.s-chk) absolute top-left; left col clears in sel-mode.
-   • v8.5: NO blue accent top border removed.
-   • v8.5: Text scaled ×1.15; s-name ×1.4 vs v8.4 base.
-   • v8.5: Compact padding — card stays minimal height.
-   • v8.5: UNIFIED structure for Current / Incoming / Graduates.
+   • Top accent border-top:2px (JS sets color per rank, unchanged).
+   • All Share Tech Mono (var(--fd)) for numerics.
 ═══════════════════════════════════════════════════════════════ */
 .s-card{
   background:var(--s1);
-  border:1px solid var(--bd);          /* v8.5: removed border-top:2px accent */
+  border:1px solid var(--bd);
+  border-top-width:2px;                 /* accent — JS sets border-top-color */
   cursor:pointer;
   transition:border-color var(--tr),background var(--tr),box-shadow var(--tr);
   position:relative;
   user-select:none;
   overflow:hidden;
-  min-height:90px;
+  min-height:80px;                      /* v8.6: 94→80px, matches v8.0 density */
 }
 .s-card:hover{border-color:var(--acd);background:var(--s2);box-shadow:0 2px 8px rgba(0,0,0,.15)}
 .s-card.expelled{opacity:.27;border-style:dashed}
@@ -1199,26 +1237,42 @@ body.edit-mode .hcb-dist-row{
 .s-card-inner{
   display:grid;
   grid-template-columns:1fr auto;    /* left stretches, right fits content */
-  min-height:90px;
+  min-height:80px;                   /* v8.6: reduced 94→80px for v8.0 density */
   height:100%;
 }
 
-/* ── LEFT COLUMN: ID (top) + Name (bottom) ───────────────────── */
+/* ── LEFT COLUMN: 3-tier stack — ID / Gender / Name ─────────── */
+/* v8.6: space-between spreads 3 items; top/middle/bottom       */
 .s-col-left{
   display:flex;flex-direction:column;justify-content:space-between;
-  padding:5px 5px 5px 8px;             /* v8.5: tighter vertical padding */
+  padding:5px 5px 5px 8px;           /* v8.6: 7px → 5px top/bot for compactness */
   min-width:0;overflow:hidden;
 }
 /* In sel-mode push content right to clear the checkbox */
 .sel-mode .s-card .s-col-left{padding-left:22px}
 
 .s-sid{
-  font-family:var(--fd);font-size:.77rem;color:var(--t2);  /* v8.5: .67→.77rem (×1.15) */
+  font-family:var(--fd);font-size:.67rem;color:var(--t2);
   letter-spacing:.03em;white-space:nowrap;
   overflow:hidden;text-overflow:ellipsis;line-height:1.3;
 }
+
+/* v8.6: Gender middle tier — compact, muted, centered vertically */
+.s-gender-mid{
+  font-family:var(--fm);font-size:.64rem;
+  color:var(--t2);
+  letter-spacing:.04em;
+  line-height:1;
+  white-space:nowrap;
+  flex-shrink:0;
+}
+/* Colour-code by gender for quick visual scan */
+.s-gender-mid.g-male  {color:#60b8ff}   /* 男 — soft blue  */
+.s-gender-mid.g-female{color:#ff8fa8}   /* 女 — soft rose  */
+
 .s-name{
-  font-family:var(--fj);font-size:1.47rem;font-weight:700;  /* v8.5: 1.05→1.47rem (×1.4) */
+  font-family:var(--fj);font-size:1.155rem; /* v8.6: 1.05 × 1.1 = 1.155rem */
+  font-weight:700;
   color:var(--t0);line-height:1.1;
   word-break:break-all;
   overflow:hidden;
@@ -1230,39 +1284,39 @@ body.edit-mode .hcb-dist-row{
   display:flex;flex-direction:column;
   justify-content:space-between;
   align-items:flex-end;
-  padding:5px 8px 5px 5px;             /* v8.5: tighter vertical padding */
-  min-width:66px;                       /* slightly wider for larger numerics */
+  padding:5px 8px 5px 5px;           /* v8.6: 7px → 5px top/bot for compactness */
+  min-width:60px;                       /* prevents collapse on narrow cards */
 }
 
 /* PRP — top of right column */
 .s-prp-wrap{display:flex;align-items:baseline;gap:1px;flex-shrink:0}
 .s-prp-val{
-  font-family:var(--fd);font-size:.85rem;font-weight:700;  /* v8.5: .74→.85rem (×1.15) */
+  font-family:var(--fd);font-size:.74rem;font-weight:700;
   color:var(--yw);white-space:nowrap;line-height:1.2;
 }
 .s-prp-unit{
-  font-family:var(--fm);font-size:.57rem;color:var(--yw);  /* v8.5: .50→.57rem (×1.15) */
+  font-family:var(--fm);font-size:.50rem;color:var(--yw);
   margin-left:2px;opacity:.75;
 }
 
 /* Overall Power — middle of right column, blue numeric ONLY, no label */
 .s-ov-val{
-  font-family:var(--fd);font-size:1.40rem;font-weight:700;  /* v8.5: 1.22→1.40rem (×1.15) */
+  font-family:var(--fd);font-size:1.22rem;font-weight:700;
   color:var(--ac);white-space:nowrap;line-height:1.1;
   letter-spacing:.01em;
   /* label is rendered in JS but hidden here — .s-ov-lbl display:none */
 }
-/* v8.5: 総合力 label hidden on card — label still exists in profile sidebar */
+/* v8.4: 総合力 label hidden on card — label still exists in profile sidebar */
 .s-ov-lbl{display:none}
 
 /* PP — bottom of right column */
 .s-pp-wrap{display:flex;align-items:baseline;gap:0;flex-shrink:0}
 .s-pp-val{
-  font-family:var(--fd);font-size:1.04rem;font-weight:700;  /* v8.5: .90→1.04rem (×1.15) */
+  font-family:var(--fd);font-size:.90rem;font-weight:700;
   white-space:nowrap;line-height:1.1;
 }
 .s-pp-unit{
-  font-family:var(--fm);font-size:.57rem;  /* v8.5: .50→.57rem (×1.15) */
+  font-family:var(--fm);font-size:.50rem;
   margin-left:2px;opacity:.72;color:#fff;
 }
 
@@ -1619,9 +1673,8 @@ body.edit-mode .hcb-dist-row{
 }
 
 /* ── Unified issuance row ─────────────────────────────────────
-   v8.5: Single horizontal line:
-   [Target ID] | [PP/月] | [支払 btn] | [受取 btn]
-   Role dropdown removed. Two independent action buttons.          */
+   Single horizontal line:
+   [Target ID] | [PP/月] | [支払/受取 select] | [+ 発行 btn]    */
 .ctr-issue-row{
   display:flex;gap:5px;align-items:stretch;
 }
@@ -1630,28 +1683,40 @@ body.edit-mode .hcb-dist-row{
 }
 .ctr-id-inp{flex:2;min-width:0}
 .ctr-amt-inp{flex:1;min-width:0}
-/* v8.5: role dropdown removed — .ctr-role-sel kept as stub */
 .ctr-role-sel{
-  display:none;  /* v8.5: hidden — replaced by two action buttons */
+  flex:0 0 auto;
+  background:var(--s2);border:1px solid var(--bd);
+  color:var(--t0);font-family:var(--fm);font-size:.69rem;
+  padding:2px 5px;height:28px;box-sizing:border-box;
+  cursor:pointer;
+  transition:border-color var(--tr);
 }
-/* v8.5: generic issue button base — used for both pay and receive */
+.ctr-role-sel:focus{outline:none;border-color:var(--acd)}
 .ctr-issue-btn{
   flex:0 0 auto;
   font-family:var(--fd);font-size:.65rem;letter-spacing:.06em;
   padding:3px 10px;height:28px;box-sizing:border-box;
+  background:var(--acd);border:1px solid var(--ac);color:var(--ac);
   cursor:pointer;white-space:nowrap;
   transition:background var(--tr),box-shadow var(--tr);
 }
-/* Pay button — cyan accent (outgoing money) */
+.ctr-issue-btn:hover{background:var(--acg);box-shadow:0 0 8px var(--acg)}
+
+/* v8.5/v8.6: Distinct Pay (SEND) and Receive (RECV) buttons */
 .ctr-issue-btn.ctr-pay-btn{
-  background:var(--acd);border:1px solid var(--ac);color:var(--ac);
+  background:rgba(0,200,255,.10);
+  border-color:var(--ac);color:var(--ac);
+  line-height:1.15;padding:3px 9px;height:auto;min-height:28px;
+  text-align:center;
 }
 .ctr-issue-btn.ctr-pay-btn:hover{background:var(--acg);box-shadow:0 0 8px var(--acg)}
-/* Receive button — green accent (incoming money) */
 .ctr-issue-btn.ctr-recv-btn{
-  background:rgba(0,255,136,.10);border:1px solid var(--gn);color:var(--gn);
+  background:rgba(0,255,136,.10);
+  border-color:var(--gn);color:var(--gn);
+  line-height:1.15;padding:3px 9px;height:auto;min-height:28px;
+  text-align:center;
 }
-.ctr-issue-btn.ctr-recv-btn:hover{background:rgba(0,255,136,.18);box-shadow:0 0 8px rgba(0,255,136,.25)}
+.ctr-issue-btn.ctr-recv-btn:hover{background:rgba(0,255,136,.18);box-shadow:0 0 8px rgba(0,255,136,.2)}
 
 /* ── Contract list ───────────────────────────────────────────── */
 .ctr-list{display:flex;flex-direction:column;gap:3px;margin-top:4px}
@@ -2142,22 +2207,22 @@ body.edit-mode .hcb-dist-row{
 .trait-cat-block.tc-skill     .trait-chip.selected{background:rgba(255,136,0,.12);border-color:var(--or);color:var(--or)}
 .trait-cat-block.tc-sensory   .trait-chip.selected{background:rgba(0,200,255,.12);border-color:var(--ac);color:var(--ac)}
 
-/* ── v8.1: CUSTOM TRAIT CATEGORY ─────────────────────────────
-   tc-custom: neutral silver/dim aesthetic — sits after all
-   colour-coded categories. Used for user-created フリー特性.
-   Auto-sorts to the END of trait lists in display.
+/* ── v8.6: その他 (カスタム) CATEGORY — Light Gray theme ─────────
+   All tc-custom surfaces: accordion header label, chips (default,
+   hover, selected), and profile display tag.
+   Gray palette: border #9aabb8, text #b8c8d4, bg rgba(155,170,185,…)
 ────────────────────────────────────────────────────────────── */
-.trait-cat-block.tc-custom .trait-cat-lbl{color:var(--t1)}
+.trait-cat-block.tc-custom .trait-cat-lbl{color:#a8bcc8}
 .trait-cat-block.tc-custom .trait-chip.selected{
-  background:rgba(180,200,220,.12);
-  border-color:var(--t1);
-  color:var(--t0);
+  background:rgba(155,170,185,.18);
+  border-color:#9aabb8;
+  color:#c8d8e4;
 }
-/* Custom trait tag in profile display — neutral silver */
+/* Custom trait tag in profile display — light gray */
 .trait-tag.tc-custom{
-  border-color:var(--t2);
-  color:var(--t1);
-  background:rgba(116,152,178,.09);
+  border-color:#9aabb8;
+  color:#b0c4d0;
+  background:rgba(155,170,185,.11);
 }
 
 /* ── Custom trait input row ─────────────────────────────────
@@ -2196,18 +2261,19 @@ body.edit-mode .hcb-dist-row{
 }
 
 /* Chip for a custom (user-created) trait in the selection accordion */
+/* v8.6: light gray palette for その他 category chips */
 .trait-chip.tc-custom-chip{
-  border-color:var(--t2);
-  color:var(--t1);
-  background:var(--s2);
+  border-color:#8a9fae;
+  color:#a8bcc8;
+  background:rgba(138,159,174,.10);
 }
 .trait-chip.tc-custom-chip:hover{
-  border-color:var(--t0);color:var(--t0);background:var(--s4);
+  border-color:#b8cdd8;color:#d0e0ea;background:rgba(155,175,190,.18);
 }
 .trait-chip.tc-custom-chip.selected{
-  background:rgba(180,200,220,.13);
-  border-color:var(--t1);
-  color:var(--t0);
+  background:rgba(155,170,185,.20);
+  border-color:#9aabb8;
+  color:#c8d8e4;
 }
 /* Small × delete button on dynamic custom chips */
 .trait-chip-del{
@@ -2325,6 +2391,10 @@ body.mobile-mode .mini-rank{font-size:.84rem}
   }
   .sl-act-empty{display:none}
   .sl-slot{min-height:88px;padding:8px 9px 7px}
+  /* v8.6: compact login on small screens */
+  .sl-login-lbl{display:none}
+  .sl-login-btn{padding:4px 8px}
+  .sl-user-name{max-width:90px}
 }
 body.mobile-mode #sl-overlay{padding:10px 8px}
 body.mobile-mode #sl-box{
@@ -2340,6 +2410,9 @@ body.mobile-mode #sl-controls{
 }
 body.mobile-mode .sl-act-empty{display:none}
 body.mobile-mode .sl-slot{min-height:88px;padding:8px 9px 7px}
+body.mobile-mode .sl-login-lbl{display:none}
+body.mobile-mode .sl-login-btn{padding:4px 8px}
+body.mobile-mode .sl-user-name{max-width:90px}
 
 /* ── Standard modal mobile ───────────────────────────────────── */
 @media(max-width:768px){
@@ -2420,31 +2493,33 @@ body.mobile-mode #gear-btn{width:30px;height:30px;font-size:1rem}
 }
 
 /* ═══════════════════════════════════════════════════════════════
-   v8.5 MOBILE ADJUSTMENTS — scaled s-card + contract accordion
+   v8.4 MOBILE ADJUSTMENTS — 2-col s-card + contract accordion
 ═══════════════════════════════════════════════════════════════ */
 
 /* On small viewports shrink right-column numerics to keep card compact */
 @media(max-width:560px){
-  .s-ov-val{font-size:1.15rem}
-  .s-name{font-size:1.05rem}
-  .s-pp-val{font-size:.90rem}
-  .s-prp-val{font-size:.76rem}
-  .s-sid{font-size:.69rem}
-  .s-col-right{min-width:56px;padding:5px 6px 5px 4px}
+  .s-ov-val{font-size:1.00rem}
+  .s-name{font-size:.99rem}          /* v8.6: 1.155rem × ~.855 mobile scale */
+  .s-pp-val{font-size:.78rem}
+  .s-prp-val{font-size:.66rem}
+  .s-sid{font-size:.60rem}
+  .s-gender-mid{font-size:.58rem}
+  .s-col-right{min-width:52px;padding:4px 6px 4px 4px}
+  .s-col-left{padding:4px 5px 4px 8px}
 }
-body.mobile-mode .s-ov-val{font-size:1.15rem}
-body.mobile-mode .s-name{font-size:1.05rem}
-body.mobile-mode .s-pp-val{font-size:.90rem}
-body.mobile-mode .s-prp-val{font-size:.76rem}
-body.mobile-mode .s-sid{font-size:.69rem}
-body.mobile-mode .s-col-right{min-width:56px;padding:5px 6px 5px 4px}
+body.mobile-mode .s-ov-val{font-size:1.00rem}
+body.mobile-mode .s-name{font-size:.99rem}
+body.mobile-mode .s-pp-val{font-size:.78rem}
+body.mobile-mode .s-prp-val{font-size:.66rem}
+body.mobile-mode .s-sid{font-size:.60rem}
+body.mobile-mode .s-gender-mid{font-size:.58rem}
+body.mobile-mode .s-col-right{min-width:52px;padding:4px 6px 4px 4px}
+body.mobile-mode .s-col-left{padding:4px 5px 4px 8px}
 
 /* Contract issuance row wraps on very narrow screens */
 @media(max-width:480px){
   .ctr-issue-row{flex-wrap:wrap}
   .ctr-id-inp{flex:1 1 100%}
-  .ctr-issue-btn{flex:1}
 }
 body.mobile-mode .ctr-issue-row{flex-wrap:wrap}
 body.mobile-mode .ctr-id-inp{flex:1 1 100%}
-body.mobile-mode .ctr-issue-btn{flex:1}

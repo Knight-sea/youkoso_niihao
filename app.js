@@ -1,26 +1,24 @@
 /* ================================================================
-   Cote-OS v8.5  ·  app.js  "Visual Overhaul + Contract Refinement"
+   Cote-OS v8.6  ·  app.js  "Cloud Link & Detailed Identity"
    ─────────────────────────────────────────────────────────────────
-   Changes vs v8.4:
-   • APP_VER → '8.5'
-   • renderCards — text scaled ×1.15; s-name ×1.4; compact padding;
-     NO top-border accent (border-top-color inline style removed).
-     Unified HTML structure (s-card-inner / s-col-left / s-col-right)
-     used for Current Students, Graduates, and Incoming pages.
-   • buildContractAccordion:
-     - Issue panel: replaced [role select] + [＋発行] with two
-       independent buttons [支払 (SEND)] and [受取 (RECV)].
-       Badge counter removed from issue header.
-     - Confirm panel: balance HTML now shows only
-       "月毎の変化: ±X PP" — formula hidden.
-     - Delete button (✕) now works for RECV contracts too
-       (bidirectional deletion: rmContract handles both directions).
-   • addContract(sid, role) — now takes explicit role parameter
-     ('pay'|'recv') so each button calls directly with its role.
-   • rmContract — extended to handle both SEND (on s) and RECV
-     (on the other party's contracts array).
-   • Profile nav bug fix: navigateReplace used throughout contract
-     actions to prevent stack growth.
+   Changes vs v8.5:
+   • APP_VER → '8.6'
+   • renderCards — LEFT COLUMN is now 3-tier:
+       ID (top) / Gender (.s-gender-mid) / Name (bottom).
+     Gender badge coloured: g-male (blue) or g-female (rose).
+   • renderGraduates / renderIncoming — rebuilt to use the same
+     unified s-card-inner / s-col-left / s-col-right structure
+     as renderCards. Full visual consistency across all pages.
+   • Firebase Cloud Save/Load:
+       initFirebase()         — wires onAuthStateChanged;
+       syncLoginUI(user)      — updates modal header login state;
+       saveToCloud(slot,data) — mirrors slot to Firestore;
+       loadFromCloud(slot)    — reads slot from Firestore;
+       bindFirebaseControls() — Login/Logout button event hooks.
+   • saveState — when logged in, mirrors save to Firestore.
+   • All v8.5 systems preserved: 1-click contract buttons,
+     bidirectional deletion, navigateReplace nav-stack safety,
+     class-based stat bounds, mobile mode, custom traits, etc.
    ================================================================ */
 'use strict';
 
@@ -108,7 +106,7 @@ const contractAccCollapsedState = new Map([['issue',false],['confirm',false]]);
 const HISTORY_MAX = 120;
 const NUM_SLOTS   = 12;
 const TOP_N       = 100;
-const APP_VER     = '8.5';
+const APP_VER     = '8.6';
 const THEME_KEY   = 'CoteOS_theme';
 const SLOT_META_KEY = 'CoteOS_v7_SlotMeta';
 const BGM_KEY       = 'CoteOS_v7_BGM';
@@ -1012,6 +1010,8 @@ function saveState(silent=false,targetSlot=currentSlot,forcedName=''){
     if(slot===currentSlot) state.slotName=slotName;
     updateSlotButtons();
     if(slModalOpen) renderSaveLoadModal();
+    /* v8.6: mirror to Firestore when user is logged in */
+    saveToCloud(slot, payload);
     if(!silent) toast(`✓ スロット${slot}にセーブしました`,'ok');
     return true;
   }catch(e){
@@ -2243,20 +2243,15 @@ const RANK_ACCENT = {
   4:'var(--t3)',          /* E — muted  */
 };
 
-/* ── v8.5: s-card renderer — clean 2-column layout
-   ┌─────────────────────┬──────────────┐  ← NO top-border accent (removed)
-   │  .s-col-left        │ .s-col-right │
-   │  ID    (top)        │  PRP  (top)  │
-   │                     │  OV   (mid)  │  ← blue value only, no label
-   │  Name  (bot)        │  PP   (bot)  │
-   └─────────────────────┴──────────────┘
-   No center column. No 総合力 label. Space defines the sections.
-   Right col uses CSS space-between to vertically distribute 3 items.
-   PRP slot always rendered (dash placeholder when protectPoints===0)
-   so the three-tier stack stays evenly spaced regardless of PRP.
-   v8.5: text scaled ×1.15 (via CSS). s-name ×1.4 (via CSS).
-   v8.5: border-top-color inline style removed — no rank accent border.
-   v8.5: unified structure used for Current/Incoming/Graduates cards. */
+/* ── v8.6: s-card renderer — 3-tier LEFT column layout
+   ┌────────────────────────┬──────────────┐
+   │  .s-col-left           │ .s-col-right │
+   │  ID      (top)         │  PRP  (top)  │
+   │  Gender  (.s-gender-mid│  OV   (mid)  │  ← blue value only
+   │  Name    (bot)         │  PP   (bot)  │
+   └────────────────────────┴──────────────┘
+   Gender middle tier uses .g-male (blue) / .g-female (rose).
+   Right col unchanged from v8.5 (PRP / OV / PP space-between). */
 function renderCards(students,{draggable=false}={}){
   if(!students.length)
     return `<div class="dim" style="grid-column:1/-1;padding:8px;font-size:.7rem">生徒なし</div>`;
@@ -2265,6 +2260,9 @@ function renderCards(students,{draggable=false}={}){
     const sel    = selectedIds.has(s.id);
     const hasPrp = s.protectPoints>0;
     const ov     = calcOverallScore(s,pool);
+    const isMale = s.gender==='M';
+    const gLbl   = isMale ? JP.male : JP.female;
+    const gCls   = isMale ? 'g-male' : 'g-female';
     return `
       <div class="s-card ${s.isExpelled?'expelled':''} ${sel?'selected':''}"
            data-name="${escA((s.name||'').toLowerCase())}"
@@ -2273,9 +2271,10 @@ function renderCards(students,{draggable=false}={}){
            onclick="cardClick('${s.id}')">
         <div class="s-chk">${sel?'✓':''}</div>
         <div class="s-card-inner">
-          <!-- Left: ID (top) + Name (bottom) -->
+          <!-- Left: ID (top) / Gender (mid) / Name (bot) -->
           <div class="s-col-left">
             <span class="s-sid">${s.id}</span>
+            <span class="s-gender-mid ${gCls}">${gLbl}</span>
             <div class="s-name">${esc(s.name)||'<span class="dim">(未記入)</span>'}</div>
           </div>
           <!-- Right: PRP (top) / Overall Power (mid) / PP (bot) -->
@@ -3404,16 +3403,20 @@ function renderGraduates(){
       const hasPrp=s.protectPoints>0;
       const pool=getSchoolRankingPool();
       const ov=calcOverallScore(s,pool);
+      const isMale=(s.gender==='M'); const gLbl=isMale?JP.male:JP.female; const gCls=isMale?'g-male':'g-female';
       h+=`
         <div class="s-card ${s.isExpelled?'expelled':''}"
              data-name="${escA((s.name||'').toLowerCase())}"
              data-sid="${s.id}"
              onclick="navigate('profile',{sid:'${s.id}'},false)">
           <div class="s-card-inner">
+            <!-- Left: ID / Gender / Name — v8.6 3-tier -->
             <div class="s-col-left">
               <span class="s-sid">${s.id}</span>
+              <span class="s-gender-mid ${gCls}">${gLbl}</span>
               <div class="s-name">${esc(s.name)||'<span class="dim">(未記入)</span>'}</div>
             </div>
+            <!-- Right: PRP / OV / PP -->
             <div class="s-col-right">
               <div class="s-prp-wrap">
                 ${hasPrp
@@ -3518,16 +3521,20 @@ function renderIncoming(){
           const hasPrp=s.protectPoints>0;
           const pool=getSchoolRankingPool();
           const ov=calcOverallScore(s,pool);
+          const isMale=(s.gender==='M'); const gLbl=isMale?JP.male:JP.female; const gCls=isMale?'g-male':'g-female';
           h+=`
               <div class="s-card"
                    data-name="${escA((s.name||'').toLowerCase())}"
                    data-sid="${s.id}"
                    onclick="navigate('profile',{sid:'${s.id}'},false)">
                 <div class="s-card-inner">
+                  <!-- Left: ID / Gender / Name — v8.6 3-tier -->
                   <div class="s-col-left">
                     <span class="s-sid">${s.id}</span>
+                    <span class="s-gender-mid ${gCls}">${gLbl}</span>
                     <div class="s-name">${esc(s.name)||'<span class="dim">(未記入)</span>'}</div>
                   </div>
+                  <!-- Right: PRP / OV / PP -->
                   <div class="s-col-right">
                     <div class="s-prp-wrap">
                       ${hasPrp
@@ -3647,6 +3654,147 @@ function afterRender(){
 }
 
 /* ──────────────────────────────────────────────────────────────────
+   FIREBASE CLOUD LINK — v8.6
+   ─────────────────────────────────────────────────────────────────
+   The Firebase SDK (modular v10) is initialised as a <script type="module">
+   in index.html which exposes the following globals via window:
+     fbAuth, fbDb, fbProvider,
+     fbSignIn(), fbSignOut(), fbOnAuthChanged(cb),
+     fbDoc(), fbGetDoc(), fbSetDoc()
+
+   Cote-OS uses Firestore with the following path structure:
+     users/{uid}/slots/{slotN}   — one document per save slot
+     Document fields: { data: <JSON string of state payload> }
+
+   Login is Google OAuth (signInWithPopup).
+   Data flow:
+     • On every saveState() call: saveToCloud() is called silently.
+     • On login: loadAllSlotsFromCloud() mirrors cloud → localStorage
+       for any slot that is empty locally but exists in the cloud.
+     • On logout: no data is erased from localStorage — cloud is a
+       backup mirror, not the primary store.
+────────────────────────────────────────────────────────────────── */
+
+/* Current authenticated user — null when logged out */
+let fbCurrentUser = null;
+
+/* ── syncLoginUI — update save modal header based on auth state ── */
+function syncLoginUI(user){
+  fbCurrentUser = user || null;
+  const loginBtn  = document.getElementById('sl-btn-login');
+  const userInfo  = document.getElementById('sl-user-info');
+  const userName  = document.getElementById('sl-user-name');
+  if(!loginBtn || !userInfo) return;
+  if(user){
+    loginBtn.classList.add('hidden');
+    userInfo.classList.remove('hidden');
+    if(userName) userName.textContent = user.displayName || user.email || 'ユーザー';
+  } else {
+    loginBtn.classList.remove('hidden');
+    userInfo.classList.add('hidden');
+  }
+}
+
+/* ── saveToCloud — silently mirrors a slot to Firestore ──────── */
+async function saveToCloud(slot, payload){
+  if(!fbCurrentUser) return;   /* not logged in — skip silently */
+  const db  = window.fbDb;
+  const docF= window.fbDoc;
+  const setF= window.fbSetDoc;
+  if(!db||!docF||!setF) return;
+  try{
+    const ref = docF(db, 'users', fbCurrentUser.uid, 'slots', `slot${slot}`);
+    await setF(ref, { data: JSON.stringify(payload), savedAt: Date.now() });
+  }catch(e){
+    console.warn('[Cloud] saveToCloud failed:', e);
+  }
+}
+
+/* ── loadFromCloud — read one slot from Firestore ────────────── */
+async function loadFromCloud(slot){
+  if(!fbCurrentUser) return null;
+  const db  = window.fbDb;
+  const docF= window.fbDoc;
+  const getF= window.fbGetDoc;
+  if(!db||!docF||!getF) return null;
+  try{
+    const ref  = docF(db, 'users', fbCurrentUser.uid, 'slots', `slot${slot}`);
+    const snap = await getF(ref);
+    if(!snap.exists()) return null;
+    return JSON.parse(snap.data().data);
+  }catch(e){
+    console.warn('[Cloud] loadFromCloud failed:', e); return null;
+  }
+}
+
+/* ── loadAllSlotsFromCloud — on login, fill empty local slots ─── */
+async function loadAllSlotsFromCloud(){
+  if(!fbCurrentUser) return;
+  let restored=0;
+  for(let n=1;n<=NUM_SLOTS;n++){
+    if(slotHasData(n)) continue;   /* local data takes priority */
+    const cloudData = await loadFromCloud(n);
+    if(!cloudData) continue;
+    try{
+      localStorage.setItem(slotKey(n), JSON.stringify(cloudData));
+      setSlotName(n, cloudData.slotName || defaultSlotName(n));
+      restored++;
+    }catch(_){}
+  }
+  if(restored>0){
+    updateSlotButtons();
+    if(slModalOpen) renderSaveLoadModal();
+    toast(`☁ クラウドから ${restored} スロットを復元しました`,'ok',3500);
+  } else {
+    toast('☁ ログインしました（クラウドデータは最新）','ok',2500);
+  }
+}
+
+/* ── initFirebase — wire onAuthStateChanged listener ─────────── */
+function initFirebase(){
+  const onChanged = window.fbOnAuthChanged;
+  if(typeof onChanged !== 'function'){
+    /* Firebase SDK not yet loaded (e.g. module script still executing) —
+       retry once after a short delay to handle race conditions.         */
+    setTimeout(()=>{
+      if(typeof window.fbOnAuthChanged === 'function')
+        window.fbOnAuthChanged(user=>{ syncLoginUI(user); });
+    }, 800);
+    return;
+  }
+  onChanged(user=>{ syncLoginUI(user); });
+}
+
+/* ── bindFirebaseControls — hook Login/Logout buttons ────────── */
+function bindFirebaseControls(){
+  /* Login button in save modal header */
+  document.getElementById('sl-btn-login')?.addEventListener('click', async ()=>{
+    const signIn = window.fbSignIn;
+    if(typeof signIn !== 'function'){
+      toast('✗ Firebase が初期化されていません','err'); return;
+    }
+    try{
+      const result = await signIn();
+      syncLoginUI(result.user);
+      await loadAllSlotsFromCloud();
+    }catch(e){
+      if(e.code !== 'auth/popup-closed-by-user')
+        toast('✗ ログイン失敗: ' + (e.message||e.code),'err');
+    }
+  });
+
+  /* Logout button */
+  document.getElementById('sl-btn-logout')?.addEventListener('click', async ()=>{
+    const signOut = window.fbSignOut;
+    if(typeof signOut === 'function'){
+      try{ await signOut(); } catch(_){}
+    }
+    syncLoginUI(null);
+    toast('☁ ログアウトしました','warn',2000);
+  });
+}
+
+/* ──────────────────────────────────────────────────────────────────
    EVENT BINDINGS
 ────────────────────────────────────────────────────────────────── */
 function bindEvents(){
@@ -3737,6 +3885,9 @@ function bindEvents(){
   });
   bindSaveLoadModalControls();
 
+  /* v8.6: Firebase Login / Logout button handlers */
+  bindFirebaseControls();
+
   /* Modal close */
   document.getElementById('modal-x')?.addEventListener('click', closeModal);
   document.getElementById('modal-overlay')?.addEventListener('click', e=>{
@@ -3796,6 +3947,8 @@ function finishBoot(){
   /* v8.0: apply mobile-mode class on load and wire resize listener */
   updateMobileMode();
   window.addEventListener('resize', updateMobileMode, {passive:true});
+  /* v8.6: initialise Firebase auth state listener */
+  initFirebase();
   navigate('home',{},true);
 }
 

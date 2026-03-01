@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Cote-OS v8.5</title>
+  <title>Cote-OS v8.6</title>
   <link rel="icon" href="images/favicon.ico" />
   <link rel="preconnect" href="https://fonts.googleapis.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&family=Noto+Sans+JP:wght@300;400;500;700&display=swap" rel="stylesheet" />
@@ -17,7 +17,7 @@
   <!-- LEFT: flex:1 -->
   <div id="tb-left">
     <span id="logo">COTE<span class="ac">OS</span></span>
-    <span id="ver">v8.5</span>
+    <span id="ver">v8.6</span>
     <nav id="breadcrumb" aria-label="パンくずリスト"></nav>
   </div>
 
@@ -90,11 +90,22 @@
   </div>
 </div>
 
-<!-- Save/Load modal -->
+<!-- Save/Load modal — v8.6: header now holds Login button on the right -->
 <div id="sl-overlay" class="hidden" role="dialog" aria-modal="true" aria-labelledby="sl-title">
   <div id="sl-box">
     <div id="sl-header">
       <span id="sl-title">セーブ／ロード</span>
+      <!-- v8.6: Cloud Login button — right side of save modal header -->
+      <button id="sl-btn-login" class="sl-login-btn" title="Googleアカウントでログインしてクラウド同期">
+        <span class="sl-login-icon">☁</span>
+        <span class="sl-login-lbl">ログイン</span>
+      </button>
+      <!-- v8.6: logged-in user display (JS shows/hides) -->
+      <div id="sl-user-info" class="sl-user-info hidden">
+        <span class="sl-user-icon">●</span>
+        <span id="sl-user-name" class="sl-user-name"></span>
+        <button id="sl-btn-logout" class="sl-logout-btn" title="ログアウト">ログアウト</button>
+      </div>
     </div>
 
     <div id="sl-slots" aria-label="データスロット"></div>
@@ -131,9 +142,48 @@
 
 <div id="toast" role="status" aria-live="polite"></div>
 
+<!-- v8.6: Firebase SDK (module) — initialises fbAuth, fbDb, fbProvider on window -->
+<script type="module">
+  import { initializeApp }                    from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+  import { getAuth, GoogleAuthProvider,
+           signInWithPopup, signOut,
+           onAuthStateChanged }               from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+  import { getFirestore,
+           doc, getDoc, setDoc }              from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+
+  const firebaseConfig = {
+    apiKey:            "AIzaSyB2EF19a91VBSpfhg0H_zFSfCsnLX4Ogjs",
+    authDomain:        "cote-os-project.firebaseapp.com",
+    projectId:         "cote-os-project",
+    storageBucket:     "cote-os-project.firebasestorage.app",
+    messagingSenderId: "733486192547",
+    appId:             "1:733486192547:web:d5ba8627a6f56ec09a2c16"
+  };
+
+  const app      = initializeApp(firebaseConfig);
+  const auth     = getAuth(app);
+  const db       = getFirestore(app);
+  const provider = new GoogleAuthProvider();
+
+  /* ── Expose to app.js (non-module) via window ── */
+  window.fbAuth            = auth;
+  window.fbDb              = db;
+  window.fbProvider        = provider;
+  window.fbSignIn          = () => signInWithPopup(auth, provider);
+  window.fbSignOut         = () => signOut(auth);
+  window.fbDoc             = doc;
+  window.fbGetDoc          = getDoc;
+  window.fbSetDoc          = setDoc;
+  window.fbOnAuthChanged   = (cb) => onAuthStateChanged(auth, cb);
+
+  console.log("Firebase v8.6 initialized — Cote-OS Cloud Link ready.");
+</script>
+
 <script src="https://w.soundcloud.com/player/api.js"></script>
 <script src="app.js"></script>
 
-<iframe id="bgm-player" width="100%" height="300" scrolling="no" frameborder="no" allow="autoplay" src="https://w.soundcloud.com/player/?url=https%3A//api.soundcloud.com/tracks/2272461698&color=%23ff5500&auto_play=false&hide_related=false&show_comments=false&show_user=false&show_reposts=false&show_teaser=false&visual=false" style="display: none;"></iframe>
+<iframe id="bgm-player" width="100%" height="300" scrolling="no" frameborder="no" allow="autoplay"
+  src="https://w.soundcloud.com/player/?url=https%3A//api.soundcloud.com/tracks/2272461698&color=%23ff5500&auto_play=false&hide_related=false&show_comments=false&show_user=false&show_reposts=false&show_teaser=false&visual=false"
+  style="display: none;"></iframe>
 </body>
 </html>
