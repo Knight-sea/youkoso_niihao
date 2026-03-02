@@ -1,5 +1,5 @@
 /* ================================================================
-   Cote-OS v8.9  ·  app.js  "Save System Overhaul"
+   Cote-OS v9.0  ·  app.js  "Cloud-First Save"
    ─────────────────────────────────────────────────────────────────
    v8.9 バグ修正 (6件):
    [1] 最重大: proto_bundle.js がブラウザで動作せず圧縮ゼロ問題
@@ -20,6 +20,16 @@
          クラウド復元データを JSON ではなく binary+meta で保存。
    [6] loadSlot() 内で Protobuf を二重デコードするパフォーマンス問題
        → meta sidecar が存在する場合は二回目のデコードをスキップ。
+
+   v9.0 クラウド優先設計への変更:
+   [A] ログイン中はクラウドが唯一の真実 (Source of Truth)。
+       ローカルストレージはキャッシュに過ぎず、ログイン同期で
+       クラウドデータが常にローカルを上書きする。
+   [B] saveState() で _savedAt タイムスタンプをローカル meta にも
+       書き込む (従来は書き込んでいなかったためタイムスタンプ比較が機能しなかった)。
+   [C] onAuthStateChanged でも loadAllSlotsFromCloud() を呼ぶ。
+       ページリロード後の自動再ログイン時も確実にクラウド同期される。
+   [D] ログアウト時の syncLoginUI(null) 二重呼び出しを解消。
    ================================================================ */
 'use strict';
 
@@ -1125,7 +1135,13 @@ function saveState(silent=false,targetSlot=currentSlot,forcedName=''){
   if(slot===0) return false;
   const slotName=(forcedName||state.slotName||slotNameOf(slot)||defaultSlotName(slot)).trim();
   try{
-    const payload={...state, slotName};
+    /* v9.0: _savedAt をローカル meta にも書き込む。
+       タイムスタンプを先に確定させることで saveToCloud() との比較が正しく機能する。 */
+    const ts = Date.now();
+    const payload={...state, slotName, _savedAt: ts};
+
+    /* ログイン中はクラウドが唯一の真実: ローカルにも保存するが、
+       読み込み時はクラウドを優先するため常に saveToCloud() を呼ぶ。 */
     const binary = encodeStateToBinary(payload);
     if(binary){
       localStorage.setItem(slotKey(slot), binary);
@@ -4029,17 +4045,19 @@ function syncLoginUI(user){
   }
 }
 
-/* ── saveToCloud — silently mirrors a slot to Firestore ──────── */
+/* ── saveToCloud — ログイン中のセーブをFirestoreに書き込む ──── */
 async function saveToCloud(slot, payload){
-  if(!fbCurrentUser) return;   /* not logged in — skip silently */
+  if(!fbCurrentUser) return;   /* 未ログイン — スキップ */
   const db  = window.fbDb;
   const docF= window.fbDoc;
   const setF= window.fbSetDoc;
   if(!db||!docF||!setF) return;
   try{
     const ref = docF(db, 'users', fbCurrentUser.uid, 'slots', `slot${slot}`);
-    const ts=Date.now();
-    await setF(ref, { data: JSON.stringify({...payload,_savedAt:ts}), savedAt: ts });
+    /* payload には呼び出し元 (saveState) で既に _savedAt が付いている。
+       Firestore の savedAt フィールドと同じ値を使うことで比較の一貫性を保つ。 */
+    const ts = payload._savedAt || Date.now();
+    await setF(ref, { data: JSON.stringify({...payload, _savedAt: ts}), savedAt: ts });
   }catch(e){
     console.warn('[Cloud] saveToCloud failed:', e);
   }
@@ -4056,84 +4074,109 @@ async function loadFromCloud(slot){
     const ref  = docF(db, 'users', fbCurrentUser.uid, 'slots', `slot${slot}`);
     const snap = await getF(ref);
     if(!snap.exists()) return null;
-    return JSON.parse(snap.data().data);
+    const d = snap.data();
+    const parsed = JSON.parse(d.data);
+    /* savedAt を data 側にも保証 */
+    if(!parsed._savedAt) parsed._savedAt = d.savedAt || 0;
+    return parsed;
   }catch(e){
     console.warn('[Cloud] loadFromCloud failed:', e); return null;
   }
 }
 
-/* ── loadAllSlotsFromCloud — on login, sync cloud → local ─────── */
+/* ── overwriteLocalFromCloud — クラウドデータをローカルに上書き保存 ── */
+function overwriteLocalFromCloud(n, cloudData){
+  try{
+    const binary = encodeStateToBinary(cloudData);
+    if(binary){
+      localStorage.setItem(slotKey(n), binary);
+      localStorage.setItem(slotKey(n)+'_meta', JSON.stringify(cloudData));
+    } else {
+      localStorage.setItem(slotKey(n), JSON.stringify(cloudData));
+    }
+    setSlotName(n, cloudData.slotName || defaultSlotName(n));
+  }catch(_){}
+}
+
+/* ── loadAllSlotsFromCloud — ログイン時にクラウドを唯一の真実として同期 ──
+   v9.0 設計変更:
+   ログイン中はクラウドが唯一の正規データソース。
+   「ローカルの方が新しくてもクラウドを優先」する。
+   （同一アカウントでどの端末からアクセスしても常に同じデータが見える）     */
 async function loadAllSlotsFromCloud(){
-  /* v8.9 fix[5]: savedAt タイムスタンプを比較してクラウドが新しければ上書き。
-     従来はローカルデータが存在するだけでクラウドを無視していた。
-     同一アカウントで複数端末を使う場合に最新データが正しく反映される。  */
   if(!fbCurrentUser) return;
-  let restored=0;
+  let synced=0;
   const db=window.fbDb, docF=window.fbDoc, getF=window.fbGetDoc;
   if(!db||!docF||!getF) return;
+
+  toast('☁ クラウドデータを同期中…','ok',2000);
+
   for(let n=1;n<=NUM_SLOTS;n++){
-    let cloudData=null, cloudSavedAt=0;
+    let cloudData=null;
     try{
       const ref=docF(db,'users',fbCurrentUser.uid,'slots',`slot${n}`);
       const snap=await getF(ref);
-      if(!snap.exists()) continue;
+      if(!snap.exists()){
+        /* クラウドにデータなし → ローカルのデータも削除してクラウドと一致させる */
+        if(slotHasData(n)){
+          localStorage.removeItem(slotKey(n));
+          localStorage.removeItem(slotKey(n)+'_meta');
+          const meta=loadSlotMeta(); meta[n]=defaultSlotName(n); saveSlotMeta(meta);
+          synced++;
+        }
+        continue;
+      }
       const d=snap.data();
-      cloudSavedAt=d.savedAt||0;
       cloudData=JSON.parse(d.data);
+      if(!cloudData._savedAt) cloudData._savedAt = d.savedAt||0;
     }catch(_){ continue; }
     if(!cloudData) continue;
 
-    /* ローカルの savedAt を meta から取得して比較 */
-    let localSavedAt=0;
-    if(slotHasData(n)){
-      try{
-        const metaRaw=localStorage.getItem(slotKey(n)+'_meta');
-        if(metaRaw){ const m=JSON.parse(metaRaw); localSavedAt=m._savedAt||0; }
-      }catch(_){}
-      /* クラウドが古いかローカルの方が新しければスキップ */
-      if(cloudSavedAt<=localSavedAt) continue;
-    }
-
-    try{
-      /* v8.9 fix[5]: binary+meta で保存 (従来は平文 JSON だった) */
-      const binary=encodeStateToBinary(cloudData);
-      if(binary){
-        localStorage.setItem(slotKey(n), binary);
-        localStorage.setItem(slotKey(n)+'_meta', JSON.stringify({...cloudData, _savedAt:cloudSavedAt}));
-      } else {
-        localStorage.setItem(slotKey(n), JSON.stringify(cloudData));
-      }
-      setSlotName(n, cloudData.slotName||defaultSlotName(n));
-      restored++;
-    }catch(_){}
+    /* クラウドデータでローカルを無条件上書き */
+    overwriteLocalFromCloud(n, cloudData);
+    synced++;
   }
-  if(restored>0){
-    updateSlotButtons();
-    if(slModalOpen) renderSaveLoadModal();
-    toast(`☁ クラウドから ${restored} スロットを同期しました`,'ok',3500);
+
+  updateSlotButtons();
+  if(slModalOpen) renderSaveLoadModal();
+
+  /* 現在プレイ中のスロットがクラウドデータで更新された場合はリロード */
+  if(!isGuestMode && currentSlot>0 && slotHasData(currentSlot)){
+    loadSlot(currentSlot);
+    updateDateDisplay();
+    navigate('home',{},true);
+    toast(`☁ クラウドデータをロードしました (スロット${currentSlot})`,'ok',3500);
   } else {
-    toast('☁ ログインしました（ローカルデータは最新）','ok',2500);
+    toast('☁ クラウドと同期しました','ok',2500);
   }
 }
 
-/* ── initFirebase — wire onAuthStateChanged listener ─────────── */
+/* ── initFirebase — onAuthStateChanged リスナーを登録 ─────────── */
 function initFirebase(){
+  const register = (onChanged)=>{
+    onChanged(async user=>{
+      syncLoginUI(user);
+      /* v9.0: ログイン状態が変化するたびにクラウド同期を実行。
+         ページリロード後の自動再ログインでも確実に同期される。 */
+      if(user) await loadAllSlotsFromCloud();
+    });
+  };
+
   const onChanged = window.fbOnAuthChanged;
   if(typeof onChanged !== 'function'){
-    /* Firebase SDK not yet loaded (e.g. module script still executing) —
-       retry once after a short delay to handle race conditions.         */
+    /* Firebase SDK がまだ読み込まれていない場合: 少し待ってリトライ */
     setTimeout(()=>{
       if(typeof window.fbOnAuthChanged === 'function')
-        window.fbOnAuthChanged(user=>{ syncLoginUI(user); });
+        register(window.fbOnAuthChanged);
     }, 800);
     return;
   }
-  onChanged(user=>{ syncLoginUI(user); });
+  register(onChanged);
 }
 
-/* ── bindFirebaseControls — hook Login/Logout buttons ────────── */
+/* ── bindFirebaseControls — ログイン/ログアウトボタンを紐付け ─── */
 function bindFirebaseControls(){
-  /* Login button in save modal header */
+  /* ログインボタン */
   document.getElementById('sl-btn-login')?.addEventListener('click', async ()=>{
     const signIn = window.fbSignIn;
     if(typeof signIn !== 'function'){
@@ -4141,6 +4184,8 @@ function bindFirebaseControls(){
     }
     try{
       const result = await signIn();
+      /* onAuthStateChanged も発火するが、ポップアップログインは
+         コールバックが遅延する場合があるため、ここでも明示的に同期する。 */
       syncLoginUI(result.user);
       await loadAllSlotsFromCloud();
     }catch(e){
@@ -4149,13 +4194,14 @@ function bindFirebaseControls(){
     }
   });
 
-  /* Logout button */
+  /* ログアウトボタン */
   document.getElementById('sl-btn-logout')?.addEventListener('click', async ()=>{
     const signOut = window.fbSignOut;
     if(typeof signOut === 'function'){
       try{ await signOut(); } catch(_){}
     }
-    syncLoginUI(null);
+    /* onAuthStateChanged が null で発火し syncLoginUI(null) が呼ばれる。
+       ここでは二重呼び出しを避けるため UI 更新は onAuthStateChanged に任せる。 */
     toast('☁ ログアウトしました','warn',2000);
   });
 }
