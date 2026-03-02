@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Cote-OS v8.7</title>
+  <title>Cote-OS v8.9</title>
   <link rel="icon" href="images/favicon.ico" />
   <link rel="preconnect" href="https://fonts.googleapis.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&family=Noto+Sans+JP:wght@300;400;500;700&display=swap" rel="stylesheet" />
@@ -17,7 +17,7 @@
   <!-- 左: flex:1 -->
   <div id="tb-left">
     <span id="logo">COTE<span class="ac">OS</span></span>
-    <span id="ver">v8.7</span>
+    <span id="ver">v8.9</span>
     <nav id="breadcrumb" aria-label="パンくずリスト"></nav>
   </div>
 
@@ -179,8 +179,95 @@
   console.log("Firebase v8.7 initialized — Cote-OS Cloud Link ready.");
 </script>
 
-<!-- v8.7: protobufjs — データシリアライゼーション用 -->
+<!-- v8.9: protobufjs ランタイム -->
 <script src="https://cdn.jsdelivr.net/npm/protobufjs@7.2.5/dist/protobuf.min.js"></script>
+<!-- v8.9: GameSave スキーマをインライン定義 (proto_bundle.js は CommonJS 形式でブラウザ非対応のため)
+     protobuf.min.js が window.$protobuf を定義した後にこのブロックが実行される。            -->
+<script>
+(function(){
+  'use strict';
+  if(typeof window.$protobuf==='undefined'){ console.error('[Cote-OS] protobufjs not loaded'); return; }
+  var pb=$protobuf, R=pb.Reader, W=pb.Writer, U=pb.util;
+  var $r=pb.roots['default']||( pb.roots['default']={} );
+
+  /* ── Stats (field 1〜8: hp,mp,str,vit,dex,agi,int,luk) ── */
+  $r.Stats=(function(){
+    function S(p){if(p)for(var k=Object.keys(p),i=0;i<k.length;++i)if(p[k[i]]!=null)this[k[i]]=p[k[i]];}
+    S.prototype.hp=0;S.prototype.mp=0;S.prototype.str=0;S.prototype.vit=0;
+    S.prototype.dex=0;S.prototype.agi=0;S.prototype.int=0;S.prototype.luk=0;
+    S.create=function(p){return new S(p);};
+    S.encode=function(m,w){w=w||W.create();
+      if(m.hp)  w.uint32(8).int32(m.hp);
+      if(m.mp)  w.uint32(16).int32(m.mp);
+      if(m.str) w.uint32(24).int32(m.str);
+      if(m.vit) w.uint32(32).int32(m.vit);
+      if(m.dex) w.uint32(40).int32(m.dex);
+      if(m.agi) w.uint32(48).int32(m.agi);
+      if(m.int) w.uint32(56).int32(m.int);
+      if(m.luk) w.uint32(64).int32(m.luk);
+      return w;};
+    S.decode=function(r,l){r=r instanceof R?r:new R(r);
+      var e=l==null?r.len:r.pos+l,m=new S();
+      while(r.pos<e){var t=r.uint32();switch(t>>>3){
+        case 1:m.hp=r.int32();break; case 2:m.mp=r.int32();break;
+        case 3:m.str=r.int32();break; case 4:m.vit=r.int32();break;
+        case 5:m.dex=r.int32();break; case 6:m.agi=r.int32();break;
+        case 7:m.int=r.int32();break; case 8:m.luk=r.int32();break;
+        default:r.skipType(t&7);}} return m;};
+    return S;
+  })();
+
+  /* ── Student (fields 1〜8) ── */
+  $r.Student=(function(){
+    function St(p){this.traits=[];if(p)for(var k=Object.keys(p),i=0;i<k.length;++i)if(p[k[i]]!=null)this[k[i]]=p[k[i]];}
+    St.prototype.id='';St.prototype.lastName='';St.prototype.firstName='';
+    St.prototype.gender='';St.prototype.grade=0;St.prototype.classId=0;
+    St.prototype.stats=null;St.prototype.traits=U.emptyArray;
+    St.create=function(p){return new St(p);};
+    St.encode=function(m,w){w=w||W.create();
+      if(m.id)        w.uint32(10).string(m.id);
+      if(m.lastName)  w.uint32(18).string(m.lastName);
+      if(m.firstName) w.uint32(26).string(m.firstName);
+      if(m.gender)    w.uint32(34).string(m.gender);
+      if(m.grade)     w.uint32(40).int32(m.grade);
+      if(m.classId)   w.uint32(48).int32(m.classId);
+      if(m.stats)     $r.Stats.encode(m.stats,w.uint32(58).fork()).ldelim();
+      if(m.traits&&m.traits.length)for(var i=0;i<m.traits.length;++i)w.uint32(66).string(m.traits[i]);
+      return w;};
+    St.decode=function(r,l){r=r instanceof R?r:new R(r);
+      var e=l==null?r.len:r.pos+l,m=new St();
+      while(r.pos<e){var t=r.uint32();switch(t>>>3){
+        case 1:m.id=r.string();break; case 2:m.lastName=r.string();break;
+        case 3:m.firstName=r.string();break; case 4:m.gender=r.string();break;
+        case 5:m.grade=r.int32();break; case 6:m.classId=r.int32();break;
+        case 7:m.stats=$r.Stats.decode(r,r.uint32());break;
+        case 8:if(!m.traits||!m.traits.length)m.traits=[];m.traits.push(r.string());break;
+        default:r.skipType(t&7);}} return m;};
+    return St;
+  })();
+
+  /* ── GameSave (fields 1〜3) ── */
+  $r.GameSave=(function(){
+    function G(p){this.students=[];if(p)for(var k=Object.keys(p),i=0;i<k.length;++i)if(p[k[i]]!=null)this[k[i]]=p[k[i]];}
+    G.prototype.version=0;G.prototype.timestamp=0;G.prototype.students=U.emptyArray;
+    G.create=function(p){return new G(p);};
+    G.encode=function(m,w){w=w||W.create();
+      if(m.version)   w.uint32(13).float(m.version);
+      if(m.timestamp) w.uint32(16).int64(m.timestamp);
+      if(m.students&&m.students.length)for(var i=0;i<m.students.length;++i)$r.Student.encode(m.students[i],w.uint32(26).fork()).ldelim();
+      return w;};
+    G.decode=function(r,l){r=r instanceof R?r:new R(r);
+      var e=l==null?r.len:r.pos+l,m=new G();
+      while(r.pos<e){var t=r.uint32();switch(t>>>3){
+        case 1:m.version=r.float();break; case 2:m.timestamp=r.int64();break;
+        case 3:if(!m.students||!m.students.length)m.students=[];m.students.push($r.Student.decode(r,r.uint32()));break;
+        default:r.skipType(t&7);}} return m;};
+    return G;
+  })();
+
+  console.log('[Cote-OS v8.9] Protobuf GameSave schema OK — compression active');
+})();
+</script>
 
 <script src="https://w.soundcloud.com/player/api.js"></script>
 <script src="app.js"></script>

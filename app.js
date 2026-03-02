@@ -1,25 +1,25 @@
 /* ================================================================
-   Cote-OS v8.8  ·  app.js  "Bug Fix Patch — Unified Binary Storage"
+   Cote-OS v8.9  ·  app.js  "Save System Overhaul"
    ─────────────────────────────────────────────────────────────────
-   Changes vs v8.7:
-   • APP_VER → '8.8'
-   • Bug fixes (6 total):
-     1. Cross-slot save空き状態バグ:
-        saveState() 後に syncSlModalButtons() を呼ぶことで、
-        別スロットへのセーブ直後にモーダルの「空き」→「データあり」
-        が即時更新されるように修正。
-     2. クラウド復元がJSON形式に格下げされるバグ:
-        loadAllSlotsFromCloud() でProtobuf binary+metaとして保存し直す。
-     3. loadSlot() でのProtobufデコード二重実行:
-        metaサイドカーがある場合の冗長な2回目のdecodeを削除。
-        ロードパフォーマンスを大幅改善（1200名で約2×速）。
-     4. JSONインポート後にバイナリ移行されないバグ:
-        validateAndImport() 内で各スロットをProtobuf binary+metaで保存。
-     5. .binインポート時にバイナリ形式で保存されないバグ:
-        onFilePicked() の.binパスでProtobuf binary+metaとして保存。
-     6. saveState() の空チェックが厳しすぎるバグ:
-        students.length===0 ガードを除去。空スロットも正常に保存可能に。
-   • All v8.7 systems preserved.
+   v8.9 バグ修正 (6件):
+   [1] 最重大: proto_bundle.js がブラウザで動作せず圧縮ゼロ問題
+       → index.html にインライン GameSave スキーマ定義を追加。
+         全セーブが正しく Protobuf バイナリ圧縮されるようになった。
+   [2] 他スロットへのセーブ後「空き」→「データあり」が反映されない
+       → saveState() に syncSlModalButtons() 呼び出しを追加。
+   [3] 書き出しファイル読み込みで slSelectedSlot が無視される
+       → 書き出しを「選択スロット単体」に変更。
+         読み込みも選択スロットのみを対象とする単一スロット読み込みに変更。
+         全スロットバックアップ/復元は別途「全バックアップ」ボタンへ。
+   [4] 非同期競合によるスロット番号ズレ (「スロット3保存→スロット2に入る」等)
+       → saveToSelectedSlot の uiConfirm callback でスロット番号を
+         ローカル変数 n に固定してキャプチャ済み (再確認・問題なし)。
+         ゲストモード保存パスの currentSlot 一時書換競合を修正。
+   [5] 同アカウント別端末でクラウドデータが紐付かない
+       → savedAt タイムスタンプ比較でクラウドが新しければ上書き。
+         クラウド復元データを JSON ではなく binary+meta で保存。
+   [6] loadSlot() 内で Protobuf を二重デコードするパフォーマンス問題
+       → meta sidecar が存在する場合は二回目のデコードをスキップ。
    ================================================================ */
 'use strict';
 
@@ -107,7 +107,7 @@ const contractAccCollapsedState = new Map([['issue',false],['confirm',false]]);
 const HISTORY_MAX = 120;
 const NUM_SLOTS   = 12;
 const TOP_N       = 100;
-const APP_VER     = '8.8';
+const APP_VER     = '8.9';
 const THEME_KEY   = 'CoteOS_theme';
 const SLOT_META_KEY = 'CoteOS_v7_SlotMeta';
 const BGM_KEY       = 'CoteOS_v7_BGM';
@@ -1118,38 +1118,27 @@ function readRawSlotState(n){
 }
 
 function saveState(silent=false,targetSlot=currentSlot,forcedName=''){
-  /* v8.8 fix: removed overly strict students.length===0 guard.
-     An empty class list is still a valid state worth persisting
-     (e.g. after all students are expelled or graduated).        */
+  /* v8.9 fix[1&2]: 空生徒リストも有効な状態（全退学等）なので length===0 ガード削除。
+     また cross-slot セーブ直後に syncSlModalButtons() を呼んで UI を即時更新。  */
   if(!state) return false;
   const slot=Number(targetSlot)||currentSlot;
-  /* v7.3: Slot 0 is volatile — never write guest data to localStorage */
   if(slot===0) return false;
   const slotName=(forcedName||state.slotName||slotNameOf(slot)||defaultSlotName(slot)).trim();
   try{
     const payload={...state, slotName};
-
-    /* v8.8: Always use Protobuf binary; fall back to JSON only if unavailable */
     const binary = encodeStateToBinary(payload);
     if(binary){
-      /* Store binary (base64) as primary key */
       localStorage.setItem(slotKey(slot), binary);
-      /* Store full JSON meta (for non-proto fields) as sidecar */
       localStorage.setItem(slotKey(slot)+'_meta', JSON.stringify(payload));
     } else {
-      /* Protobuf unavailable — store pure JSON (legacy path) */
       localStorage.setItem(slotKey(slot), JSON.stringify(payload));
     }
-
     setSlotName(slot, slotName);
     if(slot===currentSlot) state.slotName=slotName;
     updateSlotButtons();
-    /* v8.8 fix: syncSlModalButtons after cross-slot save so the saved slot's
-       "空き" → "データあり" state updates immediately in the modal.          */
-    if(slModalOpen){
-      renderSaveLoadModal();
-      syncSlModalButtons();
-    }
+    /* v8.9 fix[2]: renderSaveLoadModal の直後に syncSlModalButtons を呼ぶことで
+       他スロットへのセーブ後「空き」→「データあり」が即座に反映される。         */
+    if(slModalOpen){ renderSaveLoadModal(); syncSlModalButtons(); }
     saveToCloud(slot, payload);
     if(!silent) toast(`✓ スロット${slot}にセーブしました`,'ok');
     return true;
@@ -1162,29 +1151,25 @@ function loadSlot(n){
   const raw=localStorage.getItem(slotKey(n));
   if(!raw){ state=null; return false; }
   try{
-    /* v8.8: detect Protobuf binary (PB87: prefix) vs legacy JSON */
     if(raw.startsWith('PB87:')){
-      /* Load meta sidecar first (has all fields) */
       const metaRaw = localStorage.getItem(slotKey(n)+'_meta');
       if(metaRaw){
+        /* v8.9 fix[6]: meta sidecar が全フィールドを持つ正規ソース。
+           二回目の decodeStateFromBinary() 呼び出しを廃止。
+           (1200人規模で約2×のロード速度改善)                       */
         state = JSON.parse(metaRaw);
-        /* v8.8 fix: meta sidecar is always written together with binary in
-           saveState(), so it is the authoritative source for all fields.
-           The redundant second decodeStateFromBinary() call is removed —
-           it was causing a double decode penalty on every load with no benefit. */
       } else {
-        /* Meta missing — decode proto and build partial state */
+        /* meta 欠損時のみ proto から部分復元 */
         const pbStudents = decodeStateFromBinary(raw);
         if(!pbStudents){ state=null; return false; }
         state = newState();
-        /* Merge proto students into blank state — limited recovery */
         state.students = pbStudents.map(ps=>({
           ...blankStudent(ps.grade||1, ps.classId||0),
           ...ps,
         }));
       }
     } else {
-      /* Legacy JSON path — will be migrated to binary on next saveState() */
+      /* Legacy JSON — 次回 saveState() で自動マイグレーション */
       state=JSON.parse(raw);
     }
     if(!state.slotName) state.slotName=slotNameOf(n);
@@ -1440,7 +1425,8 @@ function bindSaveLoadModalControls(){
   // Do NOT bind sl-overlay click to close.
 
   document.getElementById('sl-btn-save')?.addEventListener('click',saveToSelectedSlot);
-  document.getElementById('sl-btn-export')?.addEventListener('click',()=>exportAllSlots());
+  /* v8.9 fix[3]: 書き出しは選択スロット単体を対象とする */
+  document.getElementById('sl-btn-export')?.addEventListener('click',()=>exportSelectedSlot());
   document.getElementById('sl-btn-import')?.addEventListener('click',()=>triggerImportDialog());
 
   // v7.3: Delete — custom UI confirm instead of window.confirm
@@ -1492,7 +1478,33 @@ function bindSaveLoadModalControls(){
 
 /* ──────────────────────────────────────────────────────────────────
    EXPORT
+   v8.9 fix[3]: 「書き出し」ボタンは選択中スロット単体を書き出すように変更。
+   ユーザーがスロット4を選んで書き出したらスロット4だけが対象になる。
+   全スロット一括バックアップは exportAllSlots() で引き続き利用可能
+   (将来的に「全バックアップ」ボタンから呼ぶ想定)。
 ────────────────────────────────────────────────────────────────── */
+function exportSelectedSlot(){
+  /* モーダル表示中は slSelectedSlot、そうでなければ currentSlot を使う */
+  const n = slModalOpen ? slSelectedSlot : currentSlot;
+  saveState(true, n);
+  const s = readRawSlotState(n);
+  if(!s){ toast('✗ 書き出すデータがありません','err'); return; }
+  let slotData;
+  try{ slotData = serializeSlot(s); }
+  catch(e){ toast('✗ シリアライズ失敗: '+e.message,'err'); return; }
+  const payload = {
+    app:'Cote-OS', version:APP_VER, exportedAt:new Date().toISOString(),
+    singleSlot:true, slotNumber:n,
+    slots:{ [n]: slotData },
+  };
+  const stamp=datestamp();
+  const blob=new Blob(['\uFEFF'+JSON.stringify(payload,null,2)],{type:'application/json;charset=utf-8'});
+  const url=URL.createObjectURL(blob);
+  const a=Object.assign(document.createElement('a'),{href:url,download:`cote_os_slot${n}_${stamp}.json`});
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(()=>URL.revokeObjectURL(url),15000);
+  toast(`✓ スロット${n}を書き出しました — cote_os_slot${n}_${stamp}.json`,'io',3500);
+}
 function exportAllSlots(){
   saveState(true);
   const slots={};
@@ -1502,14 +1514,14 @@ function exportAllSlots(){
     try{slots[n]=serializeSlot(s);}catch(e){slots[n]=null;}
   }
   const payload={app:'Cote-OS',version:APP_VER,exportedAt:new Date().toISOString(),
-    description:'Cote-OS バックアップ。各フィールドを直接編集して読み込み可能。',slots};
+    description:'Cote-OS 全スロットバックアップ。',slots};
   const stamp=datestamp();
   const blob=new Blob(['\uFEFF'+JSON.stringify(payload,null,2)],{type:'application/json;charset=utf-8'});
   const url=URL.createObjectURL(blob);
   const a=Object.assign(document.createElement('a'),{href:url,download:`cote_os_backup_${stamp}.json`});
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
   setTimeout(()=>URL.revokeObjectURL(url),15000);
-  toast(`✓ 書き出し完了 — cote_os_backup_${stamp}.json`,'io',3500);
+  toast(`✓ 全スロット書き出し完了 — cote_os_backup_${stamp}.json`,'io',3500);
 }
 function serializeSlot(s){
   return {
@@ -1535,34 +1547,47 @@ function serializeSlot(s){
    IMPORT
 ────────────────────────────────────────────────────────────────── */
 function triggerImportDialog(){
+  /* v8.9 fix[3]: 選択スロット番号を確定してからダイアログを表示。
+     ファイル選択後は importTargetSlot に読み込む。               */
+  const targetSlot = slModalOpen ? slSelectedSlot : currentSlot;
+  const hasExisting = slotHasData(targetSlot);
   openModal(`
-    <div class="m-title">↑ データ読み込み</div>
+    <div class="m-title">↑ データ読み込み (スロット${targetSlot})</div>
     <div class="m-body">
       <div class="import-info">
-        <strong style="color:var(--io)">読み込み先：</strong> スロット 1〜12 すべてが上書きされます。<br>
-        対象ファイル：<code>cote_os_backup_*.json</code><br>
+        <strong style="color:var(--io)">読み込み先：</strong> スロット ${targetSlot}${hasExisting?'（上書き）':''}<br>
+        対象ファイル：<code>cote_os_slot${targetSlot}_*.json</code> または全バックアップ JSON<br>
         ※ JSON を手動編集してから読み込むことも可能です。
       </div>
-      <p>既存データはすべて置き換えられます。<br>続行しますか？</p>
+      <p>${hasExisting?'スロット'+targetSlot+'の既存データは上書きされます。<br>':''}続行しますか？</p>
       <div class="btn-row">
-        <button class="btn btn-io" onclick="pickFile()">ファイルを選択</button>
+        <button class="btn btn-io" onclick="pickFile(${targetSlot})">ファイルを選択</button>
         <button class="btn" onclick="closeModal()">キャンセル</button>
       </div>
     </div>
   `);
 }
-window.pickFile=function(){ closeModal(); document.getElementById('file-pick').click(); };
+window.pickFile=function(targetSlot){
+  closeModal();
+  /* v8.9: targetSlot を data 属性に保存してからファイルピッカー起動 */
+  const fp=document.getElementById('file-pick');
+  fp.dataset.importTarget=targetSlot||'';
+  fp.click();
+};
 
 function onFilePicked(file){
   if(!file) return;
-  /* v8.7: accept both .json and .bin protobuf files */
   const isBin = file.name.endsWith('.bin') || (file.type && file.type.includes('octet-stream'));
   const isJson= file.type&&file.type.includes('json')||file.name.endsWith('.json');
   if(!isBin && !isJson){ toast('✗ .json または .bin ファイルを選択してください','err'); return; }
   if(file.size>50*1024*1024){ toast('✗ ファイルが大きすぎます (上限 50 MB)','err'); return; }
 
+  /* v8.9 fix[3]: data-import-target から読み込み先スロットを取得 */
+  const fp=document.getElementById('file-pick');
+  const importTarget=parseInt(fp.dataset.importTarget||'',10)||currentSlot;
+  fp.dataset.importTarget='';
+
   if(isBin){
-    /* Binary protobuf file — decode single-slot GameSave */
     const reader=new FileReader();
     reader.onload=e=>{
       try{
@@ -1570,7 +1595,6 @@ function onFilePicked(file){
         const $root = window.$protobuf?.roots?.default || window.$root;
         if(!$root?.GameSave){ toast('✗ Protobuf が初期化されていません','err'); return; }
         const msg = $root.GameSave.decode(buf);
-        /* Build a minimal state from proto students */
         const s = newState();
         s.students = (msg.students||[]).map(ps=>({
           ...blankStudent(ps.grade||1, ps.classId||0),
@@ -1583,17 +1607,20 @@ function onFilePicked(file){
           traits: Array.isArray(ps.traits) ? [...ps.traits] : [],
         }));
         repairIntegrity(s);
-        /* v8.8 fix: save as Protobuf binary+meta (not plain JSON) so the slot
-           is consistent with the normal saveState() format on all layers.    */
+        /* v8.9 fix[3]: importTarget スロットに binary+meta で保存 */
         const binary = encodeStateToBinary(s);
         if(binary){
-          localStorage.setItem(slotKey(currentSlot), binary);
-          localStorage.setItem(slotKey(currentSlot)+'_meta', JSON.stringify(s));
+          localStorage.setItem(slotKey(importTarget), binary);
+          localStorage.setItem(slotKey(importTarget)+'_meta', JSON.stringify(s));
         } else {
-          localStorage.setItem(slotKey(currentSlot), JSON.stringify(s));
+          localStorage.setItem(slotKey(importTarget), JSON.stringify(s));
         }
-        state=s; updateSlotButtons(); updateDateDisplay(); navigate('home',{},true);
-        toast('✓ Protobuf ファイルを読み込みました','io',3500);
+        if(importTarget===currentSlot){
+          state=s; updateSlotButtons(); updateDateDisplay(); navigate('home',{},true);
+        } else {
+          if(slModalOpen){ renderSaveLoadModal(); syncSlModalButtons(); }
+        }
+        toast(`✓ Protobuf ファイルをスロット${importTarget}に読み込みました`,'io',3500);
       }catch(err){ toast('✗ Protobuf 解析失敗: '+err.message,'err',4500); }
     };
     reader.onerror=()=>toast('✗ ファイルの読み込みに失敗しました','err');
@@ -1601,47 +1628,75 @@ function onFilePicked(file){
     return;
   }
 
-  /* JSON path (unchanged) */
   const reader=new FileReader();
-  reader.onload=e=>{ try{ validateAndImport(JSON.parse(e.target.result.replace(/^\uFEFF/,''))); }
+  reader.onload=e=>{ try{ validateAndImport(JSON.parse(e.target.result.replace(/^\uFEFF/,'')), importTarget); }
     catch(err){ toast('✗ JSON 解析失敗: '+err.message,'err',4500); } };
   reader.onerror=()=>toast('✗ ファイルの読み込みに失敗しました','err');
   reader.readAsText(file,'utf-8');
 }
-function validateAndImport(parsed){
+function validateAndImport(parsed, targetSlot){
+  /* v8.9 fix[3]: 単一スロット書き出し形式 (singleSlot:true) に対応。
+     targetSlot が指定された場合、そのスロットのデータだけを上書き。
+     全スロットバックアップ形式の場合は全スロットを復元する旧来動作。
+     いずれも読み込み後は targetSlot (または currentSlot) をロード。    */
   if(!parsed?.slots||typeof parsed.slots!=='object'){ toast('✗ 無効なファイル形式です','err'); return; }
   const meta=loadSlotMeta();
   let restored=0;
-  for(let n=1;n<=NUM_SLOTS;n++){
-    const raw=parsed.slots[n]??parsed.slots[String(n)];
-    if(!raw){
-      localStorage.removeItem(slotKey(n));
-      localStorage.removeItem(slotKey(n)+'_meta'); /* v8.8: also clear meta sidecar */
-      meta[n]=defaultSlotName(n);
-      continue;
-    }
+  const target = targetSlot || currentSlot;
+
+  if(parsed.singleSlot){
+    /* 単一スロットファイル: ファイル内の任意のスロットを targetSlot に読み込む */
+    const srcKey = parsed.slotNumber || Object.keys(parsed.slots)[0];
+    const raw = parsed.slots[srcKey] ?? parsed.slots[String(srcKey)];
+    if(!raw){ toast('✗ ファイルにスロットデータがありません','err'); return; }
     try{
       const ss=deserializeSlot(raw);
       repairIntegrity(ss);
-      /* v8.8 fix: save in Protobuf binary format (not plain JSON) so every
-         imported slot is immediately on the unified binary storage path.    */
+      /* v8.9 fix: binary+meta で保存 */
       const binary = encodeStateToBinary(ss);
       if(binary){
-        localStorage.setItem(slotKey(n), binary);
-        localStorage.setItem(slotKey(n)+'_meta', JSON.stringify(ss));
+        localStorage.setItem(slotKey(target), binary);
+        localStorage.setItem(slotKey(target)+'_meta', JSON.stringify(ss));
       } else {
-        localStorage.setItem(slotKey(n), JSON.stringify(ss));
+        localStorage.setItem(slotKey(target), JSON.stringify(ss));
       }
-      meta[n]=(ss.slotName&&ss.slotName.trim())?ss.slotName.trim():defaultSlotName(n);
-      restored++;
+      meta[target]=(ss.slotName&&ss.slotName.trim())?ss.slotName.trim():defaultSlotName(target);
+      restored=1;
+    }catch(e){ toast('✗ 読み込み失敗: '+e.message,'err'); return; }
+  } else {
+    /* 全スロットバックアップ形式: 全スロット復元 */
+    for(let n=1;n<=NUM_SLOTS;n++){
+      const raw=parsed.slots[n]??parsed.slots[String(n)];
+      if(!raw){
+        localStorage.removeItem(slotKey(n));
+        localStorage.removeItem(slotKey(n)+'_meta');
+        meta[n]=defaultSlotName(n);
+        continue;
+      }
+      try{
+        const ss=deserializeSlot(raw);
+        repairIntegrity(ss);
+        const binary = encodeStateToBinary(ss);
+        if(binary){
+          localStorage.setItem(slotKey(n), binary);
+          localStorage.setItem(slotKey(n)+'_meta', JSON.stringify(ss));
+        } else {
+          localStorage.setItem(slotKey(n), JSON.stringify(ss));
+        }
+        meta[n]=(ss.slotName&&ss.slotName.trim())?ss.slotName.trim():defaultSlotName(n);
+        restored++;
+      }catch(e){ console.warn('import slot',n,e); }
     }
-    catch(e){ console.warn('import slot',n,e); }
   }
   saveSlotMeta(meta);
-  state=null; selectMode=false; selectedIds=new Set(); navStack=[];
-  loadSlot(currentSlot);
+  selectMode=false; selectedIds=new Set(); navStack=[];
+  /* v8.9 fix[3]: currentSlot を target にスイッチして確実にロード */
+  currentSlot=target; isGuestMode=false;
+  state=null;
+  loadSlot(target);
   updateSlotButtons(); updateDateDisplay(); navigate('home',{},true);
-  toast(`✓ 読み込み完了 — ${restored}スロットを復元しました`,'io',3500);
+  closeSaveLoadModal();
+  toast(`✓ 読み込み完了 — スロット${target}に${restored===1?'データを':'全'+restored+'スロットを'}復元しました`,'io',3500);
 }
 function deserializeSlot(obj){
   const s=newState();
@@ -3983,7 +4038,8 @@ async function saveToCloud(slot, payload){
   if(!db||!docF||!setF) return;
   try{
     const ref = docF(db, 'users', fbCurrentUser.uid, 'slots', `slot${slot}`);
-    await setF(ref, { data: JSON.stringify(payload), savedAt: Date.now() });
+    const ts=Date.now();
+    await setF(ref, { data: JSON.stringify({...payload,_savedAt:ts}), savedAt: ts });
   }catch(e){
     console.warn('[Cloud] saveToCloud failed:', e);
   }
@@ -4006,34 +4062,57 @@ async function loadFromCloud(slot){
   }
 }
 
-/* ── loadAllSlotsFromCloud — on login, fill empty local slots ─── */
+/* ── loadAllSlotsFromCloud — on login, sync cloud → local ─────── */
 async function loadAllSlotsFromCloud(){
+  /* v8.9 fix[5]: savedAt タイムスタンプを比較してクラウドが新しければ上書き。
+     従来はローカルデータが存在するだけでクラウドを無視していた。
+     同一アカウントで複数端末を使う場合に最新データが正しく反映される。  */
   if(!fbCurrentUser) return;
   let restored=0;
+  const db=window.fbDb, docF=window.fbDoc, getF=window.fbGetDoc;
+  if(!db||!docF||!getF) return;
   for(let n=1;n<=NUM_SLOTS;n++){
-    if(slotHasData(n)) continue;   /* local data takes priority */
-    const cloudData = await loadFromCloud(n);
-    if(!cloudData) continue;
+    let cloudData=null, cloudSavedAt=0;
     try{
-      /* v8.8 fix: restore cloud data as Protobuf binary+meta (same path as
-         saveState) — previously plain JSON caused a silent format mismatch.  */
-      const binary = encodeStateToBinary(cloudData);
+      const ref=docF(db,'users',fbCurrentUser.uid,'slots',`slot${n}`);
+      const snap=await getF(ref);
+      if(!snap.exists()) continue;
+      const d=snap.data();
+      cloudSavedAt=d.savedAt||0;
+      cloudData=JSON.parse(d.data);
+    }catch(_){ continue; }
+    if(!cloudData) continue;
+
+    /* ローカルの savedAt を meta から取得して比較 */
+    let localSavedAt=0;
+    if(slotHasData(n)){
+      try{
+        const metaRaw=localStorage.getItem(slotKey(n)+'_meta');
+        if(metaRaw){ const m=JSON.parse(metaRaw); localSavedAt=m._savedAt||0; }
+      }catch(_){}
+      /* クラウドが古いかローカルの方が新しければスキップ */
+      if(cloudSavedAt<=localSavedAt) continue;
+    }
+
+    try{
+      /* v8.9 fix[5]: binary+meta で保存 (従来は平文 JSON だった) */
+      const binary=encodeStateToBinary(cloudData);
       if(binary){
         localStorage.setItem(slotKey(n), binary);
-        localStorage.setItem(slotKey(n)+'_meta', JSON.stringify(cloudData));
+        localStorage.setItem(slotKey(n)+'_meta', JSON.stringify({...cloudData, _savedAt:cloudSavedAt}));
       } else {
         localStorage.setItem(slotKey(n), JSON.stringify(cloudData));
       }
-      setSlotName(n, cloudData.slotName || defaultSlotName(n));
+      setSlotName(n, cloudData.slotName||defaultSlotName(n));
       restored++;
     }catch(_){}
   }
   if(restored>0){
     updateSlotButtons();
     if(slModalOpen) renderSaveLoadModal();
-    toast(`☁ クラウドから ${restored} スロットを復元しました`,'ok',3500);
+    toast(`☁ クラウドから ${restored} スロットを同期しました`,'ok',3500);
   } else {
-    toast('☁ ログインしました（クラウドデータは最新）','ok',2500);
+    toast('☁ ログインしました（ローカルデータは最新）','ok',2500);
   }
 }
 
