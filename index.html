@@ -120,7 +120,7 @@
       <button id="sl-btn-play"     class="sl-act gn">プレイ</button>
       <button id="sl-btn-new-play" class="sl-act gn sl-act-new"
               title="スロットを使わずゲストとして1,200名の新規データでプレイ">新しくプレイ</button>
-      <span   class="sl-act-empty"></span>
+      <button id="sl-btn-sync" class="sl-act io" title="クラウドと今すぐ同期">☁ 同期</button>
       <button id="sl-btn-back"     class="sl-act">戻る</button>
     </div>
   </div>
@@ -270,6 +270,8 @@
 </script>
 
 <script src="https://w.soundcloud.com/player/api.js"></script>
+<!-- v9.1: fflate — gzip圧縮ライブラリ (クラウド保存の容量削減) -->
+<script src="https://cdn.jsdelivr.net/npm/fflate@0.8.2/umd/index.js"></script>
 <script src="app.js"></script>
 
 <iframe id="bgm-player" width="100%" height="300" scrolling="no" frameborder="no" allow="autoplay"

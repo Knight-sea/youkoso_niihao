@@ -1,35 +1,31 @@
 /* ================================================================
-   Cote-OS v9.0  ·  app.js  "Cloud-First Save"
+   Cote-OS v9.1  ·  app.js  "gzip Cloud Save"
    ─────────────────────────────────────────────────────────────────
    v8.9 バグ修正 (6件):
    [1] 最重大: proto_bundle.js がブラウザで動作せず圧縮ゼロ問題
-       → index.html にインライン GameSave スキーマ定義を追加。
-         全セーブが正しく Protobuf バイナリ圧縮されるようになった。
    [2] 他スロットへのセーブ後「空き」→「データあり」が反映されない
-       → saveState() に syncSlModalButtons() 呼び出しを追加。
    [3] 書き出しファイル読み込みで slSelectedSlot が無視される
-       → 書き出しを「選択スロット単体」に変更。
-         読み込みも選択スロットのみを対象とする単一スロット読み込みに変更。
-         全スロットバックアップ/復元は別途「全バックアップ」ボタンへ。
-   [4] 非同期競合によるスロット番号ズレ (「スロット3保存→スロット2に入る」等)
-       → saveToSelectedSlot の uiConfirm callback でスロット番号を
-         ローカル変数 n に固定してキャプチャ済み (再確認・問題なし)。
-         ゲストモード保存パスの currentSlot 一時書換競合を修正。
+   [4] 非同期競合によるスロット番号ズレ
    [5] 同アカウント別端末でクラウドデータが紐付かない
-       → savedAt タイムスタンプ比較でクラウドが新しければ上書き。
-         クラウド復元データを JSON ではなく binary+meta で保存。
    [6] loadSlot() 内で Protobuf を二重デコードするパフォーマンス問題
-       → meta sidecar が存在する場合は二回目のデコードをスキップ。
 
-   v9.0 クラウド優先設計への変更:
+   v9.0 クラウド優先設計:
    [A] ログイン中はクラウドが唯一の真実 (Source of Truth)。
-       ローカルストレージはキャッシュに過ぎず、ログイン同期で
-       クラウドデータが常にローカルを上書きする。
-   [B] saveState() で _savedAt タイムスタンプをローカル meta にも
-       書き込む (従来は書き込んでいなかったためタイムスタンプ比較が機能しなかった)。
+   [B] saveState() で _savedAt をローカル meta にも書き込む。
    [C] onAuthStateChanged でも loadAllSlotsFromCloud() を呼ぶ。
-       ページリロード後の自動再ログイン時も確実にクラウド同期される。
    [D] ログアウト時の syncLoginUI(null) 二重呼び出しを解消。
+
+   v9.1 gzip圧縮 + クラウド設計修正:
+   [A] Protobuf を廃止。fflate (gzip) による全フィールド圧縮に切替。
+       フォーマット: "GZ91:" + Base64(gzip(JSON))
+       5000人フルデータ ≈ 2MB→ 約200KB 以下 (Firestore 1MB制限内)。
+       ローカル localStorage にも同形式で保存 (PB87: 後方互換読み込み維持)。
+   [B] クラウド保存時に履歴 (history) を除外。
+       生徒・クラス・スロットメタのみをクラウドに送る。
+       履歴はローカルのみ保持 (クラウド容量を圧迫しない)。
+   [C] saveToCloud() でのエラーを握り潰さずトーストで通知。
+   [D] 同期ボタン (#sl-btn-sync) を追加。
+       ログイン中のみ有効; 未ログイン時は非表示。
    ================================================================ */
 'use strict';
 
@@ -117,7 +113,7 @@ const contractAccCollapsedState = new Map([['issue',false],['confirm',false]]);
 const HISTORY_MAX = 120;
 const NUM_SLOTS   = 12;
 const TOP_N       = 100;
-const APP_VER     = '8.9';
+const APP_VER     = '9.1';
 const THEME_KEY   = 'CoteOS_theme';
 const SLOT_META_KEY = 'CoteOS_v7_SlotMeta';
 const BGM_KEY       = 'CoteOS_v7_BGM';
@@ -1001,88 +997,59 @@ function computeClassRanking(){
    the protobuf integration in the hot-path save/load cycle.
 ────────────────────────────────────────────────────────────────── */
 
-/* v8.7: PB helpers — encode/decode student stats to/from proto Stats */
-function statsToProto(stats){
-  return {
-    hp:  stats.language  || 1,
-    mp:  stats.reasoning || 1,
-    str: stats.memory    || 1,
-    vit: stats.thinking  || 1,
-    dex: stats.physical  || 1,
-    agi: stats.mental    || 1,
-    int: 0, luk: 0,
-  };
+/* ── v9.1: gzip圧縮ヘルパー (fflate) ─────────────────────────────
+   フォーマット: "GZ91:" + Base64(gzip(UTF-8 JSON))
+   fflate は index.html の <script> タグで CDN から読み込まれる。
+   window.fflate が未定義の場合は平文 JSON にフォールバック。
+   後方互換: "PB87:" プレフィックスのスロットは meta sidecar から
+   読み込むため引き続き正常動作する。                              */
+
+/* Base64 ↔ Uint8Array 変換 */
+function _u8ToB64(u8){
+  let s='';
+  u8.forEach(b=>{ s+=String.fromCharCode(b); });
+  return btoa(s);
 }
-function statsFromProto(ps){
-  return {
-    language:  ps.hp  || 1,
-    reasoning: ps.mp  || 1,
-    memory:    ps.str || 1,
-    thinking:  ps.vit || 1,
-    physical:  ps.dex || 1,
-    mental:    ps.agi || 1,
-  };
+function _b64ToU8(b64){
+  const s=atob(b64); const u=new Uint8Array(s.length);
+  for(let i=0;i<s.length;i++) u[i]=s.charCodeAt(i);
+  return u;
 }
 
-/* v8.7: encodeStateToBinary — returns base64 string of GameSave proto,
-   or null if protobufjs ($root) is not available.                     */
+/* encodeStateToBinary — state オブジェクト全体を gzip 圧縮して返す。
+   戻り値: "GZ91:" + Base64 文字列、または失敗時 null              */
 function encodeStateToBinary(s){
   try{
-    const $root = window.$protobuf?.roots?.default || window.$root;
-    if(!$root?.GameSave) return null;
-    const students = s.students.map(st=>{
-      const parts = (st.name||'').split(' ');
-      const lastName  = parts[0] || '';
-      const firstName = parts.slice(1).join(' ') || '';
-      return {
-        id:        st.id        || '',
-        lastName,
-        firstName,
-        gender:    st.gender    || 'M',
-        grade:     typeof st.grade==='number' ? st.grade : 0,
-        classId:   st.classId   || 0,
-        stats:     statsToProto(st.stats || {}),
-        traits:    Array.isArray(st.traits) ? st.traits : [],
-      };
-    });
-    const msg = $root.GameSave.create({
-      version:   parseFloat(APP_VER) || 8.7,
-      timestamp: Date.now(),
-      students,
-    });
-    const buf  = $root.GameSave.encode(msg).finish();
-    /* Convert Uint8Array to base64 */
-    let bin='';
-    buf.forEach(b=>{ bin+=String.fromCharCode(b); });
-    return 'PB87:' + btoa(bin);
+    const fl = window.fflate;
+    if(!fl) return null;
+    const json  = JSON.stringify(s);
+    const raw   = fl.strToU8(json);
+    const gz    = fl.gzipSync(raw, { level: 6 });
+    return 'GZ91:' + _u8ToB64(gz);
   }catch(e){
-    console.warn('[PB] encodeStateToBinary failed:', e);
+    console.warn('[GZ] encodeStateToBinary failed:', e);
     return null;
   }
 }
 
-/* v8.7: decodeStateFromBinary — decode a PB87: base64 string back to
-   partial student data (id, name, gender, grade, classId, stats, traits).
-   Returns array of partial student objects; caller merges with meta.  */
-function decodeStateFromBinary(b64){
+/* decodeStateFromBinary — "GZ91:" または "PB87:" 文字列を state に戻す。
+   GZ91: → gzip 解凍 → JSON パース → state オブジェクト
+   PB87: → meta sidecar 読み込みで対処するため null を返す (呼び出し側で分岐)
+   戻り値: state オブジェクト、または null                         */
+function decodeStateFromBinary(raw){
   try{
-    const $root = window.$protobuf?.roots?.default || window.$root;
-    if(!$root?.GameSave) return null;
-    const raw   = atob(b64.slice(5));
-    const buf   = new Uint8Array(raw.length);
-    for(let i=0;i<raw.length;i++) buf[i]=raw.charCodeAt(i);
-    const msg = $root.GameSave.decode(buf);
-    return (msg.students||[]).map(ps=>({
-      id:       ps.id      || '',
-      name:     [ps.lastName, ps.firstName].filter(Boolean).join(' '),
-      gender:   ps.gender  || 'M',
-      grade:    ps.grade   || 0,
-      classId:  ps.classId || 0,
-      stats:    statsFromProto(ps.stats || {}),
-      traits:   Array.isArray(ps.traits) ? [...ps.traits] : [],
-    }));
+    if(raw.startsWith('GZ91:')){
+      const fl  = window.fflate;
+      if(!fl) return null;
+      const gz   = _b64ToU8(raw.slice(5));
+      const dec  = fl.decompressSync(gz);
+      const json = fl.strFromU8(dec);
+      return JSON.parse(json);
+    }
+    /* PB87: は meta sidecar が正規ソースなので null を返す */
+    return null;
   }catch(e){
-    console.warn('[PB] decodeStateFromBinary failed:', e);
+    console.warn('[GZ] decodeStateFromBinary failed:', e);
     return null;
   }
 }
@@ -1118,42 +1085,41 @@ function readRawSlotState(n){
   const raw = localStorage.getItem(slotKey(n));
   if(!raw) return null;
   try{
+    if(raw.startsWith('GZ91:')){
+      return decodeStateFromBinary(raw);
+    }
     if(raw.startsWith('PB87:')){
       const metaRaw = localStorage.getItem(slotKey(n)+'_meta');
       if(metaRaw) return JSON.parse(metaRaw);
-      return null; /* no meta = unreadable brief */
+      return null;
     }
     return JSON.parse(raw);
   }catch(_){ return null; }
 }
 
 function saveState(silent=false,targetSlot=currentSlot,forcedName=''){
-  /* v8.9 fix[1&2]: 空生徒リストも有効な状態（全退学等）なので length===0 ガード削除。
-     また cross-slot セーブ直後に syncSlModalButtons() を呼んで UI を即時更新。  */
   if(!state) return false;
   const slot=Number(targetSlot)||currentSlot;
   if(slot===0) return false;
   const slotName=(forcedName||state.slotName||slotNameOf(slot)||defaultSlotName(slot)).trim();
   try{
-    /* v9.0: _savedAt をローカル meta にも書き込む。
-       タイムスタンプを先に確定させることで saveToCloud() との比較が正しく機能する。 */
+    /* v9.1: _savedAt を先に確定してから payload を作る。
+       ローカル保存・クラウド送信の両方で同じタイムスタンプを使う。 */
     const ts = Date.now();
     const payload={...state, slotName, _savedAt: ts};
 
-    /* ログイン中はクラウドが唯一の真実: ローカルにも保存するが、
-       読み込み時はクラウドを優先するため常に saveToCloud() を呼ぶ。 */
     const binary = encodeStateToBinary(payload);
     if(binary){
+      /* GZ91: フォーマット — meta sidecar 不要 (state 全体が中に入っている) */
       localStorage.setItem(slotKey(slot), binary);
-      localStorage.setItem(slotKey(slot)+'_meta', JSON.stringify(payload));
+      localStorage.removeItem(slotKey(slot)+'_meta'); /* PB87 sidecar を削除 */
     } else {
+      /* fflate 未読み込み時のフォールバック: 平文 JSON */
       localStorage.setItem(slotKey(slot), JSON.stringify(payload));
     }
     setSlotName(slot, slotName);
     if(slot===currentSlot) state.slotName=slotName;
     updateSlotButtons();
-    /* v8.9 fix[2]: renderSaveLoadModal の直後に syncSlModalButtons を呼ぶことで
-       他スロットへのセーブ後「空き」→「データあり」が即座に反映される。         */
     if(slModalOpen){ renderSaveLoadModal(); syncSlModalButtons(); }
     saveToCloud(slot, payload);
     if(!silent) toast(`✓ スロット${slot}にセーブしました`,'ok');
@@ -1167,25 +1133,22 @@ function loadSlot(n){
   const raw=localStorage.getItem(slotKey(n));
   if(!raw){ state=null; return false; }
   try{
-    if(raw.startsWith('PB87:')){
+    if(raw.startsWith('GZ91:')){
+      /* v9.1: gzip 圧縮フォーマット — そのまま展開 */
+      const decoded = decodeStateFromBinary(raw);
+      if(!decoded){ state=null; return false; }
+      state = decoded;
+    } else if(raw.startsWith('PB87:')){
+      /* v8.7 Protobuf 後方互換: meta sidecar が正規ソース */
       const metaRaw = localStorage.getItem(slotKey(n)+'_meta');
       if(metaRaw){
-        /* v8.9 fix[6]: meta sidecar が全フィールドを持つ正規ソース。
-           二回目の decodeStateFromBinary() 呼び出しを廃止。
-           (1200人規模で約2×のロード速度改善)                       */
         state = JSON.parse(metaRaw);
       } else {
-        /* meta 欠損時のみ proto から部分復元 */
-        const pbStudents = decodeStateFromBinary(raw);
-        if(!pbStudents){ state=null; return false; }
-        state = newState();
-        state.students = pbStudents.map(ps=>({
-          ...blankStudent(ps.grade||1, ps.classId||0),
-          ...ps,
-        }));
+        /* meta 欠損 — 復元不能 */
+        state=null; return false;
       }
     } else {
-      /* Legacy JSON — 次回 saveState() で自動マイグレーション */
+      /* Legacy JSON */
       state=JSON.parse(raw);
     }
     if(!state.slotName) state.slotName=slotNameOf(n);
@@ -1208,7 +1171,7 @@ function switchSlot(n, silent=false){
 function resetSlot(slot=currentSlot){
   const n=+slot;
   localStorage.removeItem(slotKey(n));
-  localStorage.removeItem(slotKey(n)+'_meta'); /* v8.7: clear proto meta sidecar */
+  localStorage.removeItem(slotKey(n)+'_meta'); /* PB87 sidecar の残骸も削除 */
   const meta=loadSlotMeta();
   meta[n]=defaultSlotName(n);
   saveSlotMeta(meta);
@@ -4004,120 +3967,125 @@ function afterRender(){
 }
 
 /* ──────────────────────────────────────────────────────────────────
-   FIREBASE CLOUD LINK — v8.6
+   FIREBASE CLOUD LINK — v9.1
    ─────────────────────────────────────────────────────────────────
-   The Firebase SDK (modular v10) is initialised as a <script type="module">
-   in index.html which exposes the following globals via window:
-     fbAuth, fbDb, fbProvider,
-     fbSignIn(), fbSignOut(), fbOnAuthChanged(cb),
-     fbDoc(), fbGetDoc(), fbSetDoc()
-
-   Cote-OS uses Firestore with the following path structure:
-     users/{uid}/slots/{slotN}   — one document per save slot
-     Document fields: { data: <JSON string of state payload> }
-
-   Login is Google OAuth (signInWithPopup).
-   Data flow:
-     • On every saveState() call: saveToCloud() is called silently.
-     • On login: loadAllSlotsFromCloud() mirrors cloud → localStorage
-       for any slot that is empty locally but exists in the cloud.
-     • On logout: no data is erased from localStorage — cloud is a
-       backup mirror, not the primary store.
+   設計原則:
+   • ログイン中 → クラウドが唯一の真実 (Source of Truth)
+   • 未ログイン → localStorage のみ使用
+   • クラウド保存: 生徒・クラス・スロットメタのみ (履歴は除外)
+   • 圧縮: fflate gzip → Base64 → Firestore { gz: string, savedAt: number }
+   • エラーはすべてトーストで通知
+   • 同期ボタン (#sl-btn-sync) でいつでも手動同期可能
+   Firestore パス: users/{uid}/slots/slot{n}
+   ドキュメントフィールド: { gz: <GZ91:Base64文字列>, savedAt: <epoch ms> }
 ────────────────────────────────────────────────────────────────── */
 
-/* Current authenticated user — null when logged out */
 let fbCurrentUser = null;
 
-/* ── syncLoginUI — update save modal header based on auth state ── */
+/* ── syncLoginUI — セーブモーダルのログイン状態表示を更新 ───── */
 function syncLoginUI(user){
   fbCurrentUser = user || null;
-  const loginBtn  = document.getElementById('sl-btn-login');
-  const userInfo  = document.getElementById('sl-user-info');
-  const userName  = document.getElementById('sl-user-name');
+  const loginBtn = document.getElementById('sl-btn-login');
+  const userInfo = document.getElementById('sl-user-info');
+  const userName = document.getElementById('sl-user-name');
+  const syncBtn  = document.getElementById('sl-btn-sync');
   if(!loginBtn || !userInfo) return;
   if(user){
     loginBtn.classList.add('hidden');
     userInfo.classList.remove('hidden');
     if(userName) userName.textContent = user.displayName || user.email || 'ユーザー';
+    if(syncBtn)  syncBtn.classList.remove('hidden');
   } else {
     loginBtn.classList.remove('hidden');
     userInfo.classList.add('hidden');
+    if(syncBtn) syncBtn.classList.add('hidden');
   }
 }
 
-/* ── saveToCloud — ログイン中のセーブをFirestoreに書き込む ──── */
+/* ── cloudPayload — クラウド送信用: 履歴を除いて gzip 圧縮 ──── */
+function cloudPayload(payload){
+  const slim = {...payload, history: []};
+  return encodeStateToBinary(slim);
+}
+
+/* ── saveToCloud — 1スロットを Firestore に書き込む ─────────── */
 async function saveToCloud(slot, payload){
-  if(!fbCurrentUser) return;   /* 未ログイン — スキップ */
-  const db  = window.fbDb;
-  const docF= window.fbDoc;
-  const setF= window.fbSetDoc;
+  if(!fbCurrentUser) return;
+  const db=window.fbDb, docF=window.fbDoc, setF=window.fbSetDoc;
   if(!db||!docF||!setF) return;
   try{
-    const ref = docF(db, 'users', fbCurrentUser.uid, 'slots', `slot${slot}`);
-    /* payload には呼び出し元 (saveState) で既に _savedAt が付いている。
-       Firestore の savedAt フィールドと同じ値を使うことで比較の一貫性を保つ。 */
-    const ts = payload._savedAt || Date.now();
-    await setF(ref, { data: JSON.stringify({...payload, _savedAt: ts}), savedAt: ts });
+    const gz = cloudPayload(payload);
+    if(!gz){ console.warn('[Cloud] gzip 失敗のため cloud save をスキップ'); return; }
+    const ts  = payload._savedAt || Date.now();
+    const ref = docF(db,'users',fbCurrentUser.uid,'slots',`slot${slot}`);
+    await setF(ref, { gz, savedAt: ts });
   }catch(e){
     console.warn('[Cloud] saveToCloud failed:', e);
+    toast(`☁ クラウド保存失敗 (スロット${slot}): ${e.code||e.message||e}`,'err',4000);
   }
 }
 
-/* ── loadFromCloud — read one slot from Firestore ────────────── */
+/* ── loadFromCloud — 1スロットを Firestore から読み込む ──────── */
 async function loadFromCloud(slot){
   if(!fbCurrentUser) return null;
-  const db  = window.fbDb;
-  const docF= window.fbDoc;
-  const getF= window.fbGetDoc;
+  const db=window.fbDb, docF=window.fbDoc, getF=window.fbGetDoc;
   if(!db||!docF||!getF) return null;
   try{
-    const ref  = docF(db, 'users', fbCurrentUser.uid, 'slots', `slot${slot}`);
+    const ref  = docF(db,'users',fbCurrentUser.uid,'slots',`slot${slot}`);
     const snap = await getF(ref);
     if(!snap.exists()) return null;
     const d = snap.data();
-    const parsed = JSON.parse(d.data);
-    /* savedAt を data 側にも保証 */
-    if(!parsed._savedAt) parsed._savedAt = d.savedAt || 0;
-    return parsed;
+    if(d.gz){
+      const obj = decodeStateFromBinary(d.gz);
+      if(obj){ if(!obj._savedAt) obj._savedAt = d.savedAt||0; return obj; }
+    }
+    if(d.data){
+      const obj = JSON.parse(d.data);
+      if(!obj._savedAt) obj._savedAt = d.savedAt||0;
+      return obj;
+    }
+    return null;
   }catch(e){
     console.warn('[Cloud] loadFromCloud failed:', e); return null;
   }
 }
 
-/* ── overwriteLocalFromCloud — クラウドデータをローカルに上書き保存 ── */
+/* ── overwriteLocalFromCloud — クラウドデータでローカルを上書き ─ */
 function overwriteLocalFromCloud(n, cloudData){
   try{
-    const binary = encodeStateToBinary(cloudData);
+    /* 履歴はローカルのものを引き継ぐ (クラウドには history:[] しか入っていない) */
+    const existing = readRawSlotState(n);
+    const merged   = {...cloudData, history: existing?.history || []};
+    const binary   = encodeStateToBinary(merged);
     if(binary){
       localStorage.setItem(slotKey(n), binary);
-      localStorage.setItem(slotKey(n)+'_meta', JSON.stringify(cloudData));
+      localStorage.removeItem(slotKey(n)+'_meta');
     } else {
-      localStorage.setItem(slotKey(n), JSON.stringify(cloudData));
+      localStorage.setItem(slotKey(n), JSON.stringify(merged));
     }
     setSlotName(n, cloudData.slotName || defaultSlotName(n));
-  }catch(_){}
+  }catch(e){
+    console.warn('[Cloud] overwriteLocalFromCloud failed:', e);
+  }
 }
 
-/* ── loadAllSlotsFromCloud — ログイン時にクラウドを唯一の真実として同期 ──
-   v9.0 設計変更:
-   ログイン中はクラウドが唯一の正規データソース。
-   「ローカルの方が新しくてもクラウドを優先」する。
-   （同一アカウントでどの端末からアクセスしても常に同じデータが見える）     */
+/* ── loadAllSlotsFromCloud — ログイン時: クラウドを全スロットに適用 ──
+   クラウドが唯一の真実。クラウドにないスロットはローカルも削除。
+   ローカルの履歴は保持する。エラーはトーストで通知。              */
 async function loadAllSlotsFromCloud(){
   if(!fbCurrentUser) return;
-  let synced=0;
   const db=window.fbDb, docF=window.fbDoc, getF=window.fbGetDoc;
-  if(!db||!docF||!getF) return;
+  if(!db||!docF||!getF){ toast('☁ Firebase 未初期化','err'); return; }
 
-  toast('☁ クラウドデータを同期中…','ok',2000);
+  toast('☁ クラウドと同期中…','ok',2500);
+  let synced=0, errors=0;
 
   for(let n=1;n<=NUM_SLOTS;n++){
-    let cloudData=null;
     try{
-      const ref=docF(db,'users',fbCurrentUser.uid,'slots',`slot${n}`);
-      const snap=await getF(ref);
+      const ref  = docF(db,'users',fbCurrentUser.uid,'slots',`slot${n}`);
+      const snap = await getF(ref);
+
       if(!snap.exists()){
-        /* クラウドにデータなし → ローカルのデータも削除してクラウドと一致させる */
         if(slotHasData(n)){
           localStorage.removeItem(slotKey(n));
           localStorage.removeItem(slotKey(n)+'_meta');
@@ -4126,28 +4094,39 @@ async function loadAllSlotsFromCloud(){
         }
         continue;
       }
-      const d=snap.data();
-      cloudData=JSON.parse(d.data);
-      if(!cloudData._savedAt) cloudData._savedAt = d.savedAt||0;
-    }catch(_){ continue; }
-    if(!cloudData) continue;
 
-    /* クラウドデータでローカルを無条件上書き */
-    overwriteLocalFromCloud(n, cloudData);
-    synced++;
+      const d = snap.data();
+      let cloudData = null;
+      if(d.gz){
+        cloudData = decodeStateFromBinary(d.gz);
+        if(cloudData && !cloudData._savedAt) cloudData._savedAt = d.savedAt||0;
+      } else if(d.data){
+        cloudData = JSON.parse(d.data);
+        if(!cloudData._savedAt) cloudData._savedAt = d.savedAt||0;
+      }
+      if(!cloudData) continue;
+
+      overwriteLocalFromCloud(n, cloudData);
+      synced++;
+    }catch(e){
+      console.warn(`[Cloud] sync slot${n} failed:`, e);
+      errors++;
+    }
   }
 
   updateSlotButtons();
   if(slModalOpen) renderSaveLoadModal();
 
-  /* 現在プレイ中のスロットがクラウドデータで更新された場合はリロード */
   if(!isGuestMode && currentSlot>0 && slotHasData(currentSlot)){
     loadSlot(currentSlot);
     updateDateDisplay();
     navigate('home',{},true);
-    toast(`☁ クラウドデータをロードしました (スロット${currentSlot})`,'ok',3500);
+  }
+
+  if(errors>0){
+    toast(`☁ 同期完了 (${synced}スロット更新 / エラー${errors}件)`,'warn',4000);
   } else {
-    toast('☁ クラウドと同期しました','ok',2500);
+    toast(`☁ クラウドと同期しました (${synced}スロット更新)`,'ok',2800);
   }
 }
 
@@ -4156,53 +4135,46 @@ function initFirebase(){
   const register = (onChanged)=>{
     onChanged(async user=>{
       syncLoginUI(user);
-      /* v9.0: ログイン状態が変化するたびにクラウド同期を実行。
-         ページリロード後の自動再ログインでも確実に同期される。 */
       if(user) await loadAllSlotsFromCloud();
     });
   };
-
   const onChanged = window.fbOnAuthChanged;
   if(typeof onChanged !== 'function'){
-    /* Firebase SDK がまだ読み込まれていない場合: 少し待ってリトライ */
     setTimeout(()=>{
-      if(typeof window.fbOnAuthChanged === 'function')
-        register(window.fbOnAuthChanged);
+      if(typeof window.fbOnAuthChanged==='function') register(window.fbOnAuthChanged);
     }, 800);
     return;
   }
   register(onChanged);
 }
 
-/* ── bindFirebaseControls — ログイン/ログアウトボタンを紐付け ─── */
+/* ── bindFirebaseControls — ログイン/ログアウト/同期ボタンを紐付け ── */
 function bindFirebaseControls(){
-  /* ログインボタン */
   document.getElementById('sl-btn-login')?.addEventListener('click', async ()=>{
     const signIn = window.fbSignIn;
-    if(typeof signIn !== 'function'){
+    if(typeof signIn!=='function'){
       toast('✗ Firebase が初期化されていません','err'); return;
     }
     try{
       const result = await signIn();
-      /* onAuthStateChanged も発火するが、ポップアップログインは
-         コールバックが遅延する場合があるため、ここでも明示的に同期する。 */
       syncLoginUI(result.user);
       await loadAllSlotsFromCloud();
     }catch(e){
-      if(e.code !== 'auth/popup-closed-by-user')
-        toast('✗ ログイン失敗: ' + (e.message||e.code),'err');
+      if(e.code!=='auth/popup-closed-by-user')
+        toast('✗ ログイン失敗: '+(e.message||e.code),'err');
     }
   });
 
-  /* ログアウトボタン */
   document.getElementById('sl-btn-logout')?.addEventListener('click', async ()=>{
     const signOut = window.fbSignOut;
-    if(typeof signOut === 'function'){
-      try{ await signOut(); } catch(_){}
-    }
-    /* onAuthStateChanged が null で発火し syncLoginUI(null) が呼ばれる。
-       ここでは二重呼び出しを避けるため UI 更新は onAuthStateChanged に任せる。 */
+    if(typeof signOut==='function'){ try{ await signOut(); }catch(_){} }
     toast('☁ ログアウトしました','warn',2000);
+  });
+
+  /* 同期ボタン — ログイン中のみ有効 */
+  document.getElementById('sl-btn-sync')?.addEventListener('click', async ()=>{
+    if(!fbCurrentUser){ toast('☁ ログインが必要です','warn'); return; }
+    await loadAllSlotsFromCloud();
   });
 }
 
