@@ -925,8 +925,11 @@ window.randomizeIncomingCohort=function(cg){
       const gender = gend[idx] || 'M';
       s.name   = genStudentName(gender);
       s.gender = gender;
-      /* Incoming students: estimated DOB as if entering grade 1 next year */
-      s.dob    = genDOB(1, state.year + 1);
+      /* Incoming students: DOB based on cohortGrade offset from current base.
+         offset=0 → 来年入学, offset=1 → 再来年入学, etc.
+         作り置きコホートでも正しい年度の誕生日が生成される。 */
+      const _cgOffset = cg - currentIncomingBaseGrade();
+      s.dob    = genDOB(1, state.year + 1 + _cgOffset);
       s.privatePoints = rndInt(ppLo, ppHi);
       /* v8.1: stats now use genStatXSum(cid) — binomial X-Sum algorithm */
       const xStats = genStatXSum(cid);
