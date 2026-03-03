@@ -928,7 +928,7 @@ window.randomizeIncomingCohort=function(cg){
       /* Incoming students: DOB based on cohortGrade offset from current base.
          offset=0 → 来年入学, offset=1 → 再来年入学, etc.
          作り置きコホートでも正しい年度の誕生日が生成される。 */
-      const _cgOffset = cg - currentIncomingBaseGrade();
+      const _cgOffset = cg - currentIncomingBaseGrade() - 1;
       s.dob    = genDOB(1, state.year + 1 + _cgOffset);
       s.privatePoints = rndInt(ppLo, ppHi);
       /* v8.1: stats now use genStatXSum(cid) — binomial X-Sum algorithm */
