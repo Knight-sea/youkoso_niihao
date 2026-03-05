@@ -93,6 +93,7 @@ const SPECIAL_TRAITS = [
   {id:'foresight',  label:'未来予知',   cat:'sensory'},
   {id:'luck',       label:'幸運補正',   cat:'sensory'},
   {id:'tenacity',   label:'不屈の精神', cat:'sensory'},
+  {id:'trust',      label:'信頼',       cat:'sensory'},
 ];
 
 /* Category display metadata — ordered for the accordion */
@@ -120,7 +121,7 @@ const contractAccCollapsedState = new Map([['issue',false],['confirm',false]]);
 const HISTORY_MAX = 120;
 const NUM_SLOTS   = 12;
 const TOP_N       = 100;
-const APP_VER     = '9.2';
+const APP_VER     = '9.3';
 const THEME_KEY   = 'CoteOS_theme';
 const SLOT_META_KEY = 'CoteOS_v7_SlotMeta';
 const BGM_KEY       = 'CoteOS_v7_BGM';
@@ -2104,7 +2105,7 @@ function renderHome(){
       <span>${fmtDate(state.year,state.month)}</span>
       <span>${activeCount}名在籍</span>
       <div class="hm-right">
-        <span class="hm-link" onclick="navigate('ranking',{},false)">🏆 ${JP.ranking} TOP${TOP_N}</span>
+        <span class="hm-link" onclick="navigate('ranking',{},false)">🏆 ${JP.ranking}</span>
         <span class="hm-link hm-link-cls" onclick="navigate('classRanking',{},false)">🏫 クラスランキング</span>
       </div>
     </div>
@@ -3459,6 +3460,7 @@ const RANK_SORT_ITEMS = [
   {key:'physical',  label:'身体'},
   {key:'mental',    label:'精神'},
   {key:'overall',   label:'総合力'},
+  {key:'dob',       label:'誕生日'},
 ];
 let rankingSortKey='pp';
 
@@ -3479,6 +3481,23 @@ function rankSortLabel(key){
   const it=RANK_SORT_ITEMS.find(x=>x.key===key);
   return it?it.label:'PP';
 }
+
+/* v9.3: dobSortKey — converts a YYYY-MM-DD string to a school-year-aware
+   sort integer. April 1st = smallest value (ranks first, i.e. "oldest"
+   in the school year). March 31st = largest value (ranks last).
+   Months 1–3 are treated as months 13–15 so the April boundary works.
+   Returns Infinity for missing/invalid dates (sorts to the bottom).    */
+function dobSortKey(dob){
+  if(!dob) return Infinity;
+  const parts = dob.split('-');
+  if(parts.length < 3) return Infinity;
+  const mm = parseInt(parts[1], 10);
+  const dd = parseInt(parts[2], 10);
+  if(isNaN(mm) || isNaN(dd)) return Infinity;
+  const m = mm <= 3 ? mm + 12 : mm;   /* Jan=13, Feb=14, Mar=15, Apr=4 … Dec=12 */
+  return m * 100 + dd;
+}
+
 function rankSortValue(student,key,pool){
   switch(key){
     case 'pp': return student.privatePoints||0;
@@ -3490,24 +3509,32 @@ function rankSortValue(student,key,pool){
     case 'physical':
     case 'mental': return clampStat(student.stats?.[key]);
     case 'overall': return calcOverallScore(student,pool);
+    /* v9.3: dob — negate so computeRankingBy's descending sort puts
+       the smallest dobSortKey (Apr 1) first.                        */
+    case 'dob': return -dobSortKey(student.dob);
     default: return student.privatePoints||0;
   }
 }
-function computeRankingBy(key='pp'){
-  /* v7.6: active students only — typeof grade === 'number' (grades 1-6),
-     non-expelled. Incoming and Graduate are excluded from Top-100.     */
-  const pool = state.students.filter(s=>typeof s.grade==='number' && !s.isExpelled);
+function computeRankingBy(key='pp', filterOpts={}){
+  /* Full unfiltered pool used for overall score calculation */
+  const fullPool = state.students.filter(s=>typeof s.grade==='number' && !s.isExpelled);
+  /* Apply grade / classId / gender filters for the displayed list */
+  let pool = fullPool;
+  if(filterOpts.grade    != null) pool = pool.filter(s=>s.grade   === filterOpts.grade);
+  if(filterOpts.classId  != null) pool = pool.filter(s=>s.classId === filterOpts.classId);
+  if(filterOpts.gender   != null) pool = pool.filter(s=>s.gender  === filterOpts.gender);
+
   const sorted=[...pool].sort((a,b)=>{
-    const av=rankSortValue(a,key,pool);
-    const bv=rankSortValue(b,key,pool);
+    const av=rankSortValue(a,key,fullPool);
+    const bv=rankSortValue(b,key,fullPool);
     if(bv!==av) return bv-av;
     if((b.privatePoints||0)!==(a.privatePoints||0)) return (b.privatePoints||0)-(a.privatePoints||0);
     return String(a.id).localeCompare(String(b.id));
   });
   const out=[];
-  for(let i=0;i<sorted.length&&out.length<TOP_N;i++){
-    const cur=rankSortValue(sorted[i],key,pool);
-    const prev=i>0?rankSortValue(sorted[i-1],key,pool):null;
+  for(let i=0;i<sorted.length;i++){
+    const cur=rankSortValue(sorted[i],key,fullPool);
+    const prev=i>0?rankSortValue(sorted[i-1],key,fullPool):null;
     const rank=(i>0&&cur===prev)?out[out.length-1].rank:i+1;
     out.push({rank,student:sorted[i],value:cur});
   }
@@ -3515,6 +3542,7 @@ function computeRankingBy(key='pp'){
 }
 window.setRankingSort=function(key){
   rankingSortKey=RANK_SORT_ITEMS.some(x=>x.key===key)?key:'pp';
+  rankingPage=1;
   renderPage('ranking',{});
 };
 
@@ -3527,65 +3555,150 @@ window.setRankingSort=function(key){
 
 /* Column definitions — maps to CSS col-* classes and sort keys */
 const RNK_COLS = [
-  { key:null,        label:'順位',         cls:'col-rank',  thCls:'',        tdCls:'rn',   align:'right'  },
-  { key:null,        label:'氏名',         cls:'col-name',  thCls:'th-left', tdCls:'rk-nm td-left', align:'left' },
-  { key:null,        label:'学年 / クラス',cls:'col-class', thCls:'th-left', tdCls:'td-left',align:'left' },
-  { key:'pp',        label:'PP',           cls:'col-pp',    thCls:'',        tdCls:'rk-pp', align:'right' },
-  { key:'prp',       label:'PRP',          cls:'col-prp',   thCls:'',        tdCls:'',      align:'right' },
-  { key:'language',  label:'言語',         cls:'col-s0',    thCls:'',        tdCls:'',      align:'right' },
-  { key:'reasoning', label:'推論',         cls:'col-s1',    thCls:'',        tdCls:'',      align:'right' },
-  { key:'memory',    label:'記憶',         cls:'col-s2',    thCls:'',        tdCls:'',      align:'right' },
-  { key:'thinking',  label:'思考',         cls:'col-s3',    thCls:'',        tdCls:'',      align:'right' },
-  { key:'physical',  label:'身体',         cls:'col-s4',    thCls:'',        tdCls:'',      align:'right' },
-  { key:'mental',    label:'精神',         cls:'col-s5',    thCls:'',        tdCls:'',      align:'right' },
-  { key:'overall',   label:'総合',         cls:'col-ov',    thCls:'',        tdCls:'',      align:'right' },
+  { key:null,        label:'順位',         cls:'col-rank',  thCls:'',        tdCls:'rn',            align:'right'  },
+  { key:null,        label:'氏名',         cls:'col-name',  thCls:'th-left', tdCls:'rk-nm td-left', align:'left'   },
+  { key:null,        label:'学年 / 組',    cls:'col-class', thCls:'th-left', tdCls:'td-left',       align:'left'   },
+  { key:'dob',       label:'誕生日',       cls:'col-dob',   thCls:'th-left', tdCls:'rk-dob',        align:'left'   },
+  { key:'pp',        label:'PP',           cls:'col-pp',    thCls:'',        tdCls:'rk-pp',         align:'right'  },
+  { key:'prp',       label:'PRP',          cls:'col-prp',   thCls:'',        tdCls:'',              align:'right'  },
+  { key:'language',  label:'言語',         cls:'col-s0',    thCls:'',        tdCls:'',              align:'right'  },
+  { key:'reasoning', label:'推論',         cls:'col-s1',    thCls:'',        tdCls:'',              align:'right'  },
+  { key:'memory',    label:'記憶',         cls:'col-s2',    thCls:'',        tdCls:'',              align:'right'  },
+  { key:'thinking',  label:'思考',         cls:'col-s3',    thCls:'',        tdCls:'',              align:'right'  },
+  { key:'physical',  label:'身体',         cls:'col-s4',    thCls:'',        tdCls:'',              align:'right'  },
+  { key:'mental',    label:'精神',         cls:'col-s5',    thCls:'',        tdCls:'',              align:'right'  },
+  { key:'overall',   label:'総合',         cls:'col-ov',    thCls:'',        tdCls:'',              align:'right'  },
 ];
 
-function renderRankingPage(){
-  const ranked  = computeRankingBy(rankingSortKey);
-  /* v7.6: active pool for overall score must match computeRankingBy filter */
-  const pool    = state.students.filter(s=>typeof s.grade==='number' && !s.isExpelled);
-  const medals  = ['🥇','🥈','🥉'];
-  const valLabel = rankSortLabel(rankingSortKey);
+/* v9.3: ranking pagination + filter state */
+let rankingPage = 1;
+const RANK_PAGE_SIZE = 100;
+let rankingFilter = { grade:null, classId:null, gender:null };
 
-  let h=`
+window.setRankingPage = function(p){
+  rankingPage = p;
+  renderPage('ranking', {});
+};
+/* Toggle a filter value — clicking the same value again clears it */
+window.setRankingFilter = function(type, value){
+  if(rankingFilter[type] === value) rankingFilter[type] = null;
+  else rankingFilter[type] = value;
+  rankingPage = 1;
+  renderPage('ranking', {});
+};
+window.clearRankingFilters = function(){
+  rankingFilter = { grade:null, classId:null, gender:null };
+  rankingPage = 1;
+  renderPage('ranking', {});
+};
+
+function renderRankingPage(){
+  /* Build full ranked list applying current filters */
+  const allRanked = computeRankingBy(rankingSortKey, rankingFilter);
+  /* Unfiltered pool for overall score & medal podium */
+  const pool      = state.students.filter(s=>typeof s.grade==='number' && !s.isExpelled);
+  const medals    = ['🥇','🥈','🥉'];
+  const valLabel  = rankSortLabel(rankingSortKey);
+
+  /* ── Pagination ── */
+  const totalPages = Math.max(1, Math.ceil(allRanked.length / RANK_PAGE_SIZE));
+  const curPage    = Math.min(Math.max(1, rankingPage), totalPages);
+  const pageStart  = (curPage - 1) * RANK_PAGE_SIZE;
+  const ranked     = allRanked.slice(pageStart, pageStart + RANK_PAGE_SIZE);
+
+  /* ── Active filter summary for subtitle ── */
+  const activeFilters = [
+    rankingFilter.grade   != null ? `${rankingFilter.grade}年生` : null,
+    rankingFilter.classId != null ? `${RANK_LABELS[rankingFilter.classId]}組` : null,
+    rankingFilter.gender  != null ? (rankingFilter.gender==='M'?'男':'女') : null,
+  ].filter(Boolean);
+
+  /* ── Header ── */
+  let h = `
     <button class="back-btn" onclick="goBack()">◀ 戻る</button>
     <div class="pg-hdr">
-      <span class="pg-title">🏆 ${JP.ranking} TOP ${TOP_N}</span>
-      <span class="pg-sub">並び替え: ${valLabel}（降順）</span>
+      <span class="pg-title">🏆 ${JP.ranking}</span>
+      <span class="pg-sub">${allRanked.length}名 · 並び替え: ${valLabel}（降順）${activeFilters.length ? ' · ' + activeFilters.join(' / ') : ''}</span>
     </div>`;
 
-  /* ── Podium: TOP 3 ── */
-  if(ranked.length){
-    h+=`<div class="medal-row">`;
-    ranked.slice(0,Math.min(3,ranked.length)).forEach(({rank,student:s,value},i)=>{
-      const gd=typeof s.grade==='number'?JP.gradeN(s.grade):(s.grade==='Graduate'?'卒業生':'入学予定');
-      const cd=typeof s.grade==='number'?clsName(s.grade,s.classId):'―';
-      h+=`
+  /* ── Filter bar ── */
+  h += `<div class="rnk-filter-bar">`;
+  /* Grade buttons */
+  h += `<label>学年</label><div class="rnk-filter-group">`;
+  GRADES.forEach(g => {
+    const act = rankingFilter.grade === g ? ' active' : '';
+    h += `<button class="rnk-flt-btn${act}" onclick="setRankingFilter('grade',${g})">${g}年</button>`;
+  });
+  h += `</div><span class="rnk-filter-sep"></span>`;
+  /* Class buttons */
+  h += `<label>組</label><div class="rnk-filter-group">`;
+  CLASS_IDS.forEach(cid => {
+    const act = rankingFilter.classId === cid ? ' active' : '';
+    h += `<button class="rnk-flt-btn${act}" onclick="setRankingFilter('classId',${cid})">${RANK_LABELS[cid]}</button>`;
+  });
+  h += `</div><span class="rnk-filter-sep"></span>`;
+  /* Gender buttons */
+  h += `<label>性別</label><div class="rnk-filter-group">`;
+  h += `<button class="rnk-flt-btn f-gn${rankingFilter.gender==='M' ? ' active' : ''}" onclick="setRankingFilter('gender','M')">男</button>`;
+  h += `<button class="rnk-flt-btn f-rd${rankingFilter.gender==='F' ? ' active' : ''}" onclick="setRankingFilter('gender','F')">女</button>`;
+  h += `</div>`;
+  if(activeFilters.length){
+    h += `<button class="rnk-filter-clear" onclick="clearRankingFilters()">× フィルター解除</button>`;
+  }
+  h += `</div>`;
+
+  /* ── Medal podium — always rendered from allRanked (persists across pages) ── */
+  if(allRanked.length){
+    h += `<div class="medal-row">`;
+    allRanked.slice(0, Math.min(3, allRanked.length)).forEach(({rank, student:s, value}, i)=>{
+      const gd = typeof s.grade==='number' ? JP.gradeN(s.grade) : (s.grade==='Graduate'?'卒業生':'入学予定');
+      /* v9.3: class display as A-E rank letter */
+      const clsRank = typeof s.grade==='number' ? rankOf(s.grade, s.classId) : '―';
+      const cd = typeof s.grade==='number' ? `${clsRank}組` : '―';
+
+      /* v9.3: safe medal value display — guard against invalid dob sort values */
+      let dispValue;
+      if(rankingSortKey === 'dob'){
+        dispValue = (s.dob && s.dob.trim()) ? s.dob : '未設定';
+      } else {
+        dispValue = Number.isInteger(value) ? value.toLocaleString() : String(value ?? '―');
+      }
+
+      h += `
         <div class="medal-card" style="cursor:pointer" onclick="navigate('profile',{sid:'${s.id}'},false)">
           <div class="medal-rnk">${medals[i]} 第${rank}位</div>
-          <div class="medal-name">${esc(s.name)||'(未記入)'}</div>
+          <div class="medal-name">${esc(s.name) || '(未記入)'}</div>
           <div class="medal-sub">${gd} &nbsp;${esc(cd)}</div>
-          <div class="medal-pp">${Number.isInteger(value)?value.toLocaleString():value} ${valLabel}</div>
+          <div class="medal-pp">${dispValue} ${rankingSortKey==='dob'?'':valLabel}</div>
         </div>`;
     });
-    h+=`</div>`;
+    h += `</div>`;
+  }
+
+  /* ── Pagination controls ── */
+  if(totalPages > 1){
+    h += `
+    <div class="rnk-pagination">
+      <button class="rnk-pg-btn" onclick="setRankingPage(${curPage-1})" ${curPage<=1?'disabled':''}>◀ 前ページ</button>
+      <span class="rnk-pg-info">${curPage} / ${totalPages} ページ（${allRanked.length}名）</span>
+      <button class="rnk-pg-btn" onclick="setRankingPage(${curPage+1})" ${curPage>=totalPages?'disabled':''}>次ページ ▶</button>
+    </div>`;
   }
 
   /* ── colgroup ── */
   const colgroup = RNK_COLS.map(c=>`<col class="${c.cls}" />`).join('');
 
-  /* ── thead — clickable stat headers ── */
+  /* ── thead — clickable headers ── */
   const thead = RNK_COLS.map(c=>{
-    const isActive = c.key && c.key===rankingSortKey;
-    const arrow    = c.key ? `<span class="sort-arrow">${isActive?'▼':' '}</span>` : '';
+    const isActive = c.key && c.key === rankingSortKey;
+    const arrow    = c.key ? `<span class="sort-arrow">${isActive ? '▼' : ' '}</span>` : '';
     const activeCs = isActive ? ' sort-active' : '';
     const thCls    = [c.thCls, activeCs].filter(Boolean).join(' ');
     const onClick  = c.key ? `onclick="setRankingSort('${c.key}')"` : '';
     return `<th class="${thCls}" ${onClick}>${c.label}${arrow}</th>`;
   }).join('');
 
-  h+=`
+  h += `
     <div class="rnk-wrap" style="margin-top:10px">
       <table class="rnk-tbl">
         <colgroup>${colgroup}</colgroup>
@@ -3593,16 +3706,18 @@ function renderRankingPage(){
         <tbody>`;
 
   if(!ranked.length){
-    h+=`<tr><td colspan="${RNK_COLS.length}" style="text-align:center;padding:20px;color:var(--t3)">データなし</td></tr>`;
+    h += `<tr><td colspan="${RNK_COLS.length}" style="text-align:center;padding:20px;color:var(--t3)">データなし</td></tr>`;
   }
 
-  ranked.forEach(({rank,student:s,value})=>{
-    const gd  = typeof s.grade==='number'?JP.gradeN(s.grade):(s.grade==='Graduate'?'卒業生':'入学予定');
-    const cd  = typeof s.grade==='number'?clsName(s.grade,s.classId):'―';
-    const ov  = calcOverallScore(s, pool);
-    const top3 = rank<=3 ? ' top3' : '';
+  ranked.forEach(({rank, student:s, value})=>{
+    const gd    = typeof s.grade==='number' ? JP.gradeN(s.grade) : (s.grade==='Graduate'?'卒業生':'入学予定');
+    /* v9.3: use A-E rank letter for class display in table */
+    const clsRank = typeof s.grade==='number' ? rankOf(s.grade, s.classId) : '―';
+    const cd    = typeof s.grade==='number' ? `${clsRank}組` : '―';
+    const ov    = calcOverallScore(s, pool);
+    const top3  = rank <= 3 ? ' top3' : '';
 
-    /* Per-stat value helper — returns formatted string */
+    /* Per-column value helper */
     const sv = key => {
       switch(key){
         case 'pp':       return (s.privatePoints||0).toLocaleString();
@@ -3614,25 +3729,25 @@ function renderRankingPage(){
         case 'physical': return String(clampStat(s.stats?.physical));
         case 'mental':   return String(clampStat(s.stats?.mental));
         case 'overall':  return String(ov);
+        /* v9.3: dob — display raw date string, never the numeric sort key */
+        case 'dob':      return (s.dob && s.dob.trim()) ? s.dob : '―';
         default: return '';
       }
     };
 
-    /* Build tds from RNK_COLS definition */
     const tds = RNK_COLS.map(c=>{
-      const isActive = c.key && c.key===rankingSortKey;
+      const isActive  = c.key && c.key === rankingSortKey;
       const activeCls = isActive ? ' stat-active' : '';
       switch(c.cls){
         case 'col-rank':
-          /* .rn already carries Orbitron; no extra class needed */
           return `<td class="rn${top3}">${rank}</td>`;
         case 'col-name':
           return `<td class="rk-nm td-left${activeCls}" onclick="navigate('profile',{sid:'${s.id}'},false)">${esc(s.name)||'<span class="dim">(未記入)</span>'}</td>`;
         case 'col-class':
           return `<td class="td-left${activeCls}" style="font-size:.68rem;color:var(--t1)">${gd} / ${esc(cd)}</td>`;
+        case 'col-dob':
+          return `<td class="rk-dob${activeCls}">${sv('dob')}</td>`;
         default:{
-          /* v7.7: all numeric data cols get rk-num (Orbitron via CSS).
-             PP column additionally gets rk-pp for its green colour.   */
           const base = (c.tdCls||'').trim();
           const cls  = base ? `${base} rk-num${activeCls}` : `rk-num${activeCls}`;
           return `<td class="${cls}">${sv(c.key)}</td>`;
@@ -3640,10 +3755,21 @@ function renderRankingPage(){
       }
     }).join('');
 
-    h+=`<tr>${tds}</tr>`;
+    h += `<tr>${tds}</tr>`;
   });
 
-  h+=`</tbody></table></div>`;
+  h += `</tbody></table></div>`;
+
+  /* ── Pagination controls (bottom) ── */
+  if(totalPages > 1){
+    h += `
+    <div class="rnk-pagination" style="margin-top:8px">
+      <button class="rnk-pg-btn" onclick="setRankingPage(${curPage-1})" ${curPage<=1?'disabled':''}>◀ 前ページ</button>
+      <span class="rnk-pg-info">${curPage} / ${totalPages} ページ（${allRanked.length}名）</span>
+      <button class="rnk-pg-btn" onclick="setRankingPage(${curPage+1})" ${curPage>=totalPages?'disabled':''}>次ページ ▶</button>
+    </div>`;
+  }
+
   return h;
 }
 

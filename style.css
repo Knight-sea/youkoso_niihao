@@ -1367,7 +1367,9 @@ body.edit-mode .hcb-dist-row{
 /* Fixed column widths — stat columns are intentionally compact */
 .rnk-tbl col.col-rank  { width:46px }
 .rnk-tbl col.col-name  { width:130px }
-.rnk-tbl col.col-class { width:110px }
+.rnk-tbl col.col-class { width:90px }
+/* v9.3: Birthday column */
+.rnk-tbl col.col-dob   { width:82px }
 /* 9 stat columns: PP, PRP, 言語, 推論, 記憶, 思考, 身体, 精神, 総合 */
 .rnk-tbl col.col-pp    { width:68px }
 .rnk-tbl col.col-prp   { width:52px }
@@ -1438,13 +1440,10 @@ body.edit-mode .hcb-dist-row{
 .medal-name{font-family:var(--fj);font-size:.85rem;color:var(--t0);margin-bottom:3px}
 .medal-pp{font-family:var(--fd);font-size:1.08rem;color:var(--gn)}
 
-/* v7.3: Sort bar — labels now doubled as table headers; keep bar as quick-access row */
+/* v7.3: Sort bar — v9.3: hidden (sorting now via clickable table headers only) */
 .rnk-sort-bar{
-  display:flex;align-items:center;gap:6px;flex-wrap:wrap;
-  padding:5px 10px;background:var(--s2);border:1px solid var(--bd);
-  margin-bottom:9px;font-size:.68rem;color:var(--t2);
+  display:none;
 }
-.rnk-sort-bar label{color:var(--t2);white-space:nowrap}
 .rnk-sort-btn{
   background:var(--s3);border:1px solid var(--bd);
   color:var(--t1);font-family:var(--fm);font-size:.65rem;
@@ -1452,6 +1451,70 @@ body.edit-mode .hcb-dist-row{
 }
 .rnk-sort-btn:hover{border-color:var(--ac);color:var(--ac)}
 .rnk-sort-btn.active{border-color:var(--ac);color:var(--ac);background:var(--acd)}
+
+/* v9.3: Birthday cell — left-aligned, muted mono text */
+.rk-dob{
+  font-family:var(--fm);font-size:.66rem;
+  color:var(--t2);text-align:left;
+  letter-spacing:.01em;
+}
+
+/* v9.3: Ranking pagination controls */
+.rnk-pagination{
+  display:flex;align-items:center;justify-content:center;
+  gap:10px;padding:7px 0;font-size:.68rem;color:var(--t2);
+}
+.rnk-pg-btn{
+  background:var(--s3);border:1px solid var(--bd2);
+  color:var(--t1);font-family:var(--fm);font-size:.68rem;
+  padding:4px 14px;transition:all var(--tr);white-space:nowrap;letter-spacing:.05em;
+}
+.rnk-pg-btn:hover:not(:disabled){border-color:var(--ac);color:var(--ac);background:var(--acd)}
+.rnk-pg-btn:disabled{opacity:.35;cursor:not-allowed}
+.rnk-pg-info{
+  font-family:var(--fd);font-size:.65rem;
+  color:var(--t1);letter-spacing:.06em;
+  min-width:130px;text-align:center;
+}
+@media(max-width:768px){
+  .rnk-pagination{gap:7px}
+  .rnk-pg-btn{padding:4px 10px;font-size:.64rem}
+}
+body.mobile-mode .rnk-pagination{gap:7px}
+body.mobile-mode .rnk-pg-btn{padding:4px 10px;font-size:.64rem}
+
+/* v9.3: Ranking filter bar */
+.rnk-filter-bar{
+  display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+  padding:6px 10px;
+  background:var(--s2);border:1px solid var(--bd);
+  margin-bottom:6px;
+  font-size:.68rem;color:var(--t2);
+}
+.rnk-filter-bar label{color:var(--t2);white-space:nowrap;letter-spacing:.04em}
+.rnk-filter-group{display:flex;align-items:center;gap:4px;flex-wrap:wrap}
+.rnk-filter-sep{width:1px;height:18px;background:var(--bd2);flex-shrink:0;margin:0 2px}
+.rnk-flt-btn{
+  background:var(--s3);border:1px solid var(--bd);
+  color:var(--t1);font-family:var(--fm);font-size:.63rem;
+  padding:2px 7px;transition:all var(--tr);white-space:nowrap;letter-spacing:.04em;
+}
+.rnk-flt-btn:hover{border-color:var(--ac);color:var(--ac)}
+.rnk-flt-btn.active{border-color:var(--ac);color:var(--ac);background:var(--acd)}
+.rnk-flt-btn.f-gn.active{border-color:var(--gn);color:var(--gn);background:var(--gnd)}
+.rnk-flt-btn.f-rd.active{border-color:var(--rd);color:var(--rd);background:var(--rdd)}
+.rnk-filter-clear{
+  margin-left:auto;background:none;border:1px solid var(--rdd);
+  color:var(--rd);font-family:var(--fm);font-size:.60rem;
+  padding:2px 8px;transition:all var(--tr);white-space:nowrap;
+}
+.rnk-filter-clear:hover{background:rgba(255,51,85,.1);border-color:var(--rd)}
+@media(max-width:768px){
+  .rnk-filter-bar{gap:5px;padding:5px 8px}
+  .rnk-flt-btn{font-size:.60rem;padding:2px 5px}
+}
+body.mobile-mode .rnk-filter-bar{gap:5px;padding:5px 8px}
+body.mobile-mode .rnk-flt-btn{font-size:.60rem;padding:2px 5px}
 
 /* ═══════════════════════════════════════════════════════════════
    CLASS RANKING TABLE
