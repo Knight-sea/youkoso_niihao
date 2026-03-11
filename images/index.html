@@ -1,0 +1,658 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>STELLARIUM — 船上試験管理システム</title>
+  <link rel="icon" href="images/favicon.ico" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<div id="starfield"><canvas id="starfield-canvas"></canvas></div>
+
+<div id="app">
+
+  <!-- ══════════════ HEADER ══════════════ -->
+  <header id="header">
+    <div class="logo-wrap">
+      <div class="logo">STELLARIUM</div>
+      <div class="logo-sub">アルテミス号 船上試験管理システム</div>
+    </div>
+    <nav class="header-nav">
+      <button class="nav-btn active" onclick="showPage('alliances')">連合管理</button>
+      <button class="nav-btn"        onclick="showPage('ranking')">ランキング</button>
+      <button class="nav-btn"        onclick="showPage('planets')">惑星マップ</button>
+      <button class="nav-btn"        onclick="showPage('battle')">戦力計算</button>
+      <button class="nav-btn"        onclick="showPage('rules')">ルールブック</button>
+    </nav>
+    <div class="header-day">
+      <label>試験日</label>
+      <button class="day-btn" onclick="changeDay(-1)">−</button>
+      <div class="day-badge" id="day-badge">DAY 1</div>
+      <button class="day-btn" onclick="changeDay(1)">＋</button>
+      <div class="galactic-war-badge" id="galactic-war-badge">🌌 銀河大戦争</div>
+    </div>
+  </header>
+
+  <!-- ══════════════ PAGE: 連合管理 ══════════════ -->
+  <div class="page" id="page-alliances">
+
+    <aside id="alliance-list-panel" class="panel">
+      <div class="panel-title">ALLIANCES</div>
+      <div id="alliance-list-scroll"></div>
+      <button class="list-add-btn" onclick="openAddAllianceModal()">＋ 連合を追加</button>
+    </aside>
+
+    <section id="alliance-detail-panel" class="panel">
+      <div class="empty-state">
+        <div class="empty-icon">🌌</div>
+        <div>左のリストから連合を選択してください</div>
+      </div>
+    </section>
+
+    <aside id="alliance-summary-panel" class="panel">
+      <div class="panel-title">SUMMARY</div>
+      <div class="summary-scroll" id="summary-inner">
+        <div class="text-dim" style="font-size:11px;padding:8px">連合を選択してください</div>
+      </div>
+    </aside>
+
+  </div>
+
+  <!-- ══════════════ PAGE: ランキング ══════════════ -->
+  <div class="page" id="page-ranking">
+    <div class="ranking-inner">
+      <div class="rank-header-row">
+        <div class="rank-page-title">RANKING — DAY <span id="rank-day">1</span></div>
+        <div class="reward-hint">スコア = Σ(発展Lv) × 保有惑星数 ／ 同点は資源合計で決着</div>
+      </div>
+
+      <table class="rank-table">
+        <thead>
+          <tr>
+            <th>順位</th>
+            <th>連合名</th>
+            <th>文明Lv</th>
+            <th>惑星数</th>
+            <th>スコア</th>
+            <th style="color:var(--res-炉)">炉晶</th>
+            <th style="color:var(--res-演)">演晶</th>
+            <th style="color:var(--res-鋼)">鋼材</th>
+            <th style="color:var(--res-暗)">暗黒</th>
+          </tr>
+        </thead>
+        <tbody id="rank-tbody"></tbody>
+      </table>
+
+      <div class="reward-tables">
+        <div class="reward-block">
+          <div class="reward-block-title">PP報酬（連合全員）</div>
+          <table><tr><th>順位</th><th>PP</th></tr>
+            <tr><td>1位</td><td>100,000</td></tr>
+            <tr><td>2〜3位</td><td>50,000</td></tr>
+            <tr><td>4〜10位</td><td>30,000</td></tr>
+            <tr><td>11〜20位</td><td>10,000</td></tr>
+            <tr><td>21位以下</td><td>5,000</td></tr>
+          </table>
+        </div>
+        <div class="reward-block">
+          <div class="reward-block-title">リーダー追加報酬</div>
+          <table><tr><th>順位</th><th>追加PP</th></tr>
+            <tr><td>1位</td><td>20,000,000 + PP×1個</td></tr>
+            <tr><td>2〜3位</td><td>10,000,000</td></tr>
+            <tr><td>4〜10位</td><td>1,000,000</td></tr>
+            <tr><td>11〜20位</td><td>100,000</td></tr>
+          </table>
+        </div>
+        <div class="reward-block">
+          <div class="reward-block-title">CP &amp; 下位ペナルティ</div>
+          <table><tr><th>順位</th><th>CP</th></tr>
+            <tr><td>1位</td><td>+300</td></tr>
+            <tr><td>2〜3位</td><td>+200</td></tr>
+            <tr><td>4〜10位</td><td>+100</td></tr>
+            <tr><td>最下位</td><td style="color:var(--red)">−200</td></tr>
+            <tr><td>下から2〜10位</td><td style="color:var(--red)">−100</td></tr>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════ PAGE: 惑星マップ ══════════════ -->
+  <div class="page" id="page-planets">
+    <div class="planets-page-inner">
+
+      <div class="planets-toolbar">
+        <div class="planets-toolbar-title">PLANET MAP — 120惑星</div>
+        <div id="planet-stats" class="planet-stats-bar"></div>
+        <div class="planets-filters">
+          <label class="filter-label">所有者</label>
+          <select id="planet-filter-owner" class="filter-sel" onchange="renderPlanetsPage()">
+            <option value="all">全連合</option>
+            <option value="unowned">無所属のみ</option>
+          </select>
+          <label class="filter-label">タイプ</label>
+          <select id="planet-filter-type" class="filter-sel" onchange="renderPlanetsPage()">
+            <option value="all">全タイプ</option>
+            <option value="資">資源型</option>
+            <option value="炉">炉晶特化</option>
+            <option value="演">演晶特化</option>
+            <option value="要">要塞型</option>
+            <option value="未">未開拓型</option>
+          </select>
+          <label class="filter-label">発展Lv</label>
+          <select id="planet-filter-lv" class="filter-sel" onchange="renderPlanetsPage()">
+            <option value="all">全Lv</option>
+            <option value="1">Lv1</option>
+            <option value="2">Lv2</option>
+            <option value="3">Lv3</option>
+            <option value="4">Lv4</option>
+            <option value="5">Lv5</option>
+            <option value="6">Lv6</option>
+            <option value="7">Lv7</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="planets-map-scroll">
+        <div id="planets-map-inner"></div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ══════════════ PAGE: 戦力計算 ══════════════ -->
+  <div class="page" id="page-battle">
+    <div class="battle-inner">
+      <div class="panel-title" style="margin-bottom:16px">BATTLE CALCULATOR — 戦力計算</div>
+
+      <!-- 防衛補正選択 -->
+      <div class="def-bonus-row">
+        <span class="def-bonus-label">防衛補正:</span>
+        <select id="def-bonus-select" class="def-bonus-sel" onchange="calcBattle()">
+          <option value="1.5" selected>×1.5（通常・城塞惑星など）</option>
+          <option value="1.0">×1.0（補正なし）</option>
+        </select>
+      </div>
+
+      <div class="battle-grid">
+        <div class="battle-side bs-atk">
+          <div class="battle-side-title">⚔️ ATTACK — 攻撃側</div>
+          <div class="battle-side-body">
+            <div id="bt-atk-soldiers"></div>
+            <div class="bt-total-row">
+              <span class="bt-total-lbl">攻撃総力</span>
+              <span class="bt-total-val" id="bt-atk-total">0</span>
+            </div>
+          </div>
+        </div>
+        <div class="battle-side bs-def">
+          <div class="battle-side-title">🛡️ DEFENSE — 防衛側</div>
+          <div class="battle-side-body">
+            <div id="bt-def-soldiers"></div>
+            <div class="bt-total-row">
+              <span class="bt-total-lbl">防衛総力（補正前）</span>
+              <span class="bt-total-val" id="bt-def-total">0</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="battle-result">
+        <div class="sec-title" style="margin-bottom:12px">RESULT</div>
+        <div class="br-metrics">
+          <div class="br-metric">
+            <div class="br-metric-lbl">攻撃総力</div>
+            <div class="br-metric-val atk" id="br-atk-power">0</div>
+          </div>
+          <div class="br-metric">
+            <div class="br-metric-lbl" id="br-def-bonus-label">防衛総力（×1.5補正済）</div>
+            <div class="br-metric-val def" id="br-def-power">0</div>
+          </div>
+        </div>
+        <div class="br-winner neutral" id="br-winner">数値を入力してください</div>
+        <div class="br-survivors" id="br-survivors"></div>
+        <div class="br-examples">
+          <div class="br-ex-title">EXAMPLES — 計算例</div>
+          <div class="example-card">例①：攻撃側勝利（防衛×1.5）
+攻撃: 精鋭兵×30体 → 30×4 = 120
+防衛: 正規兵×20体 → 20×2×1.5 = 60
+残存: 120−60 = 60 → 精鋭兵×15体（攻撃側）／ 防衛側全滅</div>
+          <div class="example-card">例②：同盟増援による防衛逆転（防衛×1.5）
+攻撃: 精鋭兵×50体 → 200
+防衛: 精鋭兵×20体+機械兵×10体増援 → (80+80)×1.5 = 240
+240 &gt; 200 → 防衛側勝利 ／ 残存: 機械兵×5体</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════ PAGE: ルールブック ══════════════ -->
+  <div class="page" id="page-rules">
+    <div class="rules-layout">
+      <nav class="rules-nav panel">
+        <div class="rules-nav-item active" data-key="overview"   onclick="showRulesSection('overview')"><span class="nav-icon">📖</span>概要</div>
+        <div class="rules-nav-item" data-key="resources"  onclick="showRulesSection('resources')"><span class="nav-icon">💎</span>資源システム</div>
+        <div class="rules-nav-item" data-key="test"       onclick="showRulesSection('test')"><span class="nav-icon">📝</span>テスト・チャレンジ</div>
+        <div class="rules-nav-item" data-key="alliance"   onclick="showRulesSection('alliance')"><span class="nav-icon">🤝</span>連合システム</div>
+        <div class="rules-nav-item" data-key="develop"    onclick="showRulesSection('develop')"><span class="nav-icon">🪐</span>発展システム</div>
+        <div class="rules-nav-item" data-key="soldiers"   onclick="showRulesSection('soldiers')"><span class="nav-icon">⚔️</span>兵士システム</div>
+        <div class="rules-nav-item" data-key="diplomacy"  onclick="showRulesSection('diplomacy')"><span class="nav-icon">🌐</span>外交システム</div>
+        <div class="rules-nav-item" data-key="war"        onclick="showRulesSection('war')"><span class="nav-icon">🔥</span>戦争システム</div>
+        <div class="rules-nav-item" data-key="dark"       onclick="showRulesSection('dark')"><span class="nav-icon">🌑</span>暗黒アクション</div>
+        <div class="rules-nav-item" data-key="skills"     onclick="showRulesSection('skills')"><span class="nav-icon">🃏</span>スキルカード</div>
+        <div class="rules-nav-item" data-key="scoring"    onclick="showRulesSection('scoring')"><span class="nav-icon">🏆</span>採点・報酬</div>
+        <div class="rules-nav-item" data-key="galaxy"     onclick="showRulesSection('galaxy')"><span class="nav-icon">🌌</span>銀河大戦争</div>
+      </nav>
+
+      <div class="rules-content">
+
+        <!-- 概要 -->
+        <section class="rules-section active" id="rules-overview">
+          <div class="rules-title">OVERVIEW — 概要</div>
+          <div class="rules-callout gold">
+            舞台: 豪華客船「アルテミス号」搭載端末「STELLARIUM」<br>
+            期間: 7日間 ／ 参加者: 中1〜高3（6学年）× 5クラス = 30クラス・1200名<br>
+            試験時間: 8〜12時 / 13〜17時（計8時間/日）<br>
+            ジャンル: 宇宙を舞台にした資源管理型リアルタイム戦略ゲーム
+          </div>
+          <div class="rules-h2">宇宙マップ構造</div>
+          <div class="rules-code">銀河団（5個）
+  └─ 銀河（各6個 = 計30銀河）
+       └─ 惑星（各4個 = 計120惑星）
+
+惑星ID形式: 銀河団番号-銀河番号-惑星番号
+例: 3-5-1 = 銀河団3（Cクラス対応）銀河5（高2対応）の惑星1（資源型）</div>
+          <div class="rules-h2">惑星タイプ（計120惑星）</div>
+          <table class="rules-table">
+            <thead><tr><th>惑星番号</th><th>タイプ</th><th>数</th><th>Lv1産出（1日）</th><th>特記</th></tr></thead>
+            <tbody>
+              <tr><td>1</td><td>資源型</td><td>30</td><td>炉晶×40 + 演晶×40 + 鋼材×20</td><td>各連合の本拠点惑星</td></tr>
+              <tr><td>2</td><td>炉晶特化型</td><td>30</td><td>恒星炉晶×100</td><td></td></tr>
+              <tr><td>3</td><td>演晶特化型</td><td>30</td><td>演算結晶×100</td><td></td></tr>
+              <tr><td>4</td><td>要塞型 / 未開拓型</td><td>20 / 10</td><td>鋼材×60 / Lv6から産出開始</td><td>未開拓はLv6到達時にタイプ選択・産出×1.5倍</td></tr>
+            </tbody>
+          </table>
+          <div class="rules-callout">産出は<strong>1日の始めに一括付与</strong>。各惑星が独立して産出。</div>
+        </section>
+
+        <!-- 資源システム -->
+        <section class="rules-section" id="rules-resources">
+          <div class="rules-title">RESOURCES — 資源システム</div>
+          <table class="rules-table">
+            <thead><tr><th>名称</th><th>略称</th><th>主な用途</th></tr></thead>
+            <tbody>
+              <tr><td>恒星炉晶</td><td>炉晶</td><td>文明発展・惑星発展</td></tr>
+              <tr><td>演算結晶</td><td>演晶</td><td>文明発展・惑星発展（炉晶と常に同量）</td></tr>
+              <tr><td>重力鋼材</td><td>鋼材</td><td>文明Lv4〜・惑星Lv4〜</td></tr>
+              <tr><td>暗黒物質</td><td>暗黒</td><td>文明Lv6〜・惑星Lv6〜・暗黒アクション</td></tr>
+            </tbody>
+          </table>
+          <div class="rules-h2">PPとの交換レート（最低買取）</div>
+          <div class="rules-callout">学校への売却のみ可能（学校から購入は不可）。生徒間の資源売買・譲渡は自由レートで可能。</div>
+          <table class="rules-table">
+            <thead><tr><th>資源</th><th>最低買取レート</th></tr></thead>
+            <tbody>
+              <tr><td>炉晶×1</td><td>500PP</td></tr>
+              <tr><td>演晶×1</td><td>500PP</td></tr>
+              <tr><td>鋼材×1</td><td>1,000PP</td></tr>
+              <tr><td>暗黒×1</td><td>10,000PP</td></tr>
+            </tbody>
+          </table>
+          <div class="rules-h2">7日間 資源流通量（推定）</div>
+          <table class="rules-table">
+            <thead><tr><th>資源</th><th>全体合計</th><th>1連合平均</th><th>1人平均</th></tr></thead>
+            <tbody>
+              <tr><td>炉晶</td><td>271,320</td><td>9,044</td><td>226</td></tr>
+              <tr><td>演晶</td><td>271,320</td><td>9,044</td><td>226</td></tr>
+              <tr><td>鋼材</td><td>120,120</td><td>4,004</td><td>100</td></tr>
+              <tr><td>暗黒</td><td>〜280</td><td>〜9</td><td>〜0.23</td></tr>
+            </tbody>
+          </table>
+        </section>
+
+        <!-- テスト -->
+        <section class="rules-section" id="rules-test">
+          <div class="rules-title">TEST SYSTEM — テスト・チャレンジ</div>
+          <div class="rules-h2">通常テスト</div>
+          <div class="rules-callout">
+            1セット30分（約20問）→ 1日16セット<br>
+            炉晶テスト（学習系）80室・演晶テスト（学習系）80室・鋼材テスト（運動系）80室、各定員10人<br>
+            全30クラスで同時進行の競争形式 ／ 途中退場不可
+          </div>
+          <table class="rules-table">
+            <thead><tr><th>順位</th><th>炉晶・演晶テスト報酬</th><th>鋼材テスト報酬</th></tr></thead>
+            <tbody>
+              <tr><td>1位</td><td>10個</td><td>6個</td></tr>
+              <tr><td>2〜3位</td><td>5個</td><td>3個</td></tr>
+              <tr><td>その他</td><td>1個</td><td>0個</td></tr>
+            </tbody>
+          </table>
+          <div class="rules-h2">暗黒問題（チャレンジ）</div>
+          <div class="rules-callout">
+            1時間ごとに10問配信 → 1日8セット = 80問/日<br>
+            <strong>最初にクリアした者のみ</strong>暗黒物質×1獲得<br>
+            誰もクリアできなければ消滅（持ち越しなし）<br>
+            7日間の上限: 560個（達成率50%想定で約280個）
+          </div>
+        </section>
+
+        <!-- 連合 -->
+        <section class="rules-section" id="rules-alliance">
+          <div class="rules-title">ALLIANCE — 連合システム</div>
+          <div class="rules-callout">
+            試験開始時: 各クラス40名が1つの連合としてスタート（初期上限40名）<br>
+            リーダーは準備期間（試験1日前）中に決定<br>
+            スキルカード内容・保有者は全員に公開（準備期間後は非公開）
+          </div>
+          <div class="rules-h2">独立制度</div>
+          <div class="rules-callout warn">
+            最低<strong>10名</strong>の同意で新連合を結成可能。独立連合は本星なし・初期資源なし<br>
+            <strong>連合は10人未満になると自然消滅する。</strong>（独立時も10名以上が必要）
+          </div>
+          <div class="rules-h2">常時公開される情報</div>
+          <div class="rules-text">各連合の資源量（炉晶・演晶・鋼材・暗黒）、保有惑星数・各惑星の発展Lv・位置、連合文明Lv、総兵力数・兵士Lv構成</div>
+          <div class="rules-h2">非公開の情報</div>
+          <div class="rules-text">秘密協定の内容・相手 ／ 暗黒アクションの実行者 ／ 個人のスキルカード（準備期間後）</div>
+        </section>
+
+        <!-- 発展 -->
+        <section class="rules-section" id="rules-develop">
+          <div class="rules-title">DEVELOPMENT — 発展システム</div>
+          <div class="rules-callout warn"><strong>制約: 惑星発展レベルは連合の文明レベルを超えられない</strong></div>
+          <div class="rules-h2">連合文明レベル</div>
+          <table class="rules-table">
+            <thead><tr><th>Lv</th><th>名称</th><th>範囲</th><th>→炉晶</th><th>→演晶</th><th>→鋼材</th><th>→暗黒</th><th>累積炉晶・演晶</th><th>累積鋼材</th><th>累積暗黒</th></tr></thead>
+            <tbody>
+              <tr><td>1</td><td>原始文明</td><td>自分の1惑星のみ</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td></tr>
+              <tr><td>2</td><td>航星文明</td><td>同一銀河内（4惑星）</td><td>200</td><td>200</td><td>0</td><td>0</td><td>200</td><td>0</td><td>0</td></tr>
+              <tr><td>3</td><td>銀河文明</td><td>同一銀河団の隣接銀河まで</td><td>500</td><td>500</td><td>0</td><td>0</td><td>700</td><td>0</td><td>0</td></tr>
+              <tr><td>4</td><td>星間文明</td><td>同一銀河団の全銀河</td><td>1,300</td><td>1,300</td><td>700</td><td>0</td><td>2,000</td><td>700</td><td>0</td></tr>
+              <tr><td>5</td><td>大星間文明</td><td>隣接銀河団まで</td><td>3,500</td><td>3,500</td><td>1,300</td><td>0</td><td>5,500</td><td>2,000</td><td>0</td></tr>
+              <tr><td>6</td><td>銀河団文明</td><td>全銀河団に展開可能</td><td>9,500</td><td>9,500</td><td>3,000</td><td>10</td><td>15,000</td><td>5,000</td><td>10</td></tr>
+              <tr><td>7</td><td>超銀河文明</td><td>最高威信</td><td>35,000</td><td>35,000</td><td>15,000</td><td>50</td><td>50,000</td><td>20,000</td><td>60</td></tr>
+            </tbody>
+          </table>
+          <div class="rules-h2">惑星発展レベル</div>
+          <table class="rules-table">
+            <thead><tr><th>Lv</th><th>名称</th><th>産出倍率</th><th>→炉晶</th><th>→演晶</th><th>→鋼材</th><th>→暗黒</th><th>累積炉晶・演晶</th><th>累積鋼材</th><th>累積暗黒</th></tr></thead>
+            <tbody>
+              <tr><td>1</td><td>開拓地</td><td>×1.0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td></tr>
+              <tr><td>2</td><td>集落</td><td>×1.5</td><td>500</td><td>500</td><td>0</td><td>0</td><td>500</td><td>0</td><td>0</td></tr>
+              <tr><td>3</td><td>都市</td><td>×2.5</td><td>500</td><td>500</td><td>0</td><td>0</td><td>1,000</td><td>0</td><td>0</td></tr>
+              <tr><td>4</td><td>惑星国家</td><td>×4.0</td><td>1,200</td><td>1,200</td><td>300</td><td>0</td><td>2,200</td><td>300</td><td>0</td></tr>
+              <tr><td>5</td><td>星間都市</td><td>×6.0</td><td>1,800</td><td>1,800</td><td>600</td><td>0</td><td>4,000</td><td>900</td><td>0</td></tr>
+              <tr><td>6</td><td>恒星文明圏</td><td>×8.0</td><td>2,500</td><td>2,500</td><td>1,600</td><td>5</td><td>6,500</td><td>2,500</td><td>5</td></tr>
+              <tr><td>7</td><td>超銀河都市</td><td>×10.0</td><td>3,500</td><td>3,500</td><td>2,500</td><td>5</td><td>10,000</td><td>5,000</td><td>10</td></tr>
+            </tbody>
+          </table>
+        </section>
+
+        <!-- 兵士 -->
+        <section class="rules-section" id="rules-soldiers">
+          <div class="rules-title">SOLDIERS — 兵士システム</div>
+          <div class="rules-callout">
+            兵士は<strong>1日の始めに自動付与</strong>（1惑星につき1体/日）<br>
+            付与される兵士Lvは<strong>その惑星の発展Lv</strong>と同じ ／ 未開拓型惑星はLv6から付与開始
+          </div>
+          <table class="rules-table">
+            <thead><tr><th>Lv</th><th>名称</th><th>戦闘力</th></tr></thead>
+            <tbody>
+              <tr><td>1</td><td>民兵</td><td>1</td></tr>
+              <tr><td>2</td><td>正規兵</td><td>2</td></tr>
+              <tr><td>3</td><td>精鋭兵</td><td>4</td></tr>
+              <tr><td>4</td><td>機械兵</td><td>8</td></tr>
+              <tr><td>5</td><td>強化機械兵</td><td>16</td></tr>
+              <tr><td>6</td><td>量子兵</td><td>32</td></tr>
+              <tr><td>7</td><td>超空間兵</td><td>64</td></tr>
+            </tbody>
+          </table>
+          <div class="rules-callout">戦闘力は2の累乗（1, 2, 4, 8, 16, 32, 64）。上位Lv兵士1体 = 下位Lv兵士2体分。</div>
+        </section>
+
+        <!-- 外交 -->
+        <section class="rules-section" id="rules-diplomacy">
+          <div class="rules-title">DIPLOMACY — 外交システム</div>
+          <table class="rules-table">
+            <thead><tr><th>種別</th><th>特徴</th></tr></thead>
+            <tbody>
+              <tr><td><strong>通常同盟</strong></td><td>上限なし。戦争増援・資源直接交換が可能。裏切り時に戦力×1.5倍のペナルティ（裏切った側）</td></tr>
+              <tr><td><strong>属国同盟</strong></td><td>宗主国が増援義務と資源徴収を一方的に決定可能</td></tr>
+              <tr><td><strong>秘密協定</strong></td><td>通常/属国同盟を非公開化。暗黒物質×2を消費</td></tr>
+            </tbody>
+          </table>
+          <div class="rules-callout">同盟・属国同盟時、文明レベルが許す範囲内で<strong>増援</strong>が可能。戦争勝利時の<strong>惑星所有権</strong>は事前に取り決め可能。</div>
+        </section>
+
+        <!-- 戦争 -->
+        <section class="rules-section" id="rules-war">
+          <div class="rules-title">WAR SYSTEM — 戦争システム</div>
+          <div class="rules-h2">戦争周期（1日4回）</div>
+          <table class="rules-table">
+            <thead><tr><th>周期</th><th>時間帯</th></tr></thead>
+            <tbody>
+              <tr><td>第1周期</td><td>8〜10時</td></tr>
+              <tr><td>第2周期</td><td>10〜12時</td></tr>
+              <tr><td>第3周期</td><td>13〜15時</td></tr>
+              <tr><td>第4周期</td><td>15〜17時</td></tr>
+            </tbody>
+          </table>
+          <div class="rules-callout warn">
+            1周期あたりの宣戦布告・増援の合計上限: <strong>5箇所</strong><br>
+            1日の合計上限: なし（4周期フルで最大20件） ／ 防衛側: 被宣戦布告の上限なし
+          </div>
+          <div class="rules-h2">戦争フロー</div>
+          <div class="rules-code">宣戦布告（リーダーのみ・文明Lvで到達可能な惑星が対象）
+  ↓ 戦前フェーズ 1時間（兵力配置・同盟増援・暗黒アクション）
+  ↓ 戦力判定
+  ↓ 戦後フェーズ 1時間（結果反映猶予）
+  ↓ 確定（惑星帰属が正式確定）</div>
+          <div class="rules-h2">戦力判定式</div>
+          <div class="rules-code">攻撃総力 = 攻撃兵士の戦闘力合計
+防衛総力 = 防衛兵士の戦闘力合計 × 1.5（防衛補正）
+
+攻撃総力 > 防衛総力 → 攻撃側勝利
+攻撃総力 ≦ 防衛総力 → 防衛側勝利（同値は防衛側勝利・引き分けなし）</div>
+          <div class="rules-h2">戦闘損失（ランチェスター第一法則）</div>
+          <div class="rules-code">勝者残存戦闘力 = 優勢側総力 − 劣勢側総力（補正込み）
+敗者 → 全滅
+残存戦闘力を兵士に逆換算: 最高Lvから順に充当、端数は民兵で返還（0.5未満切り捨て）</div>
+          <div class="rules-callout">攻撃側勝利時、奪取した惑星の<strong>発展Lvはそのまま引き継がれる</strong>（Lv1リセットなし）</div>
+        </section>
+
+        <!-- 暗黒アクション -->
+        <section class="rules-section" id="rules-dark">
+          <div class="rules-title">DARK ACTIONS — 暗黒アクション</div>
+          <div class="rules-h2">秘密協定（暗黒×2）</div>
+          <div class="rules-callout">通常同盟・属国同盟を締結しつつ他連合に非公開にする。</div>
+          <div class="rules-h2">連合分断（暗黒×15）</div>
+          <div class="rules-callout warn">任意の連合に強制内部不信任投票を発動する。</div>
+          <div class="rules-code">発動: 実行者が暗黒×15を消費 → 対象連合に投票強制発動
+投票フェーズ: 全メンバーが2時間以内に賛否を投票、過半数賛成 → 連合解散
+解散時: 保有惑星すべてが実行者連合に移転（発展Lvそのまま）
+元連合員: 全員「無所属」→ 新連合結成または既存連合への加入が可能
+否決時: 暗黒×15は返還されない。「連合分断を試みられた」事実が全体公開される</div>
+          <div class="rules-h2">暗黒物質の戦略的トレードオフ</div>
+          <div class="rules-code">文明Lv6:  暗黒10個  ／  文明Lv7: 暗黒+50個（累積60個）
+惑星Lv6:  暗黒5個/惑星  ／  惑星Lv7: 暗黒+5個/惑星（累積10個）
+秘密協定: 暗黒2個  ／  連合分断: 暗黒15個</div>
+        </section>
+
+        <!-- スキルカード -->
+        <section class="rules-section" id="rules-skills">
+          <div class="rules-title">SKILL CARDS — スキルカード制度</div>
+          <div class="rules-callout">
+            上位5種: 150枚（全員から抽選・各クラス1名ずつ）<br>
+            下位10種: 1050枚（残り1050名に1枚ずつ・各種約105枚）<br>
+            合計1200枚 → 全1200名に1枚配布。カード内容・保有者は全員に公開（準備期間中のみ交換・売買可能）
+          </div>
+          <div class="rules-h2">上位スキルカード（5種）</div>
+          <div class="skill-cards-grid">
+            <div class="skill-card sc-upper"><div class="sc-icon">⭐</div><div class="sc-body"><div class="sc-name"><span class="sc-no">No.1</span>万象の恵み</div><div class="sc-desc">全資源獲得量×1.5（永久）</div></div></div>
+            <div class="skill-card sc-upper"><div class="sc-icon">👑</div><div class="sc-body"><div class="sc-name"><span class="sc-no">No.2</span>帝国宣言</div><div class="sc-desc">連合上限人数を80名に拡張（永久）</div></div></div>
+            <div class="skill-card sc-upper"><div class="sc-icon">💎</div><div class="sc-body"><div class="sc-name"><span class="sc-no">No.3</span>全蔵の恵み</div><div class="sc-desc">開始時に炉晶400/演晶400/鋼材200/暗黒2でスタート</div></div></div>
+            <div class="skill-card sc-upper"><div class="sc-icon">🌟</div><div class="sc-body"><div class="sc-name"><span class="sc-no">No.4</span>星の加護（上）</div><div class="sc-desc">終了時にリーダーへ付与されるすべての数値に掛ける。1位なら×5倍</div></div></div>
+            <div class="skill-card sc-upper"><div class="sc-icon">⚡</div><div class="sc-body"><div class="sc-name"><span class="sc-no">No.5</span>覇者の証</div><div class="sc-desc">同盟・戦争関係の連合数Nだけ全資源獲得量と戦力に+0.1N倍バフ（永久）<br>N=5:×1.5 N=10:×2.0 N=20:×3.0</div></div></div>
+          </div>
+          <div class="rules-h2">下位スキルカード（10種）</div>
+          <div class="skill-cards-grid">
+            <div class="skill-card sc-lower"><div class="sc-icon">🔥</div><div class="sc-body"><div class="sc-name"><span class="sc-no">No.6</span>炉晶の恵み</div><div class="sc-desc">炉晶獲得量×2（永久）</div></div></div>
+            <div class="skill-card sc-lower"><div class="sc-icon">💠</div><div class="sc-body"><div class="sc-name"><span class="sc-no">No.7</span>演晶の恵み</div><div class="sc-desc">演晶獲得量×2（永久）</div></div></div>
+            <div class="skill-card sc-lower"><div class="sc-icon">⚙️</div><div class="sc-body"><div class="sc-name"><span class="sc-no">No.8</span>鋼材の恵み</div><div class="sc-desc">鋼材獲得量×2（永久）</div></div></div>
+            <div class="skill-card sc-lower"><div class="sc-icon">🌑</div><div class="sc-body"><div class="sc-name"><span class="sc-no">No.9</span>暗黒の恵み</div><div class="sc-desc">暗黒物質獲得量×2（永久）</div></div></div>
+            <div class="skill-card sc-lower"><div class="sc-icon">🏰</div><div class="sc-body"><div class="sc-name"><span class="sc-no">No.10</span>大連合令</div><div class="sc-desc">連合上限人数を60名に拡張（永久）</div></div></div>
+            <div class="skill-card sc-lower"><div class="sc-icon">📦</div><div class="sc-body"><div class="sc-name"><span class="sc-no">No.11</span>炉晶の蔵</div><div class="sc-desc">開始時に炉晶600個でスタート</div></div></div>
+            <div class="skill-card sc-lower"><div class="sc-icon">📦</div><div class="sc-body"><div class="sc-name"><span class="sc-no">No.12</span>演晶の蔵</div><div class="sc-desc">開始時に演晶600個でスタート</div></div></div>
+            <div class="skill-card sc-lower"><div class="sc-icon">📦</div><div class="sc-body"><div class="sc-name"><span class="sc-no">No.13</span>鋼材の蔵</div><div class="sc-desc">開始時に鋼材300個でスタート</div></div></div>
+            <div class="skill-card sc-lower"><div class="sc-icon">📦</div><div class="sc-body"><div class="sc-name"><span class="sc-no">No.14</span>暗黒の蔵</div><div class="sc-desc">開始時に暗黒物質3個でスタート</div></div></div>
+            <div class="skill-card sc-lower"><div class="sc-icon">✨</div><div class="sc-body"><div class="sc-name"><span class="sc-no">No.15</span>星の加護（下）</div><div class="sc-desc">上位50%以内なら×1.5倍</div></div></div>
+          </div>
+        </section>
+
+        <!-- 採点・報酬 -->
+        <section class="rules-section" id="rules-scoring">
+          <div class="rules-title">SCORING — 採点・報酬</div>
+          <div class="rules-h2">スコア計算式</div>
+          <div class="rules-code">連合スコア = Σ（保有惑星の発展Lv） × 保有惑星数
+同点の場合 → 所持資源の総量（全資源合算）で決着</div>
+          <div class="rules-h2">報酬（上位）</div>
+          <table class="rules-table">
+            <thead><tr><th>順位</th><th>連合全員PP</th><th>リーダー追加PP</th><th>プロテクトポイント</th><th>CP（クラスへ）</th></tr></thead>
+            <tbody>
+              <tr><td>1位</td><td>100,000</td><td>20,000,000</td><td>1個</td><td>+300</td></tr>
+              <tr><td>2〜3位</td><td>50,000</td><td>10,000,000</td><td>—</td><td>+200</td></tr>
+              <tr><td>4〜10位</td><td>30,000</td><td>1,000,000</td><td>—</td><td>+100</td></tr>
+              <tr><td>11〜20位</td><td>10,000</td><td>100,000</td><td>—</td><td>—</td></tr>
+              <tr><td>21位以下</td><td>5,000</td><td>—</td><td>—</td><td>—</td></tr>
+            </tbody>
+          </table>
+          <div class="rules-h2">ペナルティ（下位）</div>
+          <div class="rules-callout warn">
+            最下位 CP −200 ／ 下から2〜10位 CP −100<br>
+            <strong>下から1〜10位のリーダーは退学</strong>（20,000,000PPで回避可能）
+          </div>
+        </section>
+
+        <!-- 銀河大戦争 -->
+        <section class="rules-section" id="rules-galaxy">
+          <div class="rules-title">GALACTIC WAR — 銀河大戦争</div>
+          <div class="rules-callout warn">
+            <strong>7日目・第3・第4周期（13〜17時）に自動発動</strong><br>
+            文明レベルに関係なく<strong>全連合が全惑星に宣戦布告可能</strong><br>
+            戦前フェーズ30分・戦後フェーズ30分に短縮（通常は各1時間）
+          </div>
+          <table class="rules-table">
+            <thead><tr><th>項目</th><th>通常時</th><th>銀河大戦争</th></tr></thead>
+            <tbody>
+              <tr><td>宣戦布告の対象</td><td>文明Lvで到達可能な惑星のみ</td><td><strong>全惑星</strong></td></tr>
+              <tr><td>戦前フェーズ</td><td>1時間</td><td>30分</td></tr>
+              <tr><td>戦後フェーズ</td><td>1時間</td><td>30分</td></tr>
+              <tr><td>発動条件</td><td>リーダーが宣戦</td><td>自動発動</td></tr>
+            </tbody>
+          </table>
+        </section>
+
+      </div><!-- /rules-content -->
+    </div><!-- /rules-layout -->
+  </div><!-- /page-rules -->
+
+</div><!-- /app -->
+<div id="toast"></div>
+
+<!-- ══════════════ MODALS ══════════════ -->
+
+<!-- Alliance Modal -->
+<div class="modal-overlay" id="modal-alliance">
+  <div class="modal-box">
+    <div class="modal-title" id="modal-alliance-title">✦ 連合を追加</div>
+    <div class="modal-field">
+      <div class="modal-label">連合名</div>
+      <input class="modal-input" id="modal-a-name" placeholder="例: 龍園連合" />
+    </div>
+    <div class="modal-field">
+      <div class="modal-label">リーダー名</div>
+      <input class="modal-input" id="modal-a-leader" placeholder="例: 龍園翔" />
+    </div>
+    <div class="modal-field">
+      <div class="modal-label">人数（10〜80）</div>
+      <input class="modal-input" id="modal-a-members" type="number" value="40" min="10" max="80" />
+    </div>
+    <div class="modal-btns">
+      <button class="mb-cancel" onclick="closeModal('modal-alliance')">キャンセル</button>
+      <button class="mb-ok" onclick="submitAllianceModal()">確定</button>
+    </div>
+  </div>
+</div>
+
+<!-- Assign Planet Modal -->
+<div class="modal-overlay" id="modal-assign-planet">
+  <div class="modal-box">
+    <div class="modal-title">✦ 惑星を割り当て</div>
+    <div class="modal-field">
+      <div class="modal-label">惑星（未所有のみ表示）</div>
+      <select class="modal-select" id="modal-ap-planet"></select>
+    </div>
+    <div class="modal-btns">
+      <button class="mb-cancel" onclick="closeModal('modal-assign-planet')">キャンセル</button>
+      <button class="mb-ok" onclick="submitAssignPlanetModal()">割り当て</button>
+    </div>
+  </div>
+</div>
+
+<!-- Planet Detail Modal -->
+<div class="modal-overlay" id="modal-planet-detail">
+  <div class="modal-box">
+    <div class="modal-title" id="modal-pd-title">惑星詳細</div>
+    <input type="hidden" id="modal-pd-planet-id" />
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px;">
+      <div>
+        <div class="modal-label">タイプ</div>
+        <div id="modal-pd-type" style="color:var(--accent);font-weight:700;font-size:13px;padding:4px 0;"></div>
+      </div>
+      <div>
+        <div class="modal-label">現在Lv</div>
+        <div id="modal-pd-lv" style="color:var(--gold);font-weight:700;font-size:13px;padding:4px 0;"></div>
+      </div>
+      <div>
+        <div class="modal-label">現在の所有者</div>
+        <div id="modal-pd-owner" style="font-size:12px;padding:4px 0;"></div>
+      </div>
+      <div>
+        <div class="modal-label">1日産出</div>
+        <div id="modal-pd-output" style="font-family:var(--font-mono);font-size:11px;padding:4px 0;color:var(--text-mid);"></div>
+      </div>
+    </div>
+    <div class="modal-field">
+      <div class="modal-label">所有者を変更</div>
+      <select class="modal-select" id="modal-pd-owner-sel"></select>
+    </div>
+    <div class="modal-field">
+      <div class="modal-label">発展Lvを変更</div>
+      <select class="modal-select" id="modal-pd-lv-sel"></select>
+    </div>
+    <div class="modal-btns">
+      <button class="mb-cancel" onclick="closeModal('modal-planet-detail')">キャンセル</button>
+      <button class="mb-ok" onclick="submitPlanetDetailModal()">更新</button>
+    </div>
+  </div>
+</div>
+
+<!-- Diplomacy Modal -->
+<div class="modal-overlay" id="modal-diplo">
+  <div class="modal-box">
+    <div class="modal-title" id="modal-diplo-title">✦ 外交関係を追加</div>
+    <div class="modal-field">
+      <div class="modal-label">対象連合</div>
+      <select class="modal-select" id="modal-diplo-target"></select>
+    </div>
+    <div class="modal-btns">
+      <button class="mb-cancel" onclick="closeModal('modal-diplo')">キャンセル</button>
+      <button class="mb-ok" onclick="submitDiploModal()">確定</button>
+    </div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
