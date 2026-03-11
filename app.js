@@ -4609,9 +4609,6 @@ function toggleMobileSettings(){
     if(mssVal && vol){ mssVal.textContent = vol.value; }
     ov.classList.add('visible');
     document.body.style.overflow = 'hidden';
-    /* ボトムナビを一時的に隠す */
-    const bn = document.getElementById('bottom-nav');
-    if(bn) bn.style.display = 'none';
   }
 }
 window.toggleMobileSettings = toggleMobileSettings;
@@ -4620,9 +4617,6 @@ function closeMobileSettings(){
   const ov = document.getElementById('mobile-settings-overlay');
   if(ov){ ov.classList.remove('visible'); }
   document.body.style.overflow = '';
-  /* ボトムナビを復元 */
-  const bn = document.getElementById('bottom-nav');
-  if(bn) bn.style.display = '';
 }
 window.closeMobileSettings = closeMobileSettings;
 
