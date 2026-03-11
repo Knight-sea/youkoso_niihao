@@ -1132,27 +1132,57 @@ body.edit-mode .hcb-dist-row{
 }
 .grade-pg-hdr-left{display:flex;align-items:baseline;gap:12px}
 
-.kp-strip{display:flex;gap:6px;padding:10px 13px;overflow-x:auto;flex-wrap:nowrap}
+/* kp-strip: 5列グリッド — スライド不要 */
+.kp-strip{
+  display:grid;
+  grid-template-columns:repeat(5,1fr);
+  gap:5px;padding:8px 10px;
+}
 
 .kp-card{
   background:var(--s2);border:1px solid var(--bd);
-  padding:7px 12px;min-width:210px;flex-shrink:0;
+  padding:7px 10px;
   cursor:pointer;transition:all var(--tr);
-  display:flex;align-items:center;gap:10px;
+  display:flex;flex-direction:column;gap:3px;
+  min-width:0;
 }
 .kp-card:hover{border-color:var(--acd);background:var(--s3)}
 .kp-name{
-  font-size:.88rem;color:var(--t0);font-family:var(--fj);
+  font-size:.82rem;color:var(--t0);font-family:var(--fj);
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
-  font-weight:500;flex:1;min-width:0;
+  font-weight:500;
 }
 .kp-pp-val{
-  font-family:var(--fd);font-size:.84rem;font-weight:700;
-  white-space:nowrap;flex-shrink:0;
+  font-family:var(--fd);font-size:.78rem;font-weight:700;
+  white-space:nowrap;
 }
 .kp-prp-val{
-  font-family:var(--fd);font-size:.76rem;font-weight:600;
-  color:var(--yw);white-space:nowrap;flex-shrink:0;
+  font-family:var(--fd);font-size:.7rem;font-weight:600;
+  color:var(--yw);white-space:nowrap;
+}
+/* モバイル: 5列そのまま、コンパクトに表示 */
+body.mobile-mode .kp-strip{
+  grid-template-columns:repeat(5,1fr);
+  gap:3px;padding:5px 7px;
+}
+body.mobile-mode .kp-card{
+  padding:5px 5px;gap:2px;
+}
+body.mobile-mode .kp-name{
+  font-size:.6rem;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+body.mobile-mode .kp-pp-val{
+  font-size:.58rem;
+}
+body.mobile-mode .kp-prp-val{
+  font-size:.53rem;
+}
+@media(max-width:768px){
+  .kp-strip{grid-template-columns:repeat(5,1fr);gap:3px;padding:5px 7px;}
+  .kp-card{padding:5px 5px;}
+  .kp-name{font-size:.6rem;}
+  .kp-pp-val{font-size:.58rem;}
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -1181,7 +1211,7 @@ body.edit-mode .hcb-dist-row{
 .cls-pp-lbl{font-size:calc(0.71rem * 1.2)}
 
 /* Student grid */
-.s-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:4px}
+.s-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:4px}
 @media(max-width:1100px){.s-grid{grid-template-columns:repeat(4,1fr)}}
 @media(max-width:820px){.s-grid{grid-template-columns:repeat(3,1fr)}}
 @media(max-width:560px){.s-grid{grid-template-columns:repeat(2,1fr)}}
@@ -1433,9 +1463,56 @@ body.edit-mode .hcb-dist-row{
 .rk-pp.neg{color:var(--rd)}
 .rk-nm{cursor:pointer;color:var(--ac)}
 .rk-nm:hover{text-decoration:underline}
-.medal-row{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
-.medal-card{background:var(--s2);border:1px solid var(--bd);padding:10px 14px;flex:1;min-width:170px}
+.medal-row{
+  display:grid;
+  /* 2nd | 1st | 3rd — 2nd/3rd are half width of 1st */
+  grid-template-columns: 1fr 2fr 1fr;
+  gap:8px;margin-top:12px;align-items:end;
+}
+/* 人数が1人のみの場合はフル幅 */
+.medal-row:has(.medal-card:only-child){
+  grid-template-columns: 1fr;
+}
+.medal-row:has(.medal-card:last-child:nth-child(2)){
+  grid-template-columns: 1fr 2fr;
+}
+/* 1位を真ん中に、2位を左、3位を右へ再配置 */
+.medal-card:nth-child(1){ order:2; } /* 1位 → 真ん中 */
+.medal-card:nth-child(2){ order:1; } /* 2位 → 左 */
+.medal-card:nth-child(3){ order:3; } /* 3位 → 右 */
+
+.medal-card{
+  background:var(--s2);border:1px solid var(--bd);
+  padding:10px 12px;cursor:pointer;
+  transition:all var(--tr);
+}
 .medal-card[style*="cursor:pointer"]:hover{border-color:var(--ac);background:var(--s3)}
+
+/* 2位・3位: コンパクト */
+.medal-card:nth-child(2),
+.medal-card:nth-child(3){
+  padding:8px 10px;
+}
+.medal-card:nth-child(2) .medal-rnk,
+.medal-card:nth-child(3) .medal-rnk  { font-size:.60rem; margin-bottom:2px; }
+.medal-card:nth-child(2) .medal-name,
+.medal-card:nth-child(3) .medal-name { font-size:.72rem; margin-bottom:2px; }
+.medal-card:nth-child(2) .medal-sub,
+.medal-card:nth-child(3) .medal-sub  { font-size:.60rem; }
+.medal-card:nth-child(2) .medal-pp,
+.medal-card:nth-child(3) .medal-pp   { font-size:.80rem; }
+
+/* 1位: 大きく・アクセント */
+.medal-card:nth-child(1){
+  border-color:var(--yw);
+  background:linear-gradient(160deg, var(--s3) 0%, var(--s2) 100%);
+  padding:14px 14px;
+}
+.medal-card:nth-child(1) .medal-rnk  { font-size:.72rem; color:var(--yw); margin-bottom:4px; }
+.medal-card:nth-child(1) .medal-name { font-size:1.05rem; font-weight:700; margin-bottom:4px; }
+.medal-card:nth-child(1) .medal-sub  { font-size:.68rem; margin-bottom:2px; }
+.medal-card:nth-child(1) .medal-pp   { font-size:1.32rem; }
+
 .medal-rnk{font-size:.67rem;color:var(--t2);margin-bottom:3px}
 .medal-name{font-family:var(--fj);font-size:.85rem;color:var(--t0);margin-bottom:3px}
 .medal-pp{font-family:var(--fd);font-size:1.08rem;color:var(--gn)}
@@ -1545,29 +1622,29 @@ body.mobile-mode .rnk-flt-btn{font-size:.60rem;padding:2px 5px}
 /* ═══════════════════════════════════════════════════════════════
    PROFILE PAGE — v7.1
 ═══════════════════════════════════════════════════════════════ */
-#prof-wrap{display:grid;grid-template-columns:280px 1fr;gap:12px}
+#prof-wrap{display:grid;grid-template-columns:230px 1fr;gap:10px}
 @media(max-width:800px){#prof-wrap{grid-template-columns:1fr}}
 
 .prof-side{
-  background:var(--s1);border:1px solid var(--bd);padding:14px;
+  background:var(--s1);border:1px solid var(--bd);padding:10px;
   align-self:start;position:sticky;top:calc(var(--tbh) + 8px);
 }
 .prof-main{display:flex;flex-direction:column;gap:9px}
 
 .prof-side-hdr{
-  font-family:var(--fd);font-size:.62rem;color:var(--t1);
+  font-family:var(--fd);font-size:.58rem;color:var(--t1);
   letter-spacing:.18em;text-transform:uppercase;
-  margin-bottom:6px;
+  margin-bottom:5px;
 }
 .prof-side-sep{
   border:none;border-top:1px solid var(--bd2);
-  margin-bottom:10px;
+  margin-bottom:8px;
 }
 
 .prof-name{
-  font-family:var(--fd);font-size:1.86rem;
+  font-family:var(--fd);font-size:1.3rem;
   font-weight:900;color:var(--t0);
-  margin-bottom:5px;
+  margin-bottom:4px;
   word-break:break-all;line-height:1.1;
 }
 .prof-sid{font-size:.62rem;color:var(--t3);margin-bottom:7px}
@@ -1608,34 +1685,34 @@ body.mobile-mode .rnk-flt-btn{font-size:.60rem;padding:2px 5px}
 
 /* v7.2: Overall score block — transparent, no border (floats on .prof-side bg) */
 .ov-wrap{
-  display:flex;align-items:stretch;gap:10px;margin-top:10px;
+  display:flex;align-items:stretch;gap:8px;margin-top:8px;
 }
 .ov-score-block{
-  flex:0 0 70px;
+  flex:0 0 56px;
   display:flex;flex-direction:column;align-items:center;justify-content:center;
-  background:transparent;border:none;padding:4px 2px; /* v7.7: tighter padding → more room for score */
+  background:transparent;border:none;padding:2px;
 }
-.ov-score-lbl{font-size:.52rem;color:var(--t2);letter-spacing:.09em;margin-bottom:2px}
+.ov-score-lbl{font-size:.50rem;color:var(--t2);letter-spacing:.09em;margin-bottom:2px}
 .ov-score-val{
-  font-family:var(--fd);font-size:2.4rem;font-weight:900; /* v7.7: maximised to fill block */
+  font-family:var(--fd);font-size:1.9rem;font-weight:900;
   color:var(--ac);line-height:1;
 }
-.ov-score-sub{font-size:.52rem;color:var(--t3);margin-top:2px}
+.ov-score-sub{font-size:.50rem;color:var(--t3);margin-top:2px}
 
 /* v7.2: Radar chart — transparent, no border; canvas still constrained */
-/* v7.7: padding 6px → 4px; chart size unchanged; JS label offset r+18 */
 .radar-wrap{
   flex:1;
   display:flex;align-items:center;justify-content:center;
   background:transparent;border:none;
-  padding:4px;
+  padding:2px;
   overflow:hidden;
   min-width:0;
+  max-height:120px;
 }
 .radar-wrap canvas{
   display:block;
   max-width:100%;
-  max-height:100%;
+  max-height:120px;
   width:auto !important;
   height:auto !important;
 }
@@ -2612,9 +2689,9 @@ body.mobile-mode .rnk-tbl{min-width:620px}
 
 /* ── Student grid mobile ─────────────────────────────────────── */
 @media(max-width:768px){
-  .s-grid{grid-template-columns:repeat(2,1fr)!important}
+  .s-grid{grid-template-columns:repeat(4,1fr)!important;gap:3px}
 }
-body.mobile-mode .s-grid{grid-template-columns:repeat(2,1fr)!important}
+/* s-grid mobile: 4列定義は下の Student grid セクションで統一 */
 
 /* ── Breadcrumb truncation on mobile ─────────────────────────── */
 @media(max-width:768px){
@@ -2686,3 +2763,422 @@ body.mobile-mode .s-col-left{padding:4px 5px 4px 8px}
 }
 body.mobile-mode .ctr-issue-row{flex-wrap:wrap}
 body.mobile-mode .ctr-id-inp{flex:1 1 100%}
+
+
+/* ═══════════════════════════════════════════════════════════════
+   MOBILE-FIRST REDESIGN v2 — Bottom Nav + Settings Sheet
+   Applies when body.mobile-mode is active (≤768px or portrait)
+═══════════════════════════════════════════════════════════════ */
+
+/* ── Bottom Nav: hidden on desktop, shown in mobile-mode ─────── */
+#bottom-nav {
+  display: none;
+  position: fixed;
+  bottom: 0; left: 0; right: 0;
+  z-index: 490; /* modals (500+) の下、taskbar(400)の上 */
+  background: var(--s1);
+  border-top: 1px solid var(--bd2);
+  box-shadow: 0 -3px 16px rgba(0,0,0,.30);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+body.mobile-mode #bottom-nav { display: flex; flex-direction: row; }
+
+.bn-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  background: none;
+  border: none;
+  color: var(--t2);
+  padding: 8px 2px 6px;
+  min-height: 52px;
+  font-size: inherit;
+  transition: color var(--tr), background var(--tr);
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+.bn-item:active { background: var(--acg); }
+.bn-item.bn-active { color: var(--ac); }
+.bn-item.bn-active .bn-icon { transform: scale(1.12); }
+.bn-icon {
+  font-size: 1.25rem;
+  line-height: 1;
+  transition: transform var(--tr);
+  display: block;
+}
+.bn-lbl {
+  font-size: .55rem;
+  font-family: var(--fj);
+  letter-spacing: .02em;
+  white-space: nowrap;
+  line-height: 1;
+}
+
+/* ── Mobile: hide desktop gear tray ─────────────────────────── */
+body.mobile-mode #gear-tray { display: none !important; }
+body.mobile-mode #gear-btn  { display: none !important; }
+body.mobile-mode #gear-wrap { display: none !important; }
+body.mobile-mode #tb-right  { display: none !important; }
+
+/* ── Mobile taskbar: slim single row ────────────────────────── */
+body.mobile-mode #taskbar {
+  height: 46px;
+  padding: 0 10px;
+  flex-wrap: nowrap;
+  gap: 6px;
+  display: flex;
+  align-items: center;
+}
+body.mobile-mode #tb-left {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+}
+/* Month nav stays in center, no wrapping */
+body.mobile-mode #tb-center {
+  order: 0;
+  flex: 0 0 auto;
+  border-top: none;
+  padding: 0;
+  gap: 4px;
+  display: flex;
+  align-items: center;
+}
+body.mobile-mode #logo { font-size: .78rem; white-space: nowrap; }
+body.mobile-mode #ver  { display: none; }
+body.mobile-mode #slot-chip { font-size: .52rem; }
+body.mobile-mode #date-block { min-width: auto; gap: 3px; }
+body.mobile-mode #date-display { font-size: .66rem; }
+body.mobile-mode #breadcrumb {
+  max-width: 120px;
+  font-size: .56rem;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+/* Compact prev/next buttons */
+body.mobile-mode .tb-btn {
+  padding: 2px 6px;
+  font-size: .58rem;
+  height: 28px;
+  min-width: 40px;
+}
+
+/* ── #app: pad bottom for nav bar ───────────────────────────── */
+body.mobile-mode #app {
+  padding: 10px 10px calc(52px + env(safe-area-inset-bottom, 0px) + 10px);
+}
+
+/* ── Home bar & controls ─────────────────────────────────────── */
+body.mobile-mode .home-bar {
+  font-size: .64rem; padding: 4px 8px; gap: 5px; flex-wrap: wrap;
+}
+body.mobile-mode .hm-right { display: none; }
+body.mobile-mode .home-ctrl-bar { flex-direction: column; gap: 0; }
+body.mobile-mode .hcb-left { border-right: none; border-bottom: 1px solid var(--bd); }
+body.mobile-mode .hcb-half { padding: 6px 10px; flex-wrap: wrap; }
+body.mobile-mode .hcb-dist-row { flex-wrap: wrap; gap: 5px; }
+body.mobile-mode .hcb-inp { width: 64px; }
+body.mobile-mode .btn-edit-mode { min-height: 38px; padding: 5px 14px; font-size: .68rem; }
+
+/* ── Grade blocks ────────────────────────────────────────────── */
+body.mobile-mode .grade-hdr { padding: 9px 12px; }
+body.mobile-mode .grade-lbl { font-size: .82rem; }
+body.mobile-mode .grade-hint { font-size: .58rem; }
+body.mobile-mode .cls-strip { grid-template-columns: repeat(2, 1fr); gap: 6px; padding: 7px 8px; }
+body.mobile-mode .cls-mini { min-height: 66px; padding: 6px 8px; }
+body.mobile-mode .mini-name { font-size: .72rem; }
+body.mobile-mode .mini-rank { font-size: .80rem; }
+body.mobile-mode .mini-cp   { font-size: 1.0rem; }
+
+/* ── Student grid (class page) — 4列 ────────────────────────── */
+body.mobile-mode .s-grid { grid-template-columns: repeat(4, 1fr) !important; gap: 3px; }
+body.mobile-mode .s-card { min-height: 64px; }
+body.mobile-mode .s-card-inner { min-height: 64px; }
+body.mobile-mode .s-name { font-size: .88rem; -webkit-line-clamp: 2; }
+body.mobile-mode .s-ov-val { font-size: .8rem; }
+body.mobile-mode .s-col-left  { padding: 4px 3px 4px 5px; }
+body.mobile-mode .s-col-right { min-width: 36px; padding: 3px 4px 3px 2px; }
+body.mobile-mode .s-sid       { font-size: .50rem; }
+body.mobile-mode .s-gender-mid{ font-size: .50rem; }
+body.mobile-mode .s-pp-val    { font-size: .64rem; }
+body.mobile-mode .s-prp-val   { font-size: .56rem; }
+
+/* ── Profile page ────────────────────────────────────────────── */
+body.mobile-mode #prof-wrap { grid-template-columns: 1fr !important; }
+body.mobile-mode .prof-side {
+  border-right: none;
+  border-bottom: 1px solid var(--bd);
+  position: static;
+  padding: 8px 10px;
+}
+/* サイドパネルをコンパクト2列レイアウトに */
+body.mobile-mode .prof-name    { font-size: .95rem; margin-bottom: 2px; }
+body.mobile-mode .prof-sid     { font-size: .55rem; margin-bottom: 4px; }
+body.mobile-mode .prof-pp      { font-size: .92rem; margin: 3px 0 0; }
+body.mobile-mode .prof-pplbl   { font-size: .52rem; }
+body.mobile-mode .info-tbl td  { font-size: .63rem; padding: 2px 0; }
+body.mobile-mode .sb-lbl       { font-size: .58rem; width: 40px; }
+body.mobile-mode .sb-track     { height: 4px; }
+body.mobile-mode .sb-grade     { font-size: .60rem; width: 22px; }
+body.mobile-mode .sb-grid      { margin-top: 5px; }
+body.mobile-mode .sb-row       { margin-bottom: 2px; }
+/* レーダーチャートとスコアを横並びに */
+body.mobile-mode .ov-wrap      { gap: 5px; margin-top: 5px; }
+body.mobile-mode .ov-score-val { font-size: 1.4rem; }
+body.mobile-mode .radar-wrap   { max-height: 80px; }
+body.mobile-mode .radar-wrap canvas { max-height: 80px; }
+/* prof-side-hdr 非表示でスペース節約 */
+body.mobile-mode .prof-side-hdr { display: none; }
+body.mobile-mode .prof-side-sep { margin-bottom: 5px; }
+
+/* ── Ranking ─────────────────────────────────────────────────── */
+body.mobile-mode .rnk-wrap   { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+body.mobile-mode .rnk-tbl    { min-width: 520px; }
+body.mobile-mode .rnk-filter-bar { flex-wrap: wrap; gap: 5px; padding: 5px 8px; }
+body.mobile-mode .rnk-flt-btn{ font-size: .58rem; padding: 3px 5px; min-height: 30px; }
+body.mobile-mode .rnk-pagination { gap: 6px; }
+body.mobile-mode .rnk-pg-btn { padding: 4px 10px; font-size: .60rem; min-height: 36px; }
+
+/* ── Back button ─────────────────────────────────────────────── */
+body.mobile-mode .back-btn { min-height: 38px; padding: 6px 14px; font-size: .70rem; }
+
+/* ── Page header ─────────────────────────────────────────────── */
+body.mobile-mode .pg-hdr { flex-wrap: wrap; gap: 5px; margin-bottom: 9px; }
+body.mobile-mode .pg-title { font-size: .86rem; }
+body.mobile-mode .pg-sub   { font-size: .63rem; }
+
+/* ── Save/Load: bottom sheet ─────────────────────────────────── */
+body.mobile-mode #sl-overlay {
+  align-items: flex-end;
+  padding: 0;
+}
+body.mobile-mode #sl-box {
+  width: 100%; max-width: 100%;
+  border-radius: 18px 18px 0 0;
+  padding: 16px 12px calc(18px + env(safe-area-inset-bottom, 0px));
+  max-height: 88vh;
+  overflow-y: auto;
+  border-bottom: none; border-left: none; border-right: none;
+  animation: slideUpSheet .24s ease;
+}
+body.mobile-mode #sl-slots {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+body.mobile-mode #sl-controls {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px; margin-top: 10px;
+}
+body.mobile-mode .sl-act       { min-height: 44px; font-size: .70rem; }
+body.mobile-mode .sl-slot      { min-height: 80px; padding: 8px 8px 7px; }
+body.mobile-mode .sl-act-empty { display: none; }
+body.mobile-mode .sl-login-lbl { display: inline; }
+body.mobile-mode .sl-user-name { max-width: 100px; }
+
+/* ── Confirm/Alert modal: bottom sheet ──────────────────────── */
+body.mobile-mode #uic-overlay {
+  align-items: flex-end; padding: 0;
+}
+body.mobile-mode #uic-box {
+  width: 100%; max-width: 100%;
+  border-radius: 18px 18px 0 0;
+  padding: 18px 16px calc(24px + env(safe-area-inset-bottom, 0px));
+  border-bottom: none; border-left: none; border-right: none;
+  animation: slideUpSheet .2s ease;
+}
+body.mobile-mode .uic-body    { font-size: .80rem; line-height: 1.65; }
+body.mobile-mode .uic-actions { gap: 10px; }
+body.mobile-mode .uic-btn     { min-height: 46px; font-size: .76rem; }
+
+body.mobile-mode #modal-overlay {
+  align-items: flex-end; padding: 0;
+}
+body.mobile-mode #modal-box {
+  width: 100%; max-width: 100%;
+  border-radius: 18px 18px 0 0;
+  padding: 18px 16px calc(24px + env(safe-area-inset-bottom, 0px));
+  border-bottom: none; border-left: none; border-right: none;
+  animation: slideUpSheet .2s ease;
+}
+
+/* kp-strip mobile: defined above in main mobile section */
+
+/* ── Cohort / incoming ───────────────────────────────────────── */
+body.mobile-mode .cohort-block { margin-bottom: 10px; }
+body.mobile-mode .cohort-hdr   { padding: 7px 10px; }
+
+/* ── Gear tray (if visible) ──────────────────────────────────── */
+body.mobile-mode .gt-btn  { font-size: .64rem; padding: 3px 6px; height: 26px; }
+body.mobile-mode #gear-btn{ width: 30px; height: 30px; font-size: 1rem; }
+
+/* ── Contract ────────────────────────────────────────────────── */
+body.mobile-mode .ctr-issue-row { flex-wrap: wrap; }
+body.mobile-mode .ctr-id-inp    { flex: 1 1 100%; }
+
+/* ── yr-grade strips ─────────────────────────────────────────── */
+body.mobile-mode .yr-grade-strip{ grid-template-columns: repeat(2,1fr); gap: 6px; }
+body.mobile-mode .yr-sel-hdr    { padding: 6px 10px; }
+body.mobile-mode .yr-sel-lbl    { font-size: .76rem; }
+body.mobile-mode .yr-grade-card { min-height: 54px; padding: 5px 8px; }
+body.mobile-mode .yr-grade-lbl  { font-size: .70rem; }
+body.mobile-mode .yr-grade-cnt  { font-size: .92rem; }
+
+@keyframes slideUpSheet {
+  from { transform: translateY(60px); opacity: 0; }
+  to   { transform: translateY(0);    opacity: 1; }
+}
+
+/* ── Mobile Settings Sheet ───────────────────────────────────── */
+#mobile-settings-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 800; /* 全てのモーダルより上 */
+  background: rgba(0,0,0,.55);
+  align-items: flex-end;
+}
+#mobile-settings-overlay.visible { display: flex; }
+
+#mobile-settings-sheet {
+  width: 100%;
+  background: var(--s1);
+  border: 1px solid var(--bd2);
+  border-bottom: none;
+  border-radius: 20px 20px 0 0;
+  padding: 10px 18px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  animation: slideUpSheet .22s ease;
+  max-height: 80vh;
+  overflow-y: auto;
+}
+#mss-handle {
+  width: 44px; height: 4px;
+  background: var(--bd2);
+  border-radius: 2px;
+  margin: 2px auto 14px;
+  flex-shrink: 0;
+}
+#mss-title {
+  font-family: var(--fd);
+  font-size: .86rem;
+  color: var(--ac);
+  letter-spacing: .1em;
+  margin-bottom: 2px;
+  text-align: center;
+  flex-shrink: 0;
+}
+.mss-section {
+  border-top: 1px solid var(--bd);
+  padding: 12px 0;
+  flex-shrink: 0;
+}
+.mss-section-lbl {
+  font-size: .62rem;
+  color: var(--t2);
+  letter-spacing: .08em;
+  margin-bottom: 9px;
+  text-transform: uppercase;
+}
+/* Month nav */
+.mss-month-nav {
+  display: flex; align-items: center;
+  justify-content: space-between; gap: 8px;
+}
+.mss-month-btn {
+  flex: 1;
+  background: var(--s3); border: 1px solid var(--bd);
+  color: var(--t0); font-family: var(--fm); font-size: .70rem;
+  padding: 10px 8px; min-height: 46px;
+  transition: all var(--tr); touch-action: manipulation;
+}
+.mss-month-btn:hover, .mss-month-btn:active {
+  border-color: var(--ac); color: var(--ac); background: var(--acg);
+}
+.mss-date-display {
+  font-family: var(--fd); font-size: .78rem; color: var(--ac);
+  letter-spacing: .06em; text-align: center;
+  flex: 0 0 auto; min-width: 80px;
+}
+/* Theme */
+.mss-theme-row { display: flex; gap: 8px; }
+.mss-theme-btn {
+  flex: 1;
+  background: var(--s3); border: 1px solid var(--bd);
+  color: var(--t0); font-family: var(--fm); font-size: .68rem;
+  padding: 10px 4px; min-height: 46px;
+  transition: all var(--tr); touch-action: manipulation;
+}
+.mss-theme-btn:hover, .mss-theme-btn:active,
+.mss-theme-btn.mss-theme-active {
+  border-color: var(--ac); color: var(--ac); background: var(--acg);
+}
+/* BGM */
+.mss-bgm-row { display: flex; flex-direction: column; gap: 10px; }
+.mss-bgm-toggle {
+  background: var(--s3); border: 1px solid var(--bd);
+  color: var(--t0); font-family: var(--fm); font-size: .72rem;
+  padding: 12px 16px; min-height: 46px;
+  transition: all var(--tr); text-align: left; touch-action: manipulation;
+}
+.mss-bgm-toggle.bgm-on {
+  border-color: var(--gn); color: var(--gn); background: var(--gnd);
+}
+.mss-vol-row {
+  display: flex; align-items: center; gap: 10px;
+}
+.mss-vol-lbl { font-size: .63rem; color: var(--t2); min-width: 26px; }
+#mss-bgm-volume {
+  flex: 1; height: 4px; accent-color: var(--ac);
+  cursor: pointer; min-height: 28px;
+}
+.mss-vol-val { font-size: .63rem; color: var(--t1); min-width: 26px; text-align: right; }
+/* Close button */
+.mss-close-btn {
+  margin-top: 14px; flex-shrink: 0;
+  background: var(--s3); border: 1px solid var(--bd2);
+  color: var(--t1); font-family: var(--fm); font-size: .72rem;
+  padding: 13px; min-height: 46px;
+  transition: all var(--tr); touch-action: manipulation;
+}
+.mss-close-btn:hover { border-color: var(--ac); color: var(--ac); }
+
+/* ── Portrait media query fallback ──────────────────────────── */
+@media(orientation: portrait) {
+  .cls-strip { grid-template-columns: repeat(2, 1fr); }
+}
+
+/* ── Ranking podium: mobile — 1位大、2/3位コンパクト ─────── */
+body.mobile-mode .medal-row {
+  gap: 5px; margin-top: 9px;
+  grid-template-columns: 1fr 2fr 1fr; /* 2位 | 1位(2倍幅) | 3位 */
+  align-items: end;
+}
+/* 1位: 大きく表示 */
+body.mobile-mode .medal-card:nth-child(1) {
+  padding: 12px 10px;
+  border-color: var(--yw);
+}
+body.mobile-mode .medal-card:nth-child(1) .medal-rnk  { font-size: .70rem; }
+body.mobile-mode .medal-card:nth-child(1) .medal-name { font-size: 1.0rem; font-weight: 700; }
+body.mobile-mode .medal-card:nth-child(1) .medal-sub  { font-size: .62rem; }
+body.mobile-mode .medal-card:nth-child(1) .medal-pp   { font-size: 1.15rem; }
+/* 2位・3位: 半分サイズ */
+body.mobile-mode .medal-card:nth-child(2),
+body.mobile-mode .medal-card:nth-child(3) { padding: 6px 7px; }
+body.mobile-mode .medal-card:nth-child(2) .medal-rnk,
+body.mobile-mode .medal-card:nth-child(3) .medal-rnk  { font-size: .55rem; margin-bottom: 1px; }
+body.mobile-mode .medal-card:nth-child(2) .medal-name,
+body.mobile-mode .medal-card:nth-child(3) .medal-name { font-size: .60rem; margin-bottom: 1px; }
+body.mobile-mode .medal-card:nth-child(2) .medal-sub,
+body.mobile-mode .medal-card:nth-child(3) .medal-sub  { font-size: .52rem; }
+body.mobile-mode .medal-card:nth-child(2) .medal-pp,
+body.mobile-mode .medal-card:nth-child(3) .medal-pp   { font-size: .65rem; }

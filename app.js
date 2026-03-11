@@ -18,7 +18,7 @@
    v9.1 gzip圧縮 + クラウド設計修正:
    [A] Protobuf を廃止。fflate (gzip) による全フィールド圧縮に切替。
        フォーマット: "GZ91:" + Base64(gzip(JSON))
-       5000人フルデータ ≈ 2MB→ 約200KB 以下 (Firestore 1MB制限内)。
+       10000人フルデータ ≈ 4MB→ 約400KB 以下 (Firestore 1MB制限内)。
 
    v9.2 スキーマ圧縮:
    [A] JSON キー名を排除して配列化 (スキーマ圧縮) を追加。
@@ -596,6 +596,8 @@ function syncBgmButton(){
     if(wrap) wrap.setAttribute('aria-hidden', String(!bgmEnabled));
   }
   syncVolFill();
+  /* v9.3: sync mobile settings sheet BGM button if open */
+  if(typeof syncMssBgmBtn === 'function') syncMssBgmBtn();
 }
 function setBgmEnabled(on, silent=false){
   bgmEnabled=!!on;
@@ -2051,6 +2053,9 @@ function updateDateDisplay(){
   // v7.1: always show a date — default to Year 1 · 4月 when no state
   if(state) el.textContent=fmtDate(state.year,state.month);
   else el.textContent=fmtDate(1,4);
+  /* v9.3: sync mobile settings sheet date display */
+  const mssDate = document.getElementById('mss-date-display');
+  if(mssDate) mssDate.textContent = el.textContent;
 }
 function renderPage(page,params){
   const app=document.getElementById('app');
@@ -2084,8 +2089,8 @@ function renderPage(page,params){
     default: app.innerHTML=`<p style="color:var(--rd)">ページが見つかりません</p>`;
   }
   afterRender();
+  updateBottomNav();
 }
-
 /* ──────────────────────────────────────────────────────────────────
    HOME PAGE
 ────────────────────────────────────────────────────────────────── */
@@ -4549,6 +4554,94 @@ function showLoader(msg){
   el.innerHTML=`<div class="ld-logo">COTE-OS</div><div class="ld-txt">${msg}</div><div class="ld-sub">しばらくお待ちください...</div>`;
   document.body.appendChild(el); return el;
 }
+
+/* ──────────────────────────────────────────────────────────────────
+   MOBILE BOTTOM NAV & SETTINGS SHEET  (v9.3 mobile redesign)
+────────────────────────────────────────────────────────────────── */
+
+/* updateBottomNav — highlight the active tab based on current page */
+function updateBottomNav(){
+  const cur = navStack[navStack.length - 1];
+  const page = cur ? cur.page : 'home';
+  const map = {
+    'home':         'bn-home',
+    'grade':        'bn-home',
+    'class':        'bn-home',
+    'profile':      'bn-home',
+    'graduates':    'bn-home',
+    'incoming':     'bn-home',
+    'graduateYear': 'bn-home',
+    'graduateClass':'bn-home',
+    'incomingCohort':'bn-home',
+    'incomingClass':'bn-home',
+    'ranking':      'bn-ranking',
+    'classRanking': 'bn-ranking',
+    'history':      'bn-history',
+  };
+  document.querySelectorAll('.bn-item').forEach(b => b.classList.remove('bn-active'));
+  const activeId = map[page] || 'bn-home';
+  document.getElementById(activeId)?.classList.add('bn-active');
+}
+
+/* toggleMobileSettings / closeMobileSettings */
+function toggleMobileSettings(){
+  const ov = document.getElementById('mobile-settings-overlay');
+  if(!ov) return;
+  const isOpen = ov.classList.contains('visible');
+  if(isOpen){ closeMobileSettings(); }
+  else {
+    // sync date display
+    const dd = document.getElementById('date-display');
+    const mssDate = document.getElementById('mss-date-display');
+    if(dd && mssDate) mssDate.textContent = dd.textContent;
+    // sync theme buttons
+    const curTheme = document.documentElement.getAttribute('data-theme') || 'classic';
+    document.querySelectorAll('.mss-theme-btn').forEach(b => {
+      b.classList.toggle('mss-theme-active', b.dataset.theme === curTheme);
+    });
+    // sync bgm toggle
+    syncMssBgmBtn();
+    // sync volume slider
+    const vol = document.getElementById('bgm-volume');
+    const mssVol = document.getElementById('mss-bgm-volume');
+    const mssVal = document.getElementById('mss-vol-val');
+    if(vol && mssVol){ mssVol.value = vol.value; }
+    if(mssVal && vol){ mssVal.textContent = vol.value; }
+    ov.classList.add('visible');
+    document.body.style.overflow = 'hidden';
+    /* ボトムナビを一時的に隠す */
+    const bn = document.getElementById('bottom-nav');
+    if(bn) bn.style.display = 'none';
+  }
+}
+window.toggleMobileSettings = toggleMobileSettings;
+
+function closeMobileSettings(){
+  const ov = document.getElementById('mobile-settings-overlay');
+  if(ov){ ov.classList.remove('visible'); }
+  document.body.style.overflow = '';
+  /* ボトムナビを復元 */
+  const bn = document.getElementById('bottom-nav');
+  if(bn) bn.style.display = '';
+}
+window.closeMobileSettings = closeMobileSettings;
+
+function syncMssBgmBtn(){
+  const btn = document.getElementById('mss-bgm-btn');
+  if(!btn) return;
+  btn.classList.toggle('bgm-on', !!bgmEnabled);
+  btn.textContent = bgmEnabled ? '♫ BGM ON' : '♫ BGM OFF';
+}
+window.syncMssBgmBtn = syncMssBgmBtn;
+
+/* syncMssVolume — mirror mss slider → main bgm-volume slider */
+function syncMssVolume(val){
+  const mainVol = document.getElementById('bgm-volume');
+  const mssVal  = document.getElementById('mss-vol-val');
+  if(mainVol){ mainVol.value = val; mainVol.dispatchEvent(new Event('input')); }
+  if(mssVal) mssVal.textContent = val;
+}
+window.syncMssVolume = syncMssVolume;
 
 /* v7.6: boot — Guest Mode (slot 0) by default, but immediately
    calls generateInitialData() so the Home screen is populated

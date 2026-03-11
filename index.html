@@ -142,6 +142,74 @@
 
 <div id="toast" role="status" aria-live="polite"></div>
 
+<!-- モバイル: ボトムナビバー -->
+<nav id="bottom-nav" aria-label="メインナビゲーション">
+  <button class="bn-item" id="bn-home" onclick="navigate('home',{},true)" title="ホーム">
+    <span class="bn-icon">🏠</span>
+    <span class="bn-lbl">ホーム</span>
+  </button>
+  <button class="bn-item" id="bn-ranking" onclick="navigate('ranking',{},false)" title="ランキング">
+    <span class="bn-icon">🏆</span>
+    <span class="bn-lbl">ランキング</span>
+  </button>
+  <button class="bn-item" id="bn-history" onclick="navigateSafe('history',{})" title="履歴">
+    <span class="bn-icon">📋</span>
+    <span class="bn-lbl">履歴</span>
+  </button>
+  <button class="bn-item" id="bn-save" onclick="openSaveLoadModal()" title="セーブ/ロード">
+    <span class="bn-icon">💾</span>
+    <span class="bn-lbl">セーブ</span>
+  </button>
+  <button class="bn-item" id="bn-settings" onclick="toggleMobileSettings()" title="設定">
+    <span class="bn-icon">⚙</span>
+    <span class="bn-lbl">設定</span>
+  </button>
+</nav>
+
+<!-- モバイル: 設定ボトムシート -->
+<div id="mobile-settings-overlay" class="hidden" onclick="if(event.target===this)closeMobileSettings()">
+  <div id="mobile-settings-sheet">
+    <div id="mss-handle"></div>
+    <div id="mss-title">設定</div>
+
+    <!-- 月ナビ -->
+    <div class="mss-section">
+      <div class="mss-section-lbl">月ナビゲーション</div>
+      <div class="mss-month-nav">
+        <button class="mss-month-btn" onclick="revertMonth();closeMobileSettings()">&#171; 前月</button>
+        <span id="mss-date-display" class="mss-date-display"></span>
+        <button class="mss-month-btn" onclick="advanceMonth();closeMobileSettings()">次月 &#187;</button>
+      </div>
+    </div>
+
+    <!-- テーマ -->
+    <div class="mss-section">
+      <div class="mss-section-lbl">テーマ</div>
+      <div class="mss-theme-row">
+        <button class="mss-theme-btn" data-theme="classic" onclick="applyTheme('classic');toast('テーマ: classic')">Classic</button>
+        <button class="mss-theme-btn" data-theme="light" onclick="applyTheme('light');toast('テーマ: light')">Light</button>
+        <button class="mss-theme-btn" data-theme="dark" onclick="applyTheme('dark');toast('テーマ: dark')">Dark</button>
+      </div>
+    </div>
+
+    <!-- BGM -->
+    <div class="mss-section">
+      <div class="mss-section-lbl">BGM</div>
+      <div class="mss-bgm-row">
+        <button class="mss-bgm-toggle" id="mss-bgm-btn" onclick="toggleBGM()">♫ BGM ON/OFF</button>
+        <div class="mss-vol-row">
+          <span class="mss-vol-lbl">音量</span>
+          <input type="range" id="mss-bgm-volume" min="0" max="100" value="70"
+                 aria-label="音量" title="音量" oninput="syncMssVolume(this.value)" />
+          <span class="mss-vol-val" id="mss-vol-val">70</span>
+        </div>
+      </div>
+    </div>
+
+    <button class="mss-close-btn" onclick="closeMobileSettings()">閉じる</button>
+  </div>
+</div>
+
 <!-- v8.7: Firebase SDK (モジュール) — fbAuth, fbDb, fbProviderをwindowに公開 -->
 <script type="module">
   import { initializeApp }                    from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
