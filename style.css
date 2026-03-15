@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════════════
-   Cote-OS v8.7  ·  Stylesheet  "Protobuf Persistence & Nav Refactor"
+   Cote-OS v9.5  ·  Stylesheet  "Protobuf Persistence & Nav Refactor"
    Themes: classic | light | dark
    Changes vs v8.6:
    • Data layer: protobufjs 統合 — saveState/loadState をProtobuf化。
@@ -722,9 +722,6 @@ input,select,textarea{font-family:var(--fm)}
 .cls-strip{display:grid;grid-template-columns:repeat(5,1fr);gap:5px;padding:6px 8px;overflow:hidden}
 @media(max-width:768px) {
   .cls-strip { grid-template-columns: repeat(2, 1fr); }
-}
-.mobile-mode .cls-strip {
-  grid-template-columns: repeat(2, 1fr);
 }
 @media(max-width:700px){.cls-strip{grid-template-columns:repeat(3,1fr)}}
 @media(max-width:420px){.cls-strip{grid-template-columns:repeat(2,1fr)}}
@@ -2243,7 +2240,6 @@ body.mobile-mode .yr-grade-card{min-height:56px;padding:5px 8px 5px}
 body.mobile-mode .yr-grade-lbl{font-size:.73rem}
 body.mobile-mode .yr-grade-cnt{font-size:.95rem}
 
-
    Two surfaces:
      1) .trait-display-wrap / .trait-tag  — read-only tag strip
         rendered in prof-side below .ov-wrap
@@ -2461,23 +2457,6 @@ body.mobile-mode .yr-grade-cnt{font-size:.95rem}
 ═══════════════════════════════════════════════════════════════ */
 
 /* ── Taskbar mobile ──────────────────────────────────────────── */
-@media(max-width:768px){
-  #taskbar{
-    flex-wrap:wrap;height:auto;padding:5px 8px;gap:4px;
-    row-gap:4px;
-  }
-  #tb-left{flex:1 1 auto;min-width:0;gap:5px}
-  #tb-center{
-    order:3;flex:0 0 100%;
-    justify-content:center;padding:2px 0 4px;
-    border-top:1px solid var(--bd);
-  }
-  #tb-right{flex:0 0 auto}
-  #logo{font-size:.82rem}
-  #ver{display:none}
-  #date-block{min-width:110px}
-  #date-display{font-size:.7rem}
-}
 body.mobile-mode #taskbar{
   flex-wrap:wrap;height:auto;padding:5px 8px;gap:4px;row-gap:4px;
 }
@@ -2493,21 +2472,9 @@ body.mobile-mode #date-block{min-width:110px}
 body.mobile-mode #date-display{font-size:.7rem}
 
 /* ── #app padding mobile ─────────────────────────────────────── */
-@media(max-width:768px){
-  #app{padding:10px 10px;}
-}
 body.mobile-mode #app{padding:10px 10px;}
 
 /* ── Home bar & control bar mobile ──────────────────────────── */
-@media(max-width:768px){
-  .home-bar{flex-wrap:wrap;gap:6px;font-size:.68rem}
-  .hm-right{margin-left:0;flex-wrap:wrap;gap:6px}
-  .home-ctrl-bar{flex-direction:column}
-  .hcb-left{border-right:none;border-bottom:1px solid var(--bd)}
-  .hcb-half{padding:6px 10px;flex-wrap:wrap}
-  .hcb-dist-row{flex-wrap:wrap;gap:4px}
-  .hcb-inp{width:60px}
-}
 body.mobile-mode .home-bar{flex-wrap:wrap;gap:6px;font-size:.68rem}
 body.mobile-mode .hm-right{margin-left:0;flex-wrap:wrap;gap:6px}
 body.mobile-mode .home-ctrl-bar{flex-direction:column}
@@ -2517,48 +2484,16 @@ body.mobile-mode .hcb-dist-row{flex-wrap:wrap;gap:4px}
 body.mobile-mode .hcb-inp{width:60px}
 
 /* ── Grade blocks mobile ─────────────────────────────────────── */
-@media(max-width:768px){
-  .grade-hdr{padding:6px 10px}
-  .grade-lbl{font-size:.78rem}
-}
 body.mobile-mode .grade-hdr{padding:6px 10px}
 body.mobile-mode .grade-lbl{font-size:.78rem}
 
 /* ── cls-mini card mobile — maintain v7.12 layout ───────────── */
-@media(max-width:768px){
-  .cls-mini{min-height:64px;padding:5px 8px 5px}
-  .mini-cp{font-size:1.1rem}
-  .mini-name{font-size:.75rem}
-  .mini-rank{font-size:.84rem}
-}
 body.mobile-mode .cls-mini{min-height:64px;padding:5px 8px 5px}
 body.mobile-mode .mini-cp{font-size:1.1rem}
 body.mobile-mode .mini-name{font-size:.75rem}
 body.mobile-mode .mini-rank{font-size:.84rem}
 
 /* ── Save/Load modal mobile ──────────────────────────────────── */
-@media(max-width:768px){
-  #sl-overlay{padding:10px 8px}
-  #sl-box{
-    width:94vw;min-height:auto;
-    padding:12px 10px 10px;
-    border-radius:7px;
-  }
-  #sl-slots{
-    grid-template-columns:repeat(2,minmax(0,1fr));
-    min-height:auto;gap:7px;
-  }
-  #sl-controls{
-    grid-template-columns:repeat(2,minmax(0,1fr));
-    gap:6px;
-  }
-  .sl-act-empty{display:none}
-  .sl-slot{min-height:88px;padding:8px 9px 7px}
-  /* v8.6: compact login on small screens */
-  .sl-login-lbl{display:none}
-  .sl-login-btn{padding:4px 8px}
-  .sl-user-name{max-width:90px}
-}
 body.mobile-mode #sl-overlay{padding:10px 8px}
 body.mobile-mode #sl-box{
   width:94vw;min-height:auto;
@@ -2578,82 +2513,40 @@ body.mobile-mode .sl-login-btn{padding:4px 8px}
 body.mobile-mode .sl-user-name{max-width:90px}
 
 /* ── Standard modal mobile ───────────────────────────────────── */
-@media(max-width:768px){
-  #modal-box{
-    width:94vw;max-width:94vw;
-    padding:14px 12px 12px;
-  }
-}
 body.mobile-mode #modal-box{
   width:94vw;max-width:94vw;padding:14px 12px 12px;
 }
 
 /* ── uic overlay mobile ──────────────────────────────────────── */
-@media(max-width:768px){
-  #uic-box{width:92vw;max-width:92vw;padding:14px 12px}
-}
 body.mobile-mode #uic-box{width:92vw;max-width:92vw;padding:14px 12px}
 
 /* ── Profile page mobile ─────────────────────────────────────── */
-@media(max-width:768px){
-  #prof-wrap{grid-template-columns:1fr!important}
-  .prof-side{border-right:none;border-bottom:1px solid var(--bd)}
-}
 body.mobile-mode #prof-wrap{grid-template-columns:1fr!important}
 body.mobile-mode .prof-side{border-right:none;border-bottom:1px solid var(--bd)}
 
 /* ── Ranking table mobile — horizontal scroll ────────────────── */
-@media(max-width:768px){
-  .rnk-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
-  .rnk-tbl{min-width:620px}
-}
 body.mobile-mode .rnk-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
 body.mobile-mode .rnk-tbl{min-width:620px}
 
 /* ── Student grid mobile ─────────────────────────────────────── */
-@media(max-width:768px){
-  .s-grid{grid-template-columns:repeat(2,1fr)!important}
-}
 body.mobile-mode .s-grid{grid-template-columns:repeat(2,1fr)!important}
 
 /* ── Breadcrumb truncation on mobile ─────────────────────────── */
-@media(max-width:768px){
-  #breadcrumb{max-width:130px;font-size:.65rem}
-}
 body.mobile-mode #breadcrumb{max-width:130px;font-size:.65rem}
 
 /* ── Cohort/incoming blocks mobile ──────────────────────────── */
-@media(max-width:768px){
-  .cohort-block{margin-bottom:10px}
-  .cohort-hdr{padding:7px 10px}
-}
 body.mobile-mode .cohort-block{margin-bottom:10px}
 body.mobile-mode .cohort-hdr{padding:7px 10px}
 
 /* ── Page header on mobile — tighter ─────────────────────────── */
-@media(max-width:768px){
-  .pg-hdr{flex-wrap:wrap;gap:6px;margin-bottom:9px}
-  .pg-title{font-size:.86rem}
-}
 body.mobile-mode .pg-hdr{flex-wrap:wrap;gap:6px;margin-bottom:9px}
 body.mobile-mode .pg-title{font-size:.86rem}
 
 /* ── Gear tray on mobile — slightly more compact ─────────────── */
-@media(max-width:768px){
-  .gt-btn{font-size:.66rem;padding:3px 6px;height:26px}
-  #gear-btn{width:30px;height:30px;font-size:1rem}
-}
 body.mobile-mode .gt-btn{font-size:.66rem;padding:3px 6px;height:26px}
 body.mobile-mode #gear-btn{width:30px;height:30px;font-size:1rem}
 
 /* ── Portrait orientation specific ───────────────────────────── */
-@media(orientation:portrait){
-  .cls-strip{grid-template-columns:repeat(2,1fr)}
-  #taskbar{flex-wrap:wrap;height:auto;padding:5px 8px}
-  #tb-center{order:3;flex:0 0 100%;border-top:1px solid var(--bd);padding:2px 0 4px}
-  .home-ctrl-bar{flex-direction:column}
-  .hcb-left{border-right:none;border-bottom:1px solid var(--bd)}
-}
 
 /* ═══════════════════════════════════════════════════════════════
    v8.4 MOBILE ADJUSTMENTS — 2-col s-card + contract accordion
@@ -3105,8 +2998,182 @@ body.mobile-mode #breadcrumb {
 }
 .mss-close-btn:hover { border-color: var(--ac); color: var(--ac); }
 
-/* ── Remove duplicate mobile overrides (unified above) ────────── */
-/* portrait orientation: keep cls-strip 2-col */
+/* ═══════════════════════════════════════════════════════════════
+   v9.5 NEW FEATURES — Trend Graph + CSV Export
+═══════════════════════════════════════════════════════════════ */
+
+/* ── Feature navigation buttons on Home ────────────────────── */
+.home-feature-nav {
+  display: flex;
+  gap: 8px;
+  margin: 10px 0 6px;
+}
+.feat-nav-btn {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 12px 8px;
+  background: var(--s2);
+  border: 1px solid var(--bd);
+  border-radius: var(--br);
+  cursor: pointer;
+  transition: all var(--tr);
+}
+.feat-nav-btn:hover {
+  border-color: var(--ac);
+  background: var(--acg);
+}
+.feat-nav-icon { font-size: 1.4rem; }
+.feat-nav-lbl {
+  font-family: var(--fj);
+  font-size: .72rem;
+  font-weight: 500;
+  color: var(--t0);
+}
+.feat-nav-sub {
+  font-size: .58rem;
+  color: var(--t2);
+}
+body.mobile-mode .home-feature-nav {
+  gap: 6px;
+  margin: 8px 0 4px;
+}
+body.mobile-mode .feat-nav-btn {
+  padding: 10px 6px;
+  min-height: 44px;
+}
+body.mobile-mode .feat-nav-lbl { font-size: .66rem; }
+body.mobile-mode .feat-nav-sub { font-size: .52rem; }
+
+/* ── Trend Page ────────────────────────────────────────────── */
+.trend-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+.trend-mode-btn {
+  padding: 6px 14px;
+  background: var(--s3);
+  border: 1px solid var(--bd);
+  color: var(--t0);
+  font-family: var(--fm);
+  font-size: .7rem;
+  cursor: pointer;
+  transition: all var(--tr);
+}
+.trend-mode-btn:hover { border-color: var(--ac); }
+.trend-mode-btn.active {
+  background: var(--ac);
+  color: var(--bg);
+  border-color: var(--ac);
+  font-weight: 700;
+}
+.trend-grade-sel {
+  padding: 5px 8px;
+  background: var(--s2);
+  border: 1px solid var(--bd);
+  color: var(--t0);
+  font-family: var(--fm);
+  font-size: .68rem;
+}
+.trend-canvas-wrap {
+  position: relative;
+  width: 100%;
+  background: var(--s1);
+  border: 1px solid var(--bd);
+  border-radius: var(--br);
+  padding: 10px;
+  margin-bottom: 10px;
+  overflow: hidden;
+}
+.trend-canvas-wrap canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.trend-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.trend-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: .68rem;
+  color: var(--t1);
+}
+.trend-legend-color {
+  width: 14px;
+  height: 4px;
+  border-radius: 2px;
+}
+.trend-summary {
+  font-size: .65rem;
+  color: var(--t2);
+  line-height: 1.6;
+}
+body.mobile-mode .trend-controls { gap: 6px; }
+body.mobile-mode .trend-mode-btn {
+  padding: 8px 12px;
+  font-size: .66rem;
+  min-height: 36px;
+}
+body.mobile-mode .trend-grade-sel {
+  padding: 7px 10px;
+  font-size: .66rem;
+  min-height: 36px;
+}
+body.mobile-mode .trend-canvas-wrap { padding: 6px; }
+
+/* ── Export Page ────────────────────────────────────────────── */
+.export-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 10px;
+  margin-top: 10px;
+}
+.export-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px 12px;
+  background: var(--s2);
+  border: 1px solid var(--bd);
+  border-radius: var(--br);
+  cursor: pointer;
+  transition: all var(--tr);
+}
+.export-card:hover {
+  border-color: var(--ac);
+  background: var(--acg);
+}
+.export-card-title {
+  font-family: var(--fj);
+  font-size: .76rem;
+  font-weight: 500;
+  color: var(--t0);
+}
+.export-card-desc {
+  font-size: .62rem;
+  color: var(--t2);
+  line-height: 1.5;
+}
+body.mobile-mode .export-grid {
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+body.mobile-mode .export-card {
+  padding: 12px 10px;
+  min-height: 44px;
+}
+
+
 @media(orientation: portrait) {
   .cls-strip { grid-template-columns: repeat(2, 1fr); }
 }
