@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Cote-OS v9.5</title>
+  <title>Cote-OS v9.6</title>
   <link rel="icon" href="images/favicon.ico" />
   <link rel="preconnect" href="https://fonts.googleapis.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&family=Noto+Sans+JP:wght@300;400;500;700&display=swap" rel="stylesheet" />
@@ -37,6 +37,9 @@
 
       <!-- トレイ: .open時に左へスライド -->
       <div id="gear-tray" aria-hidden="true">
+
+        <!-- v9.6: 関連サイトボタン -->
+        <button id="btn-related" class="gt-btn rel-btn" title="関連サイト">関連サイト</button>
 
         <!-- テーマフライアウト -->
         <div id="theme-wrap" class="gt-item-wrap">
@@ -152,10 +155,6 @@
     <span class="bn-icon">🏆</span>
     <span class="bn-lbl">ランキング</span>
   </button>
-  <button class="bn-item" id="bn-trend" onclick="navigate('trend',{},false)" title="トレンド">
-    <span class="bn-icon">📈</span>
-    <span class="bn-lbl">トレンド</span>
-  </button>
   <button class="bn-item" id="bn-save" onclick="openSaveLoadModal()" title="セーブ/ロード">
     <span class="bn-icon">💾</span>
     <span class="bn-lbl">セーブ</span>
@@ -251,13 +250,55 @@
 <!-- v9.1: fflate — gzip圧縮ライブラリ (クラウド保存の容量削減) -->
 <script src="https://cdn.jsdelivr.net/npm/fflate@0.8.2/umd/index.js"></script>
 
-<!-- v9.5: モジュール分割 — グローバルスコープ共有、ロード順が重要 -->
-<script src="names-data.js"></script>
-<script src="core.js"></script>
-<script src="save-load.js"></script>
-<script src="render.js"></script>
-<script src="features.js"></script>
-<script src="app.js"></script>
+<!-- v9.6: ES Modules — app.js is the single entry point -->
+<script type="module" src="app.js"></script>
+
+<!-- v9.6: 関連サイトモーダル -->
+<div id="rel-overlay" class="hidden" role="dialog" aria-modal="true" aria-labelledby="rel-title"
+     onclick="if(event.target===this)window.closeRelatedSitesModal()">
+  <div id="rel-box">
+    <div id="rel-header">
+      <button class="rel-back-btn" onclick="window.closeRelatedSitesModal()">◀ 戻る</button>
+      <span id="rel-title">関連サイト</span>
+    </div>
+    <div id="rel-grid">
+      <!-- Item 1: Stellarium -->
+      <a href="https://knight-sea.github.io/Stellarium/" target="_blank" rel="noopener noreferrer"
+         class="rel-item rel-link">Stellarium</a>
+      <!-- Items 2–30: Placeholders -->
+      <div class="rel-item rel-placeholder">準備中</div>
+      <div class="rel-item rel-placeholder">準備中</div>
+      <div class="rel-item rel-placeholder">準備中</div>
+      <div class="rel-item rel-placeholder">準備中</div>
+      <div class="rel-item rel-placeholder">準備中</div>
+      <div class="rel-item rel-placeholder">準備中</div>
+      <div class="rel-item rel-placeholder">準備中</div>
+      <div class="rel-item rel-placeholder">準備中</div>
+      <div class="rel-item rel-placeholder">準備中</div>
+      <div class="rel-item rel-placeholder">準備中</div>
+      <div class="rel-item rel-placeholder">準備中</div>
+      <div class="rel-item rel-placeholder">準備中</div>
+      <div class="rel-item rel-placeholder">準備中</div>
+      <div class="rel-item rel-placeholder">準備中</div>
+      <div class="rel-item rel-placeholder">準備中</div>
+      <div class="rel-item rel-placeholder">準備中</div>
+      <div class="rel-item rel-placeholder">準備中</div>
+      <div class="rel-item rel-placeholder">準備中</div>
+      <div class="rel-item rel-placeholder">準備中</div>
+      <div class="rel-item rel-placeholder">準備中</div>
+      <div class="rel-item rel-placeholder">準備中</div>
+      <div class="rel-item rel-placeholder">準備中</div>
+      <div class="rel-item rel-placeholder">準備中</div>
+      <div class="rel-item rel-placeholder">準備中</div>
+      <div class="rel-item rel-placeholder">準備中</div>
+      <div class="rel-item rel-placeholder">準備中</div>
+      <div class="rel-item rel-placeholder">準備中</div>
+      <div class="rel-item rel-placeholder">準備中</div>
+      <div class="rel-item rel-placeholder">準備中</div>
+    </div>
+  </div>
+</div>
+
 
 <iframe id="bgm-player" width="100%" height="300" scrolling="no" frameborder="no" allow="autoplay"
   src="https://w.soundcloud.com/player/?url=https%3A//api.soundcloud.com/tracks/2272461698&color=%23ff5500&auto_play=false&hide_related=false&show_comments=false&show_user=false&show_reposts=false&show_teaser=false&visual=false"

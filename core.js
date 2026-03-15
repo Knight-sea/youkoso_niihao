@@ -1,22 +1,22 @@
-/* core.js — v9.5: Constants, state, utilities, data generation, class helpers */
-'use strict';
+import { SURNAMES_MAJOR, SURNAMES_RARE, MALE_NAMES, FEMALE_NAMES } from './names-data.js';
 
+/* core.js — v9.5: Constants, state, utilities, data generation, class helpers */
 /* ──────────────────────────────────────────────────────────────────
    CONSTANTS
 ────────────────────────────────────────────────────────────────── */
-const GRADES      = [1, 2, 3, 4, 5, 6];
-const CLASS_IDS   = [0, 1, 2, 3, 4];
-const RANK_LABELS = ['A', 'B', 'C', 'D', 'E'];
-const STATS_KEYS  = ['language', 'reasoning', 'memory', 'thinking', 'physical', 'mental'];
+export const GRADES      = [1, 2, 3, 4, 5, 6];
+export const CLASS_IDS   = [0, 1, 2, 3, 4];
+export const RANK_LABELS = ['A', 'B', 'C', 'D', 'E'];
+export const STATS_KEYS  = ['language', 'reasoning', 'memory', 'thinking', 'physical', 'mental'];
 /* v7.6: RADAR_LABELS — display labels for drawProfileRadar, strip 力/能力 suffix.
    Order must match STATS_KEYS exactly.                                            */
-const RADAR_LABELS = ['言語', '推論', '記憶', '思考', '身体', '精神'];
-const MONTHS_JP   = ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'];
+export const RADAR_LABELS = ['言語', '推論', '記憶', '思考', '身体', '精神'];
+export const MONTHS_JP   = ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'];
 
 /* ── v7.8: Special Trait catalogue — 30 traits in 6 categories ────
    cat key maps directly to CSS .tc-{cat} classes on tags and chips.
    Sensory has 5 items (not 6) per spec; all others have 6.         */
-const SPECIAL_TRAITS = [
+export const SPECIAL_TRAITS = [
   /* Brain */
   {id:'lang_acq',   label:'多言語習得', cat:'brain'},
   {id:'memorize',   label:'記憶術',     cat:'brain'},
@@ -64,7 +64,7 @@ const SPECIAL_TRAITS = [
 /* Category display metadata — ordered for the accordion */
 /* v8.0: TRAIT_CATEGORIES — labels fully localized to Japanese */
 /* v8.1: 'custom' category added for user-created traits (always last) */
-const TRAIT_CATEGORIES = [
+export const TRAIT_CATEGORIES = [
   {key:'brain',    label:'頭脳系'},
   {key:'physical', label:'身体能力系'},
   {key:'artistic', label:'芸術系'},
@@ -78,27 +78,27 @@ const TRAIT_CATEGORIES = [
    each trait-category accordion panel in the profile edit view.
    Key = category key string (e.g. "brain"), value = true means collapsed.
    Written by toggleTraitCat; read by renderProfile to restore state.  */
-const traitCategoryCollapsedState = new Map();
+export const traitCategoryCollapsedState = new Map();
 /* v8.3: contractAccCollapsedState — persists open/closed state of the
    two contract accordion panels: 'issue' and 'confirm'.
    Default: issue open, confirm open. */
-const contractAccCollapsedState = new Map([['issue',false],['confirm',false]]);
-const HISTORY_MAX = 120;
-const NUM_SLOTS   = 12;
-const TOP_N       = 100;
-const APP_VER     = '9.5';
-const THEME_KEY   = 'CoteOS_theme';
-const SLOT_META_KEY = 'CoteOS_v7_SlotMeta';
-const BGM_KEY       = 'CoteOS_v7_BGM';
+export const contractAccCollapsedState = new Map([['issue',false],['confirm',false]]);
+export const HISTORY_MAX = 120;
+export const NUM_SLOTS   = 12;
+export const TOP_N       = 100;
+export const APP_VER     = '9.5';
+export const THEME_KEY   = 'CoteOS_theme';
+export const SLOT_META_KEY = 'CoteOS_v7_SlotMeta';
+export const BGM_KEY       = 'CoteOS_v7_BGM';
 
-const slotKey = n => `CoteOS_v7_Slot${n}`;
+export const slotKey = n => `CoteOS_v7_Slot${n}`;
 
-const STAT_GRADE_TABLE = [
+export const STAT_GRADE_TABLE = [
   null, 'D-', 'D', 'D+', 'C-', 'C', 'C+',
   'B-', 'B', 'B+', 'A-', 'A', 'A+', 'S-', 'S', 'S+',
 ];
 
-const JP = {
+export const JP = {
   language:'言語力', reasoning:'推論力', memory:'記憶力',
   thinking:'思考力', physical:'身体能力', mental:'精神力',
   name:'氏名', gender:'性別', dob:'生年月日',
@@ -114,7 +114,7 @@ const JP = {
   clsDef: (g, r) => `${g}年${r}組`,
 };
 
-const CLASS_STAT_CFG = {
+export const CLASS_STAT_CFG = {
   0:{ avg:[6,8],  rare:[4,12], focus:['reasoning','memory','thinking'] },
   1:{ avg:[5,7],  rare:[4,10], focus:['language','memory'] },
   2:{ avg:[4,6],  rare:[2,10], focus:['physical','mental'] },
@@ -130,7 +130,7 @@ const CLASS_STAT_CFG = {
      Class E: sMin:2, sMax:8  → X feasible [12,48], mean≈28
    xMin = sMin×6, xMax = sMax×6  (hard feasibility bounds)
    xMean tuned for balanced distribution within each class tier.  */
-const XSUM_CFG = {
+export const XSUM_CFG = {
   0: { xMin:30, xMax:48, xMean:40, sMin:5, sMax:8  }, /* Class A: 5–8  */
   1: { xMin:30, xMax:42, xMean:37, sMin:5, sMax:7  }, /* Class B: 5–7  */
   2: { xMin:24, xMax:42, xMean:34, sMin:4, sMax:7  }, /* Class C: 4–7  */
@@ -141,7 +141,7 @@ const XSUM_CFG = {
 /* v8.1: binomialSample — approximate a binomial-shaped value in [lo, hi]
    centred near mean. Uses sum of 12 uniform [0,1] samples (CLT) scaled
    to the desired range, then clamps. n=12 gives excellent bell shape.  */
-function binomialSample(lo, hi, mean){
+export function binomialSample(lo, hi, mean){
   /* Map the target mean as a proportion p within [lo,hi] */
   const range = hi - lo;
   if(range <= 0) return lo;
@@ -165,7 +165,7 @@ function binomialSample(lo, hi, mean){
       - Remaining budget is distributed randomly within [0, sMax-sMin]
         per stat; final stat absorbs remainder, clamped to [sMin, sMax].
    Returns an object keyed by STATS_KEYS.                            */
-function genStatXSum(cid){
+export function genStatXSum(cid){
   const cfg = XSUM_CFG[cid] ?? XSUM_CFG[4];
   const X   = binomialSample(cfg.xMin, cfg.xMax, cfg.xMean);
   const n   = STATS_KEYS.length; /* 6 */
@@ -197,15 +197,15 @@ function genStatXSum(cid){
   return Object.fromEntries(STATS_KEYS.map((k, i) => [k, vals[i]]));
 }
 
-const PP_RANGE = {
+export const PP_RANGE = {
   0:[50000,100000], 1:[30000,80000], 2:[20000,60000],
   3:[10000,50000],  4:[0,50000],
 };
 
-function rndInt(lo,hi){ return Math.floor(Math.random()*(hi-lo+1))+lo; }
-function rndPick(arr){ return arr[Math.floor(Math.random()*arr.length)]; }
+export function rndInt(lo,hi){ return Math.floor(Math.random()*(hi-lo+1))+lo; }
+export function rndPick(arr){ return arr[Math.floor(Math.random()*arr.length)]; }
 /* v8.0 legacy genStat — kept for backwards compat / any manual use */
-function genStat(cid,key){
+export function genStat(cid,key){
   const cfg=CLASS_STAT_CFG[cid], rare=Math.random()<0.20;
   const [lo,hi]=rare?cfg.rare:cfg.avg; let v=lo===hi?lo:rndInt(lo,hi);
   if(cfg.focus.includes(key)) v=Math.min(15,v+1); return v;
@@ -214,60 +214,60 @@ function genStat(cid,key){
 /* v7.9: base year shifted 2010 → 2000 (−10 years).
    Benchmark: grade=6, sysYear=1 → y=2000+(6-6)+(1-1)=2000;
    m≤3 bumps to 2001 → born Apr 2000 – Mar 2001 ✓           */
-function genDOB(grade,sysYear){
+export function genDOB(grade,sysYear){
   let y=2000+(6-grade)+(sysYear-1); const m=rndInt(1,12),d=rndInt(1,28);
   if(m<=3) y+=1;
   return `${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
 }
 /* v8.1: genSurname — 2:1 weighted selection: Major (2/3 chance) vs Rare (1/3).
    This reflects realistic surname frequency distribution in Japanese society. */
-function genSurname(){
+export function genSurname(){
   return Math.random() < 0.667
     ? rndPick(SURNAMES_MAJOR)
     : rndPick(SURNAMES_RARE);
 }
 /* v7.8: half-width space " " inserted between surname and given name */
-function genStudentName(gender){
+export function genStudentName(gender){
   return genSurname()+' '+rndPick(gender==='M'?MALE_NAMES:FEMALE_NAMES);
 }
 
 /* ──────────────────────────────────────────────────────────────────
    RUNTIME STATE
 ────────────────────────────────────────────────────────────────── */
-let currentSlot = 1;
-let state       = null;
-let navStack    = [];
-let selectMode  = false;
-let selectedIds = new Set();
-let bulkPPValue = '';
-let swapMode    = false;
-let swapDragId  = null;
+export let currentSlot = 1;
+export let state       = null;
+export let navStack    = [];
+export let selectMode  = false;
+export let selectedIds = new Set();
+export let bulkPPValue = '';
+export let swapMode    = false;
+export let swapDragId  = null;
 
-let slModalOpen     = false;
-let slSelectedSlot  = 1;
-let slNameDrafts    = {};
+export let slModalOpen     = false;
+export let slSelectedSlot  = 1;
+export let slNameDrafts    = {};
 
 /* v7.3: Slot 0 — Guest Mode ─────────────────────────────────────
    currentSlot === 0  ⟹  session is volatile; data lives in state
    only. saveState() refuses to persist slot 0 unless the user
    explicitly picks a target slot 1-12 via the Save modal.       */
-let isGuestMode     = false;   // true when currentSlot === 0
+export let isGuestMode     = false;   // true when currentSlot === 0
 
-let bgmWidget   = null;
-let bgmReady    = false;
-let bgmEnabled  = false;
+export let bgmWidget   = null;
+export let bgmReady    = false;
+export let bgmEnabled  = false;
 
 /* v7.10: checkedClasses — Set of "grade_classId" strings for multi-select
    batch operations. Persists across re-renders; renderHome re-applies
    .chk-selected styling and restores checkbox state from this Set.    */
-const checkedClasses = new Set();
+export const checkedClasses = new Set();
 
 /* v7.11: editMode — boolean tracking whether Edit Mode is active on the
    Home screen. When true, the PP/CP dist row and cls-sel-bars are visible.
    Persists across renderHome re-renders (preserved by navigate calls).    */
-let editMode = false;
+export let editMode = false;
 
-function newState(){
+export function newState(){
   return { year:1, month:4, students:[], classes:[], history:[], nextId:1, slotName:'' };
 }
 
@@ -276,7 +276,7 @@ function newState(){
 ────────────────────────────────────────────────────────────────── */
 const THEMES = ['classic','light','dark'];
 
-function applyTheme(name){
+export function applyTheme(name){
   if(!THEMES.includes(name)) name='classic';
   document.documentElement.setAttribute('data-theme', name);
   localStorage.setItem(THEME_KEY, name);
@@ -284,7 +284,7 @@ function applyTheme(name){
     b.classList.toggle('active', b.dataset.theme===name);
   });
 }
-function loadTheme(){
+export function loadTheme(){
   applyTheme(localStorage.getItem(THEME_KEY)||'classic');
 }
 
@@ -293,14 +293,14 @@ function loadTheme(){
 ────────────────────────────────────────────────────────────────── */
 /* v7.4: syncVolFill — sets --vol-pct on #bgm-slider-wrap so the CSS
    green fill-bar height matches the current slider value.           */
-function syncVolFill(){
+export function syncVolFill(){
   const slider=document.getElementById('bgm-volume');
   const wrap  =document.getElementById('bgm-slider-wrap');
   if(!slider||!wrap) return;
   wrap.style.setProperty('--vol-pct', slider.value);
 }
 
-function syncBgmButton(){
+export function syncBgmButton(){
   const btn  = document.getElementById('btn-bgm');
   const hitbox = document.getElementById('bgm-hitbox');
   if(!btn) return;
@@ -317,7 +317,7 @@ function syncBgmButton(){
   /* v9.3: sync mobile settings sheet BGM button if open */
   if(typeof syncMssBgmBtn === 'function') syncMssBgmBtn();
 }
-function setBgmEnabled(on, silent=false){
+export function setBgmEnabled(on, silent=false){
   bgmEnabled=!!on;
   localStorage.setItem(BGM_KEY, bgmEnabled?'1':'0');
   syncBgmButton();
@@ -331,10 +331,10 @@ function setBgmEnabled(on, silent=false){
     }
   }
 }
-function toggleBGM(){
+export function toggleBGM(){
   setBgmEnabled(!bgmEnabled);
 }
-function initBGM(){
+export function initBGM(){
   bgmEnabled = localStorage.getItem(BGM_KEY)==='1';
   syncBgmButton();
 
@@ -359,7 +359,7 @@ function initBGM(){
 /* ──────────────────────────────────────────────────────────────────
    STUDENT ID
 ────────────────────────────────────────────────────────────────── */
-function gradePrefix(grade){
+export function gradePrefix(grade){
   /* v7.4: supports numeric incoming cohort grades (e.g. 7, 8, 12, 13…)
      The prefix encodes: base-year offset from year 7 + grade offset.
      Standard grades 1-6 retain original prefix logic.
@@ -371,7 +371,7 @@ function gradePrefix(grade){
   // Incoming cohort: prefix = grade number (e.g. grade 13 → '013')
   return String(grade).padStart(3,'0');
 }
-function genStudentId(grade){
+export function genStudentId(grade){
   const pfx=gradePrefix(grade);
   const used=new Set(
     state.students
@@ -388,21 +388,21 @@ function genStudentId(grade){
 /* ──────────────────────────────────────────────────────────────────
    UTILITIES
 ────────────────────────────────────────────────────────────────── */
-function esc(s){
+export function esc(s){
   return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;')
     .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
-function escA(s){ return String(s??'').replace(/"/g,'&quot;'); }
+export function escA(s){ return String(s??'').replace(/"/g,'&quot;'); }
 
-function toast(msg,cls='',ms=2800){
+export function toast(msg,cls='',ms=2800){
   const el=document.getElementById('toast'); if(!el) return;
   el.textContent=msg; el.className=cls?`on ${cls}`:'on';
   clearTimeout(toast._t); toast._t=setTimeout(()=>{ el.className=''; },ms);
 }
 /* v7.7: date format changed from "Year X · 4月" to "Year X, Month Y" */
-function fmtDate(y,m){ return `Year ${y}, Month ${m}`; }
+export function fmtDate(y,m){ return `Year ${y}, Month ${m}`; }
 
-function fmtPP(v){
+export function fmtPP(v){
   const a=Math.abs(v);
   if(a>=1e12) return (v/1e12).toFixed(1)+'T';
   if(a>=1e9)  return (v/1e9).toFixed(1)+'B';
@@ -410,32 +410,32 @@ function fmtPP(v){
   if(a>=1e3)  return (v/1e3).toFixed(1)+'K';
   return String(v);
 }
-function ppCol(v){ return v>0?'pos':v<0?'neg':'neu'; }
-function clampStat(v){
+export function ppCol(v){ return v>0?'pos':v<0?'neg':'neu'; }
+export function clampStat(v){
   const n=parseInt(v,10);
   return (!isNaN(n)&&n>=1&&n<=15)?n:1;
 }
 
-function statGradeLabel(value){
+export function statGradeLabel(value){
   return STAT_GRADE_TABLE[clampStat(value)] || 'D-';
 }
-function statGradeClass(value){
+export function statGradeClass(value){
   const n=clampStat(value);
   const map=['sg-dm','sg-d','sg-dp','sg-cm','sg-c','sg-cp','sg-bm','sg-b','sg-bp','sg-am','sg-a','sg-ap','sg-s','sg-s','sg-sp'];
   return map[n-1] || 'sg-dm';
 }
 
-function getSchoolRankingPool(src=state?.students||[]){
+export function getSchoolRankingPool(src=state?.students||[]){
   return src.filter(s=>typeof s.privatePoints==='number' && !s.isExpelled);
 }
-function getPPRankPercentile(student,pool=getSchoolRankingPool()){
+export function getPPRankPercentile(student,pool=getSchoolRankingPool()){
   if(!student || !pool.length) return 100;
   const higher = pool.filter(s=>s.privatePoints > student.privatePoints).length;
   const same   = pool.filter(s=>s.privatePoints === student.privatePoints).length;
   const rank   = higher + (same>0 ? 1 : 0);
   return (rank / pool.length) * 100;
 }
-function getPPRankBonus(student,pool=getSchoolRankingPool()){
+export function getPPRankBonus(student,pool=getSchoolRankingPool()){
   const p=getPPRankPercentile(student,pool);
   if(p<=1) return 5;
   if(p<=20) return 4;
@@ -444,7 +444,7 @@ function getPPRankBonus(student,pool=getSchoolRankingPool()){
   if(p<=80) return 1;
   return 0;
 }
-function calcOverallScoreDetail(student,pool=getSchoolRankingPool()){
+export function calcOverallScoreDetail(student,pool=getSchoolRankingPool()){
   if(!student){
     return { base:0, protectBonus:0, ppBonus:0, percentile:100, total:0 };
   }
@@ -455,24 +455,24 @@ function calcOverallScoreDetail(student,pool=getSchoolRankingPool()){
   const total        = Math.min(100, base + protectBonus + ppBonus);
   return { base, protectBonus, ppBonus, percentile, total };
 }
-function calcOverallScore(student,pool=getSchoolRankingPool()){
+export function calcOverallScore(student,pool=getSchoolRankingPool()){
   return calcOverallScoreDetail(student,pool).total;
 }
 
 /* ──────────────────────────────────────────────────────────────────
    CLASS HELPERS
 ────────────────────────────────────────────────────────────────── */
-function getCls(grade,classId){ return state.classes.find(c=>c.grade===grade&&c.classId===classId); }
-function getStudentsOf(grade,classId){ return state.students.filter(s=>s.grade===grade&&s.classId===classId); }
-function getRanked(grade){
+export function getCls(grade,classId){ return state.classes.find(c=>c.grade===grade&&c.classId===classId); }
+export function getStudentsOf(grade,classId){ return state.students.filter(s=>s.grade===grade&&s.classId===classId); }
+export function getRanked(grade){
   return [...state.classes.filter(c=>c.grade===grade)]
     .sort((a,b)=>b.classPoints!==a.classPoints?b.classPoints-a.classPoints:a.classId-b.classId);
 }
-function rankOf(grade,classId){
+export function rankOf(grade,classId){
   const i=getRanked(grade).findIndex(c=>c.classId===classId);
   return i>=0?RANK_LABELS[i]:'?';
 }
-function clsName(grade,classId){
+export function clsName(grade,classId){
   const c=getCls(grade,classId);
   if(!c) return JP.clsDef(grade,rankOf(grade,classId));
   return c.customName||c.name||JP.clsDef(grade,rankOf(grade,classId));
@@ -481,7 +481,7 @@ function clsName(grade,classId){
 /* ──────────────────────────────────────────────────────────────────
    BLANK DATA GENERATORS
 ────────────────────────────────────────────────────────────────── */
-function blankStudent(grade,classId){
+export function blankStudent(grade,classId){
   const stats=Object.fromEntries(STATS_KEYS.map(k=>[k,1]));
   /* v7.8: traits[] — array of trait id strings from SPECIAL_TRAITS */
   /* v8.1: customTraits[] — array of {id, label, cat:'custom'} objects */
@@ -489,12 +489,12 @@ function blankStudent(grade,classId){
            specialAbility:'', privatePoints:0, protectPoints:0, contracts:[],
            isExpelled:false, traits:[], customTraits:[] };
 }
-function blankClass(grade,classId,rankLabel){
+export function blankClass(grade,classId,rankLabel){
   const name=rankLabel?JP.clsDef(grade,rankLabel):'';
   return { grade,classId,classPoints:0,customName:'',name };
 }
 
-function generateInitialData(){
+export function generateInitialData(){
   const sName = currentSlot > 0 ? slotNameOf(currentSlot) : 'ゲストデータ';
   Object.assign(state,{students:[],classes:[],nextId:1,year:1,month:4,history:[],slotName:sName});
   GRADES.forEach(g=>CLASS_IDS.forEach(c=>{
@@ -542,7 +542,7 @@ function generateInitialData(){
    deleteIncomingCohort(cohortGrade):
      Removes all Incoming students with that cohortGrade.
 ────────────────────────────────────────────────────────────────── */
-function currentIncomingBaseGrade(){
+export function currentIncomingBaseGrade(){
   // Find grade-1 students and read their ID prefix
   const g1 = state.students.find(s=>s.grade===1&&s.id&&s.id.length>=3);
   if(g1){
@@ -553,7 +553,7 @@ function currentIncomingBaseGrade(){
   return 7+(6-1)+(state.year-1); // = year+11
 }
 
-function nextIncomingCohortGrade(){
+export function nextIncomingCohortGrade(){
   const existing = getIncomingCohorts();
   if(existing.length){
     return Math.max(...existing)+1;
@@ -561,7 +561,7 @@ function nextIncomingCohortGrade(){
   return currentIncomingBaseGrade()+1;
 }
 
-function getIncomingCohorts(){
+export function getIncomingCohorts(){
   const set=new Set();
   state.students.forEach(s=>{
     if(s.grade==='Incoming' && typeof s.cohortGrade==='number') set.add(s.cohortGrade);
@@ -587,13 +587,13 @@ window.createIncomingCohort=function(){
       });
     }
   });
-  saveState(true);
-  navigateReplace('incoming',{});
+  window.saveState(true);
+  window.navigateReplace('incoming',{});
   toast(`✓ 入学予定コホート 第${cg}期 (200名) を作成しました`,'ok',3000);
 };
 
 window.deleteIncomingCohort=function(cg){
-  uiConfirm({
+  window.uiConfirm({
     title:`第${cg}期コホートを削除`,
     body:`入学予定 第${cg}期 の全生徒を削除します。<br><strong>この操作は取り消せません。</strong>`,
     variant:'danger',
@@ -606,7 +606,7 @@ window.deleteIncomingCohort=function(cg){
         s.contracts=s.contracts.filter(c=>validIds.has(c.targetId));
       });
       saveState(true);
-      navigateReplace('incoming',{});
+      window.navigateReplace('incoming',{});
       toast(`✓ 第${cg}期コホートを削除しました`,'warn',3000);
     },
   });
@@ -659,11 +659,11 @@ window.randomizeIncomingCohort=function(cg){
     });
   });
 
-  saveState(true);
-  navigateReplace('incoming', {});
+  window.saveState(true);
+  window.navigateReplace('incoming', {});
   toast(`✓ 第${cg}期 ランダム生成完了 (${cohortStudents.length}名)`, 'ok', 3000);
 };
-function randomizeGrade(grade){
+export function randomizeGrade(grade){
   const sts=state.students.filter(s=>s.grade===grade&&!s.isExpelled);
   const byClass={}; CLASS_IDS.forEach(cid=>{byClass[cid]=[];});
   sts.forEach(s=>{ if(byClass[s.classId]!==undefined) byClass[s.classId].push(s); });
@@ -685,7 +685,7 @@ function randomizeGrade(grade){
 /* ──────────────────────────────────────────────────────────────────
    PP RANKING
 ────────────────────────────────────────────────────────────────── */
-function computeRanking(){
+export function computeRanking(){
   const sorted=[...state.students].sort((a,b)=>
     b.privatePoints!==a.privatePoints?b.privatePoints-a.privatePoints:(a.id<b.id?-1:1));
   const out=[];
@@ -699,8 +699,29 @@ function computeRanking(){
 /* ──────────────────────────────────────────────────────────────────
    CLASS PP RANKING
 ────────────────────────────────────────────────────────────────── */
-function computeClassRanking(){
+export function computeClassRanking(){
   return [...state.classes]
     .sort((a,b)=>b.classPoints!==a.classPoints?b.classPoints-a.classPoints:
       (a.grade!==b.grade?a.grade-b.grade:a.classId-b.classId));
 }
+
+/* ── v9.6: ES Module setters — for cross-module state writes ──────── */
+export function setState(s)           { state = s; }
+export function setCurrentSlot(n)     { currentSlot = n; }
+export function setIsGuestMode(b)     { isGuestMode = b; }
+export function setNavStack(arr)      { navStack = arr; }
+export function setSelectMode(b)      { selectMode = b; }
+export function setSwapMode(b)        { swapMode = b; }
+export function setSwapDragId(id)     { swapDragId = id; }
+export function setSelectedIds(s)     { selectedIds = s; }
+export function setBulkPPValue(v)     { bulkPPValue = v; }
+export function setEditMode(b)        { editMode = b; }
+export function setSlModalOpen(b)     { slModalOpen = b; }
+export function setSlSelectedSlot(n)  { slSelectedSlot = n; }
+export function setSlNameDrafts(o)    { slNameDrafts = o; }
+
+/* ── v9.6: window bindings for DOM-callable core functions ─────────── */
+window.toast        = toast;
+window.applyTheme   = applyTheme;
+window.toggleBGM    = toggleBGM;
+window.setBulkPPValue = setBulkPPValue;

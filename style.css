@@ -1453,6 +1453,7 @@ body.edit-mode .hcb-dist-row{
 .rk-dob{
   font-family:var(--fm);font-size:.66rem;
   color:var(--t2);text-align:left;
+  padding-left:6px!important;
   letter-spacing:.01em;
 }
 
@@ -3176,4 +3177,111 @@ body.mobile-mode .export-card {
 
 @media(orientation: portrait) {
   .cls-strip { grid-template-columns: repeat(2, 1fr); }
+}
+
+
+/* ════════════════════════════════════════════════════════════════════
+   v9.6: 関連サイト (Related Sites) Modal
+════════════════════════════════════════════════════════════════════ */
+#rel-overlay{
+  position:fixed;inset:0;
+  background:rgba(0,0,0,.62);
+  z-index:3000;
+  display:flex;align-items:center;justify-content:center;
+  padding:16px;
+}
+#rel-overlay.hidden{ display:none; }
+
+#rel-box{
+  background:var(--s2);
+  border:1px solid var(--bd2);
+  width:min(880px,98vw);
+  max-height:88vh;
+  overflow-y:auto;
+  display:flex;flex-direction:column;
+}
+
+#rel-header{
+  display:flex;align-items:center;gap:14px;
+  padding:9px 16px;
+  border-bottom:2px solid var(--bd2);
+  background:var(--s1);
+  position:sticky;top:0;z-index:1;
+}
+#rel-title{
+  font-family:var(--fm);font-size:.75rem;
+  color:var(--t1);letter-spacing:.08em;
+  text-transform:uppercase;
+}
+.rel-back-btn{
+  background:var(--s3);
+  border:1px solid var(--bd2);
+  color:var(--t1);
+  font-family:var(--fm);font-size:.68rem;
+  padding:4px 12px;
+  cursor:pointer;
+  transition:all var(--tr);
+  white-space:nowrap;
+}
+.rel-back-btn:hover{
+  border-color:var(--ac);color:var(--ac);
+}
+
+#rel-grid{
+  display:grid;
+  grid-template-columns:repeat(3,1fr);
+  gap:10px;
+  padding:16px;
+}
+.rel-item{
+  background:var(--s3);
+  border:1px solid var(--bd);
+  min-height:64px;
+  display:flex;align-items:center;justify-content:center;
+  text-align:center;
+  font-family:var(--fm);font-size:.73rem;
+  padding:12px 8px;
+  transition:all var(--tr);
+}
+.rel-link{
+  color:var(--ac);
+  text-decoration:none;
+  cursor:pointer;
+  border-color:var(--bd2);
+  font-weight:600;
+}
+.rel-link:hover{
+  border-color:var(--ac);
+  background:var(--acd);
+  text-decoration:underline;
+}
+.rel-placeholder{
+  color:var(--t3);
+  opacity:.35;
+  cursor:default;
+  font-size:.65rem;
+  letter-spacing:.05em;
+}
+
+/* gt-btn style for the new Related Sites button */
+.rel-btn{
+  color:var(--t2);
+  white-space:nowrap;
+}
+.rel-btn:hover{
+  color:var(--ac);
+  border-color:var(--ac);
+}
+
+@media(max-width:768px){
+  #rel-grid{
+    grid-template-columns:repeat(2,1fr);
+    gap:8px;
+    padding:10px;
+  }
+  .rel-item{ min-height:52px;font-size:.68rem; }
+}
+body.mobile-mode #rel-grid{
+  grid-template-columns:repeat(2,1fr);
+  gap:8px;padding:10px;
 }

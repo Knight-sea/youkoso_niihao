@@ -1,14 +1,35 @@
+import {
+  GRADES, CLASS_IDS, RANK_LABELS, STATS_KEYS, RADAR_LABELS, MONTHS_JP,
+  SPECIAL_TRAITS, TRAIT_CATEGORIES, HISTORY_MAX, APP_VER, JP, PP_RANGE,
+  STAT_GRADE_TABLE, XSUM_CFG,
+  traitCategoryCollapsedState, contractAccCollapsedState, checkedClasses,
+  state, currentSlot, isGuestMode,
+  navStack, setNavStack,
+  selectMode, setSelectMode,
+  swapMode, setSwapMode, swapDragId, setSwapDragId,
+  selectedIds, setSelectedIds,
+  bulkPPValue, setBulkPPValue,
+  editMode, setEditMode,
+  esc, escA, toast, fmtDate, fmtPP, ppCol,
+  clampStat, statGradeLabel, statGradeClass,
+  getSchoolRankingPool, calcOverallScore, calcOverallScoreDetail,
+  getCls, getStudentsOf, getRanked, rankOf, clsName,
+  computeRanking, computeClassRanking,
+  blankStudent, newState,
+  getIncomingCohorts, nextIncomingCohortGrade, currentIncomingBaseGrade,
+  randomizeGrade,
+} from './core.js';
+import { saveState } from './save-load.js';
+
 /* ================================================================
    render.js — Cote-OS v9.5  (Module 4 of 6)
    All page rendering: renderApp, renderPage, home, grade, class,
    profile, ranking, graduates, incoming, history, trend, export.
    ================================================================ */
-'use strict';
-
 function renderApp(){
   updateDateDisplay();
   const cur=navStack[navStack.length-1];
-  if(cur) renderPage(cur.page,cur.params); else navigate('home',{},true);
+  if(cur) renderPage(cur.page,cur.params); else window.navigate('home',{},true);
 }
 function updateDateDisplay(){
   const el=document.getElementById('date-display'); if(!el) return;
@@ -48,8 +69,6 @@ function renderPage(page,params){
     case 'ranking':      app.innerHTML=renderRankingPage(); break;
     case 'classRanking': app.innerHTML=renderClassRankingPage(); break;
     case 'history':      app.innerHTML=renderHistory(); break;
-    case 'trend':        app.innerHTML=renderTrendPage(); break;
-    case 'export':       app.innerHTML=renderExportPage(); break;
     default: app.innerHTML=`<p style="color:var(--rd)">ページが見つかりません</p>`;
   }
   afterRender();
@@ -128,19 +147,7 @@ function renderHome(){
 
     </div>`;
 
-  /* v9.5: New feature navigation buttons */
-  h += `<div class="home-feature-nav">
-    <button class="feat-nav-btn" onclick="navigate('trend',{},false)">
-      <span class="feat-nav-icon">📈</span>
-      <span class="feat-nav-lbl">トレンドグラフ</span>
-      <span class="feat-nav-sub">PP/CP推移を可視化</span>
-    </button>
-    <button class="feat-nav-btn" onclick="navigate('export',{},false)">
-      <span class="feat-nav-icon">📊</span>
-      <span class="feat-nav-lbl">CSVエクスポート</span>
-      <span class="feat-nav-sub">データをCSVで書き出し</span>
-    </button>
-  </div>`;
+  /* v9.6: Trend/Export features removed */
 
   /* Grade blocks — cls-mini cards with checkboxes + per-grade sel-bar */
   GRADES.forEach(grade=>{
@@ -170,7 +177,8 @@ function renderHome(){
       const isChk=checkedClasses.has(key);
       h+=`
         <div class="cls-mini${isChk?' chk-selected':''}"
-             onclick="navigate('class',{grade:${grade},classId:${cls.classId}},false)">
+             data-key="${grade}_${cls.classId}"
+             onclick="clsMiniClick(${grade},${cls.classId})">
           <!-- v7.12: checkbox hidden by default; CSS shows via body.edit-mode -->
           <label class="mini-chk-wrap" onclick="event.stopPropagation()">
             <input class="mini-chk" type="checkbox" ${isChk?'checked':''}
@@ -205,7 +213,7 @@ function renderHome(){
 
 /* v7.11: toggleEditMode — toggle editMode state, sync body class and button UI */
 window.toggleEditMode=function(){
-  editMode=!editMode;
+  setEditMode(!editMode);
   document.body.classList.toggle('edit-mode', editMode);
   /* Patch the toggle button in-place for instant feedback */
   const btn=document.querySelector('.btn-edit-mode');
@@ -456,7 +464,7 @@ window.confirmRandomizeGrade=function(grade){
 };
 window.execRandomizeGrade=function(grade){
   randomizeGrade(grade); closeModal(); saveState(true);
-  navigateReplace('grade',{grade});
+  window.navigateReplace('grade',{grade});
   toast(`✓ ${JP.gradeN(grade)} ランダム生成完了`,'ok',3000);
 };
 
@@ -493,13 +501,13 @@ function bindSwapDragHandlers(grade,classId){
   if(!swapMode) return;
   document.querySelectorAll('.s-card[data-sid]').forEach(card=>{
     card.addEventListener('dragstart',()=>{
-      swapDragId=card.dataset.sid;
+      setSwapDragId(card.dataset.sid);
       card.classList.add('dragging');
     });
     card.addEventListener('dragend',()=>{
       card.classList.remove('dragging');
       document.querySelectorAll('.s-card.drag-over').forEach(el=>el.classList.remove('drag-over'));
-      swapDragId=null;
+      setSwapDragId(null);
     });
     card.addEventListener('dragover',e=>{
       e.preventDefault();
@@ -562,7 +570,7 @@ function renderClass(grade,classId){
         <span class="bulk-cnt">${selectedIds.size}名選択中</span>
         <input type="number" class="fi bulk-inp" id="blk-pp" placeholder="PP量" min="0"
                value="${escA(String(bulkPPValue))}"
-               oninput="bulkPPValue=this.value" />
+               oninput="window.setBulkPPValue(this.value)" />
         <button class="btn btn-sm btn-ac" onclick="applyBulkGive(${grade},${classId})"><span class="cls-pp-lbl">PP</span>付与</button>
         <button class="btn btn-sm btn-ac" onclick="applyBulkSeize(${grade},${classId})"><span class="cls-pp-lbl">PP</span>剥奪</button>
         <button class="btn btn-sm btn-dn" onclick="confirmBulkDelete(${grade},${classId})">選択した生徒を削除</button>
@@ -662,20 +670,20 @@ window.cardClick=function(sid){
     if(inp) bulkPPValue=inp.value;
     selectedIds.has(sid)?selectedIds.delete(sid):selectedIds.add(sid);
     const c=navStack[navStack.length-1]; if(c) renderPage(c.page,c.params);
-  } else navigate('profile',{sid},false);
+  } else window.navigate('profile',{sid},false);
 };
 window.toggleSel=(g,c)=>{
-  selectMode=!selectMode;
-  if(selectMode) swapMode=false;
-  selectedIds=new Set();
-  if(!selectMode) bulkPPValue='';
+  setSelectMode(!selectMode);
+  if(selectMode) setSwapMode(false);
+  setSelectedIds(new Set());
+  if(!selectMode) setBulkPPValue('');
   renderPage('class',{grade:g,classId:c});
 };
 window.toggleSwapMode=(g,c)=>{
-  swapMode=!swapMode;
+  setSwapMode(!swapMode);
   if(swapMode){
-    selectMode=false;
-    selectedIds=new Set();
+    setSelectMode(false);
+    setSelectedIds(new Set());
   }
   renderPage('class',{grade:g,classId:c});
 };
@@ -686,7 +694,7 @@ window.sortByIdSwap=(g,c)=>{
   toast('✓ 番号ソートしました','ok');
 };
 window.confirmSwap=(g,c)=>{
-  swapMode=false;
+  setSwapMode(false);
   saveState(true);
   renderPage('class',{grade:g,classId:c});
   toast('✓ 入れ替えを保存しました','ok');
@@ -746,7 +754,7 @@ window.execBulkDelete=function(grade,classId){
   const del=new Set(selectedIds);
   state.students=state.students.filter(s=>!del.has(s.id));
   state.students.forEach(s=>{s.contracts=s.contracts.filter(c=>!del.has(c.targetId));});
-  selectedIds=new Set(); selectMode=false; bulkPPValue='';
+  setSelectedIds(new Set()); setSelectMode(false); setBulkPPValue('');
   closeModal(); saveState(true); renderPage('class',{grade,classId});
   toast(`✓ ${del.size}名を削除しました`,'ok');
 };
@@ -1346,7 +1354,7 @@ window.rmContract=function(ownerSid, idx, viewSid){
   saveState(true);
   /* Return to the profile we were viewing (may differ from ownerSid) */
   const targetSid = viewSid || ownerSid;
-  navigateReplace('profile',{sid:targetSid}); updateBreadcrumb();
+  window.navigateReplace('profile',{sid:targetSid}); window.updateBreadcrumb();
   toast('✓ コントラクトを削除しました','ok');
 };
 /* v8.5: addContract(sid, role) — role is 'pay'|'recv', passed directly
@@ -1372,14 +1380,14 @@ window.addContract=function(sid, role='pay'){
     if(!Array.isArray(s.contracts)) s.contracts=[];
     s.contracts.push({targetId:t.id, amount:amt});
     saveState(true);
-    navigateReplace('profile',{sid});
+    window.navigateReplace('profile',{sid});
     toast(`✓ 契約発行 → ${t.name||t.id}：${amt.toLocaleString()} PP/月（支払い）`,'ok');
   } else {
     /* t pays s — contract on t */
     if(!Array.isArray(t.contracts)) t.contracts=[];
     t.contracts.push({targetId:s.id, amount:amt});
     saveState(true);
-    navigateReplace('profile',{sid});
+    window.navigateReplace('profile',{sid});
     toast(`✓ 契約発行 ← ${t.name||t.id}：${amt.toLocaleString()} PP/月（受取）`,'ok');
   }
 };
@@ -1424,8 +1432,8 @@ window.deleteStudentFromProfile=function(sid){
   selectedIds.delete(sid); closeModal(); saveState(true);
   if(navStack.length>1) navStack.pop();
   if(typeof grade==='number'){
-    if(navStack.length>0&&navStack[navStack.length-1].page==='class'){renderPage('class',{grade,classId});updateBreadcrumb();}
-    else navigate('class',{grade,classId},false);
+    if(navStack.length>0&&navStack[navStack.length-1].page==='class'){renderPage('class',{grade,classId});window.updateBreadcrumb();}
+    else window.navigate('class',{grade,classId},false);
   } else renderApp();
   toast('✓ 生徒を削除しました','ok');
 };
@@ -1729,7 +1737,7 @@ function renderRankingPage(){
         case 'col-class':
           return `<td class="td-left${activeCls}" style="font-size:.68rem;color:var(--t1)">${gd} / ${esc(cd)}</td>`;
         case 'col-dob':
-          return `<td class="rk-dob${activeCls}">${sv('dob')}</td>`;
+          return `<td class="rk-dob td-left${activeCls}">${sv('dob')}</td>`;
         default:{
           const base = (c.tdCls||'').trim();
           const cls  = base ? `${base} rk-num${activeCls}` : `rk-num${activeCls}`;
@@ -2186,8 +2194,35 @@ function afterRender(){
   if(cur?.page==='class' && swapMode){
     bindSwapDragHandlers(cur.params.grade,cur.params.classId);
   }
-  /* v9.5: draw trend chart after DOM update */
-  if(cur?.page==='trend' && typeof drawTrendChart==='function'){
-    drawTrendChart();
-  }
+
 }
+
+/* ── v9.6: clsMiniClick — edit mode card click handler ──────────── */
+window.clsMiniClick = function(grade, classId) {
+  if (editMode) {
+    const key = `${grade}_${classId}`;
+    const card = document.querySelector(`.cls-mini[data-key="${key}"]`);
+    if (!card) return;
+    const chk = card.querySelector('.mini-chk');
+    if (!chk) return;
+    chk.checked = !chk.checked;
+    window.toggleMiniChk(grade, classId, {
+      target: chk,
+      stopPropagation: () => {},
+    });
+  } else {
+    window.navigate('class', {grade, classId}, false);
+  }
+};
+
+/* ── v9.6: ES module exports for app.js / save-load.js ─────────── */
+export { renderApp, renderPage, updateDateDisplay, uiConfirm, uiAlert, openModal };
+
+/* ── v9.6: window bindings ──────────────────────────────────────── */
+window.goBack          = function(){ /* delegated to app.js after load */ };
+window.renderApp       = renderApp;
+window.updateDateDisplay = updateDateDisplay;
+window.uiConfirm       = uiConfirm;
+window.uiAlert         = uiAlert;
+window.openModal       = openModal;
+window.closeModal      = function(){ document.getElementById('modal-overlay')?.classList.add('hidden'); };

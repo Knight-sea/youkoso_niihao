@@ -1,13 +1,11 @@
 /* names-data.js — v9.5: Randomiser name arrays (extracted from app.js) */
-'use strict';
-
 /* ──────────────────────────────────────────────────────────────────
    RANDOMISER DATA — ×5 expanded name arrays
 ────────────────────────────────────────────────────────────────── */
 /* ── v8.1: SURNAMES — split into MAJOR (common) and RARE groups
    Total count ≈ 1.5× v8.0. Selection: 2:1 weighted — Major is
    picked 2 out of 3 times, Rare 1 out of 3 times.             */
-const SURNAMES_MAJOR = [
+export const SURNAMES_MAJOR = [
   /* Top-60 ultra-common Japanese surnames */
   "佐藤","鈴木","高橋","田中","渡辺","伊藤","山本","中村","小林","加藤",
   "吉田","山田","佐々木","山口","松本","井上","木村","林","斎藤","清水",
@@ -38,7 +36,7 @@ const SURNAMES_MAJOR = [
   "赤坂","角谷","別府","深田","玉置","松永","宮島","向井","大倉","赤井",
 ];
 
-const SURNAMES_RARE = [
+export const SURNAMES_RARE = [
   /* Rare batch A */
   "浜崎","戸田","国分","竹山","黒沢","川崎","宮地","福井","東野","稲田",
   "今村","小泉","松村","西澤","篠田","富山","津川","北島","澤田","坂口",
@@ -90,7 +88,7 @@ const SURNAMES_RARE = [
   "柏木","石元","吉松","森崎","古澤","末吉","林口","大和田","嶺岸","曲木",
 ];
 
-const MALE_NAMES = [
+export const MALE_NAMES = [
   /* v5.4 originals (120) */
   "蒼","湊","蓮","陽翔","律","悠真","暖","颯","樹","翔",
   "大和","悠人","凛","碧","陽太","隼人","琉生","晴翔","光","仁",
@@ -169,7 +167,7 @@ const MALE_NAMES = [
   "星輝","弘輝","礼斗","心輝","響輝","実斗","澪輝","誠翔","翼斗","啓輝",
 ];
 
-const FEMALE_NAMES = [
+export const FEMALE_NAMES = [
   /* v5.4 originals (120) */
   "陽葵","凛","結菜","杏","莉子","美咲","葵","愛","心春","桜",
   "咲良","琴音","七海","芽依","彩花","結衣","梨花","菜々","遥","優花",

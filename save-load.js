@@ -1,3 +1,19 @@
+import {
+  STATS_KEYS, MONTHS_JP, NUM_SLOTS, slotKey, APP_VER,
+  state, setState, currentSlot, setCurrentSlot,
+  isGuestMode, setIsGuestMode,
+  navStack, setNavStack,
+  selectMode, setSelectMode,
+  swapMode, setSwapMode,
+  selectedIds, setSelectedIds,
+  slModalOpen, setSlModalOpen,
+  slSelectedSlot, setSlSelectedSlot,
+  slNameDrafts, setSlNameDrafts,
+  newState, generateInitialData,
+  toast, esc, escA, fmtPP, RANK_LABELS,
+  CLASS_IDS, GRADES,
+} from './core.js';
+
 /* save-load.js — v9.5: Save/Load system + Firebase cloud sync */
 
 /* ──────────────────────────────────────────────────────────────────
@@ -180,7 +196,7 @@ function decodeStateFromBinary(raw){
     return null;
   }
 }
-function defaultSlotName(n){ return `Slot ${n}`; }
+export function defaultSlotName(n){ return `Slot ${n}`; }
 function normalizeSlotMeta(meta){
   const out={};
   for(let n=1;n<=NUM_SLOTS;n++){
@@ -196,7 +212,7 @@ function loadSlotMeta(){
 function saveSlotMeta(meta){
   localStorage.setItem(SLOT_META_KEY, JSON.stringify(normalizeSlotMeta(meta)));
 }
-function slotNameOf(n){
+export function slotNameOf(n){
   const meta=loadSlotMeta();
   return meta[n] || defaultSlotName(n);
 }
@@ -205,10 +221,10 @@ function setSlotName(n,name){
   meta[n]=(name&&name.trim())?name.trim():defaultSlotName(n);
   saveSlotMeta(meta);
 }
-function slotHasData(n){ return !!localStorage.getItem(slotKey(n)); }
+export function slotHasData(n){ return !!localStorage.getItem(slotKey(n)); }
 
 /* v8.7: readRawSlotState — get a plain object from slot n (handles binary+meta) */
-function readRawSlotState(n){
+export function readRawSlotState(n){
   const raw = localStorage.getItem(slotKey(n));
   if(!raw) return null;
   try{
@@ -224,7 +240,7 @@ function readRawSlotState(n){
   }catch(_){ return null; }
 }
 
-function saveState(silent=false,targetSlot=currentSlot,forcedName=''){
+export function saveState(silent=false,targetSlot=currentSlot,forcedName=''){
   if(!state) return false;
   const slot=Number(targetSlot)||currentSlot;
   if(slot===0) return false;
@@ -256,39 +272,39 @@ function saveState(silent=false,targetSlot=currentSlot,forcedName=''){
     return false;
   }
 }
-function loadSlot(n){
+export function loadSlot(n){
   const raw=localStorage.getItem(slotKey(n));
   if(!raw){ state=null; return false; }
   try{
     if(raw.startsWith('GZ92:') || raw.startsWith('GZ91:')){
       /* v9.2/9.1: スキーマ圧縮+gzip / 旧gzip フォーマット */
       const decoded = decodeStateFromBinary(raw);
-      if(!decoded){ state=null; return false; }
+      if(!decoded){ setState(null); return false; }
       /* GZ92 では history が空配列になるので、ローカルに別途保存された履歴を復元する必要はない
          (履歴はクラウドに送らずローカルのみで管理 — ここでは decoded のまま使う) */
-      state = decoded;
+      setState(decoded);
     } else if(raw.startsWith('PB87:')){
       /* v8.7 Protobuf 後方互換: meta sidecar が正規ソース */
       const metaRaw = localStorage.getItem(slotKey(n)+'_meta');
       if(metaRaw){
-        state = JSON.parse(metaRaw);
+        setState(JSON.parse(metaRaw));
       } else {
         /* meta 欠損 — 復元不能 */
-        state=null; return false;
+        setState(null); return false;
       }
     } else {
       /* Legacy JSON */
-      state=JSON.parse(raw);
+      setState(JSON.parse(raw));
     }
     if(!state.slotName) state.slotName=slotNameOf(n);
     return true;
   }catch(e){
     console.warn('loadSlot',n,e);
-    state=null;
+    setState(null);
     return false;
   }
 }
-function switchSlot(n, silent=false){
+export function switchSlot(n, silent=false){
   const next=+n;
   if(next===currentSlot) return;
   saveState(true,currentSlot,state?.slotName||slotNameOf(currentSlot));
@@ -297,7 +313,7 @@ function switchSlot(n, silent=false){
   updateSlotButtons(); updateDateDisplay(); navigate('home',{},true);
   if(!silent) toast(`スロット${next}に切り替えました`);
 }
-function resetSlot(slot=currentSlot){
+export function resetSlot(slot=currentSlot){
   const n=+slot;
   localStorage.removeItem(slotKey(n));
   localStorage.removeItem(slotKey(n)+'_meta'); /* PB87 sidecar の残骸も削除 */
@@ -308,7 +324,7 @@ function resetSlot(slot=currentSlot){
   updateSlotButtons();
   if(slModalOpen) renderSaveLoadModal();
 }
-function updateSlotButtons(){
+export function updateSlotButtons(){
   const chip=document.getElementById('slot-chip');
   if(chip){
     /* v7.3: slot 0 = guest mode, slots 1-12 = normal */
@@ -337,7 +353,7 @@ function readSlotBrief(n){
   }
 }
 
-function renderSaveLoadModal(){
+export function renderSaveLoadModal(){
   const slotsEl=document.getElementById('sl-slots');
   if(!slotsEl) return;
   let html='';
@@ -365,7 +381,7 @@ function renderSaveLoadModal(){
 
   slotsEl.querySelectorAll('.sl-slot').forEach(card=>{
     card.addEventListener('click',()=>{
-      slSelectedSlot=+card.dataset.slot;
+      setSlSelectedSlot(+card.dataset.slot);
       renderSaveLoadModal();
     });
   });
@@ -404,16 +420,16 @@ function syncSlModalButtons(){
   const newPlay=document.getElementById('sl-btn-new-play');
   if(newPlay){ newPlay.classList.remove('sl-act-disabled'); newPlay.disabled=false; }
 }
-function openSaveLoadModal(){
-  slModalOpen=true;
-  slSelectedSlot=currentSlot;
-  slNameDrafts={};
+export function openSaveLoadModal(){
+  setSlModalOpen(true);
+  setSlSelectedSlot(currentSlot);
+  setSlNameDrafts({});
   const ov=document.getElementById('sl-overlay');
   ov?.classList.remove('hidden');
   renderSaveLoadModal();
 }
-function closeSaveLoadModal(){
-  slModalOpen=false;
+export function closeSaveLoadModal(){
+  setSlModalOpen(false);
   document.getElementById('sl-overlay')?.classList.add('hidden');
 }
 function saveToSelectedSlot(){
@@ -430,14 +446,14 @@ function saveToSelectedSlot(){
   /* v7.3: guest mode — the current state is volatile (slot 0).
      Saving it means copying to the selected permanent slot.        */
   if(isGuestMode){
-    uiConfirm({
+    window.uiConfirm({
       title:'ゲストデータをセーブ',
       body:`スロット ${n} にゲストデータを保存します。<br>既存データは上書きされます。続行しますか？`,
       variant: slotHasData(n) ? 'warn' : 'info',
       okLabel:'セーブ',
       onOk:()=>{
         const prevSlot=currentSlot;
-        currentSlot=n;
+        setCurrentSlot(n);
         state.slotName=nm;
         saveState(false,n,nm);
         currentSlot=prevSlot;     // stay in guest mode
@@ -488,13 +504,13 @@ function _doPlaySlot(n){
   /* Empty slot → auto-generate 1,200 blank students and go home */
   if(!slotHasData(n)){
     saveState(true, currentSlot, state?.slotName||slotNameOf(currentSlot));
-    currentSlot=n; isGuestMode=false;
-    state=newState();
+    setCurrentSlot(n); setIsGuestMode(false);
+    setState(newState());
     generateInitialData();
     saveState(true);
     updateSlotButtons(); updateDateDisplay();
-    selectMode=false; swapMode=false; selectedIds=new Set(); navStack=[];
-    navigate('home',{},true);
+    setSelectMode(false); setSwapMode(false); setSelectedIds(new Set()); setNavStack([]);
+    window.navigate('home',{},true);
     closeSaveLoadModal();
     toast(`▶ スロット${n} — 新規データを開始しました`,'ok',3000);
     return;
@@ -502,7 +518,7 @@ function _doPlaySlot(n){
 
   /* Normal: load existing slot */
   saveState(true, currentSlot, state?.slotName||slotNameOf(currentSlot));
-  currentSlot=n; isGuestMode=false;
+  setCurrentSlot(n); setIsGuestMode(false);
   loadSlot(n);
   updateSlotButtons(); updateDateDisplay();
   selectMode=false; swapMode=false; selectedIds=new Set(); navStack=[];
@@ -514,12 +530,12 @@ function deleteSelectedSlot(){
   const n=slSelectedSlot;
   resetSlot(n);
   if(n===currentSlot){
-    navStack=[];
-    navigate('home',{},true);
+    setNavStack([]);
+    window.navigate('home',{},true);
   }
   toast(`✓ スロット${n}を削除しました`,'warn');
 }
-function bindSaveLoadModalControls(){
+export function bindSaveLoadModalControls(){
   if(bindSaveLoadModalControls._bound) return;
   bindSaveLoadModalControls._bound=true;
 
@@ -558,8 +574,8 @@ function bindSaveLoadModalControls(){
   /* v7.3: "新しくプレイ" — Slot 0 guest mode, always available */
   document.getElementById('sl-btn-new-play')?.addEventListener('click',()=>{
     const doStart=()=>{
-      currentSlot=0; isGuestMode=true;
-      state=newState();
+      setCurrentSlot(0); setIsGuestMode(true);
+      setState(newState());
       generateInitialData();
       // Do NOT saveState — guest data is volatile
       updateSlotButtons(); updateDateDisplay();
@@ -591,7 +607,7 @@ function bindSaveLoadModalControls(){
    全スロット一括バックアップは exportAllSlots() で引き続き利用可能
    (将来的に「全バックアップ」ボタンから呼ぶ想定)。
 ────────────────────────────────────────────────────────────────── */
-function exportSelectedSlot(){
+export function exportSelectedSlot(){
   /* モーダル表示中は slSelectedSlot、そうでなければ currentSlot を使う */
   const n = slModalOpen ? slSelectedSlot : currentSlot;
   saveState(true, n);
@@ -613,7 +629,7 @@ function exportSelectedSlot(){
   setTimeout(()=>URL.revokeObjectURL(url),15000);
   toast(`✓ スロット${n}を書き出しました — cote_os_slot${n}_${stamp}.json`,'io',3500);
 }
-function exportAllSlots(){
+export function exportAllSlots(){
   saveState(true);
   const slots={};
   for(let n=1;n<=NUM_SLOTS;n++){
@@ -631,7 +647,7 @@ function exportAllSlots(){
   setTimeout(()=>URL.revokeObjectURL(url),15000);
   toast(`✓ 全スロット書き出し完了 — cote_os_backup_${stamp}.json`,'io',3500);
 }
-function serializeSlot(s){
+export function serializeSlot(s){
   return {
     year:s.year,month:s.month,nextId:s.nextId,slotName:s.slotName||'',
     classes:s.classes.map(c=>({grade:c.grade,classId:c.classId,classPoints:c.classPoints,customName:c.customName||'',name:c.name||''})),
@@ -654,7 +670,7 @@ function serializeSlot(s){
 /* ──────────────────────────────────────────────────────────────────
    IMPORT
 ────────────────────────────────────────────────────────────────── */
-function triggerImportDialog(){
+export function triggerImportDialog(){
   /* v8.9 fix[3]: 選択スロット番号を確定してからダイアログを表示。
      ファイル選択後は importTargetSlot に読み込む。               */
   const targetSlot = slModalOpen ? slSelectedSlot : currentSlot;
@@ -683,7 +699,7 @@ window.pickFile=function(targetSlot){
   fp.click();
 };
 
-function onFilePicked(file){
+export function onFilePicked(file){
   if(!file) return;
   const isBin = file.name.endsWith('.bin') || (file.type && file.type.includes('octet-stream'));
   const isJson= file.type&&file.type.includes('json')||file.name.endsWith('.json');
@@ -742,7 +758,7 @@ function onFilePicked(file){
   reader.onerror=()=>toast('✗ ファイルの読み込みに失敗しました','err');
   reader.readAsText(file,'utf-8');
 }
-function validateAndImport(parsed, targetSlot){
+export function validateAndImport(parsed, targetSlot){
   /* v8.9 fix[3]: 単一スロット書き出し形式 (singleSlot:true) に対応。
      targetSlot が指定された場合、そのスロットのデータだけを上書き。
      全スロットバックアップ形式の場合は全スロットを復元する旧来動作。
@@ -797,16 +813,16 @@ function validateAndImport(parsed, targetSlot){
     }
   }
   saveSlotMeta(meta);
-  selectMode=false; selectedIds=new Set(); navStack=[];
+  setSelectMode(false); setSelectedIds(new Set()); setNavStack([]);
   /* v8.9 fix[3]: currentSlot を target にスイッチして確実にロード */
-  currentSlot=target; isGuestMode=false;
-  state=null;
+  setCurrentSlot(target); setIsGuestMode(false);
+  setState(null);
   loadSlot(target);
   updateSlotButtons(); updateDateDisplay(); navigate('home',{},true);
   closeSaveLoadModal();
   toast(`✓ 読み込み完了 — スロット${target}に${restored===1?'データを':'全'+restored+'スロットを'}復元しました`,'io',3500);
 }
-function deserializeSlot(obj){
+export function deserializeSlot(obj){
   const s=newState();
   s.year=typeof obj.year==='number'&&obj.year>=1?obj.year:1;
   s.month=typeof obj.month==='number'&&obj.month>=1?obj.month:4;
@@ -840,7 +856,7 @@ function deserializeSlot(obj){
   }));
   return s;
 }
-function repairIntegrity(s){
+export function repairIntegrity(s){
   const seen=new Set();
   s.students.forEach(st=>{
     if(!st.id||seen.has(st.id)){ st.id='000'+String(s.nextId).padStart(4,'0'); s.nextId++; }
@@ -1008,7 +1024,7 @@ async function loadAllSlotsFromCloud(){
 
   if(!isGuestMode && currentSlot>0 && slotHasData(currentSlot)){
     loadSlot(currentSlot);
-    updateDateDisplay();
+    window.updateDateDisplay();
     navigate('home',{},true);
   }
 
@@ -1020,7 +1036,7 @@ async function loadAllSlotsFromCloud(){
 }
 
 /* ── initFirebase — onAuthStateChanged リスナーを登録 ─────────── */
-function initFirebase(){
+export function initFirebase(){
   const register = (onChanged)=>{
     onChanged(async user=>{
       syncLoginUI(user);
@@ -1038,7 +1054,7 @@ function initFirebase(){
 }
 
 /* ── bindFirebaseControls — ログイン/ログアウト/同期ボタンを紐付け ── */
-function bindFirebaseControls(){
+export function bindFirebaseControls(){
   document.getElementById('sl-btn-login')?.addEventListener('click', async ()=>{
     const signIn = window.fbSignIn;
     if(typeof signIn!=='function'){
@@ -1066,3 +1082,5 @@ function bindFirebaseControls(){
     await loadAllSlotsFromCloud();
   });
 }
+
+window.openSaveLoadModal = openSaveLoadModal;

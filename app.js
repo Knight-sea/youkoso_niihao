@@ -5,9 +5,34 @@
    2. core.js         — Constants, state, utilities
    3. save-load.js    — Save/Load + Firebase
    4. render.js       — All rendering
-   5. features.js     — Trend graph + CSV export
-   6. app.js          — This file (navigation, events, boot)
+   5. app.js          — This file (navigation, events, boot)
    ───────────────────────────────────────────────────────────────── */
+
+import {
+  GRADES, CLASS_IDS, RANK_LABELS, MONTHS_JP, JP, APP_VER, HISTORY_MAX,
+  THEME_KEY, BGM_KEY, BGM_KEY as _BGM_KEY,
+  state, setState, currentSlot, setCurrentSlot,
+  isGuestMode, setIsGuestMode,
+  navStack, setNavStack,
+  selectMode, setSelectMode, swapMode, setSwapMode,
+  selectedIds, setSelectedIds,
+  bgmEnabled, bgmWidget, bgmReady,
+  slModalOpen,
+  newState, generateInitialData, blankStudent,
+  genStudentId, fmtDate, toast,
+  applyTheme, loadTheme,
+  toggleBGM, initBGM, syncBgmButton, setBgmEnabled,
+  clsName, RANK_LABELS as _RL,
+  getIncomingCohorts,
+} from './core.js';
+import {
+  saveState, loadSlot, updateSlotButtons,
+  openSaveLoadModal, closeSaveLoadModal,
+  bindSaveLoadModalControls, triggerImportDialog, exportAllSlots,
+  initFirebase, bindFirebaseControls, onFilePicked,
+} from './save-load.js';
+import { renderApp, renderPage, updateDateDisplay, uiConfirm } from './render.js';
+
 
 /* ──────────────────────────────────────────────────────────────────
    TIME LEAP
@@ -144,7 +169,7 @@ function closeThemeFly(){
    If the top of the stack is already the same page+params, replace
    instead of push (prevents duplicate profile entries from card clicks). */
 function navigate(page,params={},reset=false){
-  if(reset) navStack=[];
+  if(reset) setNavStack([]);
   const top=navStack[navStack.length-1];
   /* Dedup: same page + same sid (profile) → replace instead of push */
   if(!reset && top && top.page===page){
@@ -172,11 +197,11 @@ window.gearNav=function(page){
 };
 function goBack(){
   if(navStack.length<=1) return;
-  navStack.pop(); selectMode=false; swapMode=false; selectedIds=new Set();
+  navStack.pop(); setSelectMode(false); setSwapMode(false); setSelectedIds(new Set());
   const t=navStack[navStack.length-1]; renderPage(t.page,t.params); updateBreadcrumb();
 }
 window.navTo=function(i){
-  navStack=navStack.slice(0,i+1); selectMode=false; swapMode=false; selectedIds=new Set();
+  setNavStack(navStack.slice(0,i+1)); setSelectMode(false); setSwapMode(false); setSelectedIds(new Set());
   const t=navStack[navStack.length-1]; renderPage(t.page,t.params); updateBreadcrumb();
 };
 function pageLabel(n){
@@ -301,10 +326,15 @@ function bindEvents(){
   /* v8.6: Firebase Login / Logout button handlers */
   bindFirebaseControls();
 
+  /* v9.6: Related Sites button */
+  document.getElementById('btn-related')?.addEventListener('click', e=>{
+    e.stopPropagation(); openRelatedSitesModal();
+  });
+
   /* Modal close */
-  document.getElementById('modal-x')?.addEventListener('click', closeModal);
+  document.getElementById('modal-x')?.addEventListener('click', ()=>window.closeModal());
   document.getElementById('modal-overlay')?.addEventListener('click', e=>{
-    if(e.target.id==='modal-overlay') closeModal();
+    if(e.target.id==='modal-overlay') window.closeModal();
   });
 }
 
@@ -313,13 +343,13 @@ window.doReset=function(){
   closeModal();
   if(isGuestMode){
     // Guest: just regenerate blank data in memory
-    state=newState(); generateInitialData();
-    selectMode=false; swapMode=false; selectedIds=new Set(); navStack=[];
+    setState(newState()); generateInitialData();
+    setSelectMode(false); setSwapMode(false); setSelectedIds(new Set()); setNavStack([]);
     navigate('home',{},true);
     toast('✓ ゲストデータをリセットしました','ok');
   }else{
     resetSlot();
-    selectMode=false; swapMode=false; selectedIds=new Set(); navStack=[];
+    setSelectMode(false); setSwapMode(false); setSelectedIds(new Set()); setNavStack([]);
     navigate('home',{},true);
     toast(`✓ スロット${currentSlot} リセット完了`,'ok');
   }
@@ -328,8 +358,15 @@ window.doReset=function(){
 /* Global references */
 window.navigate            = navigate;
 window.navigateBack        = goBack;
+window.goBack              = goBack;
+window.navigateReplace     = navigateReplace;
+window.navigateSafe        = navigateSafe;
+window.updateBreadcrumb    = updateBreadcrumb;
+window.revertMonth         = revertMonth;
+window.advanceMonth        = advanceMonth;
 window.exportAllSlots      = exportAllSlots;
 window.triggerImportDialog = triggerImportDialog;
+window.saveState           = saveState;
 
 /* ──────────────────────────────────────────────────────────────────
    BOOT
@@ -422,6 +459,20 @@ function syncMssVolume(val){
 }
 window.syncMssVolume = syncMssVolume;
 
+
+/* ──────────────────────────────────────────────────────────────────
+   RELATED SITES MODAL — v9.6
+────────────────────────────────────────────────────────────────── */
+function openRelatedSitesModal(){
+  document.getElementById('rel-overlay')?.classList.remove('hidden');
+  closeGear();
+}
+function closeRelatedSitesModal(){
+  document.getElementById('rel-overlay')?.classList.add('hidden');
+}
+window.openRelatedSitesModal  = openRelatedSitesModal;
+window.closeRelatedSitesModal = closeRelatedSitesModal;
+
 /* v7.6: boot — Guest Mode (slot 0) by default, but immediately
    calls generateInitialData() so the Home screen is populated
    with 1,200 blank students on first load. Slot 1–12 data is
@@ -429,9 +480,9 @@ window.syncMssVolume = syncMssVolume;
 function boot(){
   loadTheme();
   initBGM();
-  currentSlot = 0;
-  isGuestMode  = true;
-  state = newState();
+  setCurrentSlot(0);
+  setIsGuestMode(true);
+  setState(newState());
   generateInitialData();   /* populate 1,200 blank students for guest session */
   finishBoot();
 }
