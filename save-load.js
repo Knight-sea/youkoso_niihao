@@ -274,7 +274,7 @@ export function saveState(silent=false,targetSlot=currentSlot,forcedName=''){
 }
 export function loadSlot(n){
   const raw=localStorage.getItem(slotKey(n));
-  if(!raw){ state=null; return false; }
+  if(!raw){ setState(null); return false; }
   try{
     if(raw.startsWith('GZ92:') || raw.startsWith('GZ91:')){
       /* v9.2/9.1: スキーマ圧縮+gzip / 旧gzip フォーマット */
@@ -308,9 +308,9 @@ export function switchSlot(n, silent=false){
   const next=+n;
   if(next===currentSlot) return;
   saveState(true,currentSlot,state?.slotName||slotNameOf(currentSlot));
-  state=null; currentSlot=next; selectMode=false; swapMode=false; selectedIds=new Set(); navStack=[];
+  setState(null); setCurrentSlot(next); setSelectMode(false); setSwapMode(false); setSelectedIds(new Set()); setNavStack([]);
   loadSlot(next);
-  updateSlotButtons(); updateDateDisplay(); navigate('home',{},true);
+  updateSlotButtons(); window.updateDateDisplay(); window.navigate('home',{},true);
   if(!silent) toast(`スロット${next}に切り替えました`);
 }
 export function resetSlot(slot=currentSlot){
@@ -320,7 +320,7 @@ export function resetSlot(slot=currentSlot){
   const meta=loadSlotMeta();
   meta[n]=defaultSlotName(n);
   saveSlotMeta(meta);
-  if(n===currentSlot) state=null;
+  if(n===currentSlot) setState(null);
   updateSlotButtons();
   if(slModalOpen) renderSaveLoadModal();
 }
@@ -330,7 +330,7 @@ export function updateSlotButtons(){
     /* v7.3: slot 0 = guest mode, slots 1-12 = normal */
     chip.textContent = currentSlot===0 ? 'ゲストモード' : `スロット ${currentSlot}`;
   }
-  isGuestMode = (currentSlot===0);
+  setIsGuestMode(currentSlot===0);
 }
 
 function readSlotBrief(n){
@@ -456,7 +456,7 @@ function saveToSelectedSlot(){
         setCurrentSlot(n);
         state.slotName=nm;
         saveState(false,n,nm);
-        currentSlot=prevSlot;     // stay in guest mode
+        setCurrentSlot(prevSlot);     // stay in guest mode
         renderSaveLoadModal();
       },
     });
@@ -465,7 +465,7 @@ function saveToSelectedSlot(){
 
   /* Normal: save current slot into n */
   if(n!==currentSlot){
-    uiConfirm({
+    window.uiConfirm({
       title:`スロット ${n} に上書き`,
       body:`現在のデータをスロット ${n} に保存します。<br>${slotHasData(n)?'既存データは上書きされます。':''}続行しますか？`,
       variant: slotHasData(n) ? 'warn' : 'info',
@@ -487,7 +487,7 @@ function playSelectedSlot(){
 
   /* v7.3: If user is in guest mode with data, warn before switching */
   if(isGuestMode && state?.students?.length){
-    uiConfirm({
+    window.uiConfirm({
       title:'未保存のゲストデータ',
       body:`スロット ${n} に切り替えると、現在のゲストデータは失われます。<br>続行しますか？`,
       variant:'warn',
@@ -508,7 +508,7 @@ function _doPlaySlot(n){
     setState(newState());
     generateInitialData();
     saveState(true);
-    updateSlotButtons(); updateDateDisplay();
+    updateSlotButtons(); window.updateDateDisplay();
     setSelectMode(false); setSwapMode(false); setSelectedIds(new Set()); setNavStack([]);
     window.navigate('home',{},true);
     closeSaveLoadModal();
@@ -520,9 +520,9 @@ function _doPlaySlot(n){
   saveState(true, currentSlot, state?.slotName||slotNameOf(currentSlot));
   setCurrentSlot(n); setIsGuestMode(false);
   loadSlot(n);
-  updateSlotButtons(); updateDateDisplay();
-  selectMode=false; swapMode=false; selectedIds=new Set(); navStack=[];
-  navigate('home',{},true);
+  updateSlotButtons(); window.updateDateDisplay();
+  setSelectMode(false); setSwapMode(false); setSelectedIds(new Set()); setNavStack([]);
+  window.navigate('home',{},true);
   closeSaveLoadModal();
   toast(`▶ スロット${n}をロードしました`,'ok');
 }
@@ -560,7 +560,7 @@ export function bindSaveLoadModalControls(){
       toast(`✗ スロット${n}にはデータがありません`,'err');
       return;
     }
-    uiConfirm({
+    window.uiConfirm({
       title:`スロット ${n} を削除`,
       body:`スロット ${n} のデータを完全に削除します。<br><strong>この操作は取り消せません。</strong>`,
       variant:'danger',
@@ -578,16 +578,16 @@ export function bindSaveLoadModalControls(){
       setState(newState());
       generateInitialData();
       // Do NOT saveState — guest data is volatile
-      updateSlotButtons(); updateDateDisplay();
-      selectMode=false; swapMode=false; selectedIds=new Set(); navStack=[];
-      navigate('home',{},true);
+      updateSlotButtons(); window.updateDateDisplay();
+      setSelectMode(false); setSwapMode(false); setSelectedIds(new Set()); setNavStack([]);
+      window.navigate('home',{},true);
       closeSaveLoadModal();
       toast('ゲストモード開始 — データは自動保存されません','warn',4000);
     };
 
     /* Warn if switching away from unsaved guest session */
     if(isGuestMode && state?.students?.length){
-      uiConfirm({
+      window.uiConfirm({
         title:'ゲストデータをリセット',
         body:'新しくプレイすると、現在のゲストデータは失われます。<br>続行しますか？',
         variant:'warn',
@@ -740,7 +740,7 @@ export function onFilePicked(file){
           localStorage.setItem(slotKey(importTarget), JSON.stringify(s));
         }
         if(importTarget===currentSlot){
-          state=s; updateSlotButtons(); updateDateDisplay(); navigate('home',{},true);
+          setState(s); updateSlotButtons(); window.updateDateDisplay(); window.navigate('home',{},true);
         } else {
           if(slModalOpen){ renderSaveLoadModal(); syncSlModalButtons(); }
         }
@@ -818,7 +818,7 @@ export function validateAndImport(parsed, targetSlot){
   setCurrentSlot(target); setIsGuestMode(false);
   setState(null);
   loadSlot(target);
-  updateSlotButtons(); updateDateDisplay(); navigate('home',{},true);
+  updateSlotButtons(); window.updateDateDisplay(); window.navigate('home',{},true);
   closeSaveLoadModal();
   toast(`✓ 読み込み完了 — スロット${target}に${restored===1?'データを':'全'+restored+'スロットを'}復元しました`,'io',3500);
 }
@@ -1025,7 +1025,7 @@ async function loadAllSlotsFromCloud(){
   if(!isGuestMode && currentSlot>0 && slotHasData(currentSlot)){
     loadSlot(currentSlot);
     window.updateDateDisplay();
-    navigate('home',{},true);
+    window.navigate('home',{},true);
   }
 
   if(errors>0){

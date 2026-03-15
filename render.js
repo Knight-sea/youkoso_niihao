@@ -667,7 +667,7 @@ window.cardClick=function(sid){
   if(swapMode) return;
   if(selectMode){
     const inp=document.getElementById('blk-pp');
-    if(inp) bulkPPValue=inp.value;
+    if(inp) setBulkPPValue(inp.value);
     selectedIds.has(sid)?selectedIds.delete(sid):selectedIds.add(sid);
     const c=navStack[navStack.length-1]; if(c) renderPage(c.page,c.params);
   } else window.navigate('profile',{sid},false);
@@ -700,20 +700,20 @@ window.confirmSwap=(g,c)=>{
   toast('✓ 入れ替えを保存しました','ok');
 };
 window.selAll=(g,c)=>{
-  const inp=document.getElementById('blk-pp'); if(inp) bulkPPValue=inp.value;
+  const inp=document.getElementById('blk-pp'); if(inp) setBulkPPValue(inp.value);
   getStudentsOf(g,c).filter(s=>!s.isExpelled).forEach(s=>selectedIds.add(s.id));
   renderPage('class',{grade:g,classId:c});
 };
 window.deselAll=(g,c)=>{
-  const inp=document.getElementById('blk-pp'); if(inp) bulkPPValue=inp.value;
-  selectedIds=new Set();
+  const inp=document.getElementById('blk-pp'); if(inp) setBulkPPValue(inp.value);
+  setSelectedIds(new Set());
   renderPage('class',{grade:g,classId:c});
 };
 
 /* ── PP付与 (give) — keeps selectMode active ── */
 window.applyBulkGive=function(grade,classId){
   const inp=document.getElementById('blk-pp');
-  if(inp) bulkPPValue=inp.value;
+  if(inp) setBulkPPValue(inp.value);
   const amt=parseInt(bulkPPValue);
   if(isNaN(amt)||amt<0){toast('✗ 0以上の数値を入力してください','err');return;}
   if(!selectedIds.size){toast('✗ 生徒が選択されていません','err');return;}
@@ -725,7 +725,7 @@ window.applyBulkGive=function(grade,classId){
 /* ── PP剥奪 (seize) — keeps selectMode active ── */
 window.applyBulkSeize=function(grade,classId){
   const inp=document.getElementById('blk-pp');
-  if(inp) bulkPPValue=inp.value;
+  if(inp) setBulkPPValue(inp.value);
   const amt=parseInt(bulkPPValue);
   if(isNaN(amt)||amt<0){toast('✗ 0以上の数値を入力してください','err');return;}
   if(!selectedIds.size){toast('✗ 生徒が選択されていません','err');return;}
@@ -1405,7 +1405,7 @@ window.confirmExpel=function(sid){
 };
 window.expelStudent=function(sid){
   const s=state.students.find(x=>x.id===sid); if(s) s.isExpelled=true;
-  closeModal(); saveState(true); goBack(); toast('⚠ 退学処分：'+(s?.name||sid),'warn');
+  closeModal(); saveState(true); window.goBack(); toast('⚠ 退学処分：'+(s?.name||sid),'warn');
 };
 window.reinstateStudent=function(sid){
   const s=state.students.find(x=>x.id===sid); if(s) s.isExpelled=false;
