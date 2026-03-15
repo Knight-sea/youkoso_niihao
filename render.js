@@ -5,10 +5,6 @@
    ================================================================ */
 'use strict';
 
-/* ── Render-local state (collapsed sections) ── */
-let graduatesCollapsedState = new Map();
-let incomingCollapsedState  = new Map();
-
 function renderApp(){
   updateDateDisplay();
   const cur=navStack[navStack.length-1];
