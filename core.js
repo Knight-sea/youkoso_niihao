@@ -1,6 +1,6 @@
 import { SURNAMES_MAJOR, SURNAMES_RARE, MALE_NAMES, FEMALE_NAMES } from './names-data.js';
 
-/* core.js — v9.5: Constants, state, utilities, data generation, class helpers */
+/* core.js — v9.6: Constants, state, utilities, data generation, class helpers */
 /* ──────────────────────────────────────────────────────────────────
    CONSTANTS
 ────────────────────────────────────────────────────────────────── */
@@ -86,7 +86,7 @@ export const contractAccCollapsedState = new Map([['issue',false],['confirm',fal
 export const HISTORY_MAX = 120;
 export const NUM_SLOTS   = 12;
 export const TOP_N       = 100;
-export const APP_VER     = '9.5';
+export const APP_VER     = '9.6';
 export const THEME_KEY   = 'CoteOS_theme';
 export const SLOT_META_KEY = 'CoteOS_v7_SlotMeta';
 export const BGM_KEY       = 'CoteOS_v7_BGM';
@@ -390,9 +390,9 @@ export function genStudentId(grade){
 ────────────────────────────────────────────────────────────────── */
 export function esc(s){
   return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;')
-    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
-export function escA(s){ return String(s??'').replace(/"/g,'&quot;'); }
+export function escA(s){ return String(s??'').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
 
 export function toast(msg,cls='',ms=2800){
   const el=document.getElementById('toast'); if(!el) return;
@@ -706,7 +706,7 @@ export function computeClassRanking(){
 }
 
 /* ── v9.6: ES Module setters — for cross-module state writes ──────── */
-export function setState(s)           { state = s; }
+export function setState(s)           { state = s; _stateDirty = false; }
 export function setCurrentSlot(n)     { currentSlot = n; }
 export function setIsGuestMode(b)     { isGuestMode = b; }
 export function setNavStack(arr)      { navStack = arr; }
@@ -719,6 +719,33 @@ export function setEditMode(b)        { editMode = b; }
 export function setSlModalOpen(b)     { slModalOpen = b; }
 export function setSlSelectedSlot(n)  { slSelectedSlot = n; }
 export function setSlNameDrafts(o)    { slNameDrafts = o; }
+
+/* ── v9.6: State mutation consistency ──────────────────────────────
+   _stateDirty tracks whether state has been modified since last save.
+   markDirty() should be called after any direct state mutation.
+   isStateDirty() can be checked before navigation to warn about
+   unsaved changes in guest mode.                                    */
+let _stateDirty = false;
+export function markDirty()       { _stateDirty = true; }
+export function clearDirty()      { _stateDirty = false; }
+export function isStateDirty()    { return _stateDirty; }
+
+/* mutateStudent(sid, fn) — finds student by id, calls fn(student),
+   marks state dirty. Returns the student or null.
+   Usage: mutateStudent('0120001', s => { s.privatePoints += 100; }); */
+export function mutateStudent(sid, fn){
+  const s = state?.students?.find(x=>x.id===sid);
+  if(s){ fn(s); _stateDirty = true; }
+  return s;
+}
+
+/* mutateClass(grade, classId, fn) — finds class, calls fn(cls),
+   marks state dirty. Returns the class or null. */
+export function mutateClass(grade, classId, fn){
+  const c = state?.classes?.find(x=>x.grade===grade&&x.classId===classId);
+  if(c){ fn(c); _stateDirty = true; }
+  return c;
+}
 
 /* ── v9.6: window bindings for DOM-callable core functions ─────────── */
 window.toast        = toast;

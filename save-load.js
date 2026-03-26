@@ -12,9 +12,10 @@ import {
   newState, generateInitialData,
   toast, esc, escA, fmtPP, RANK_LABELS,
   CLASS_IDS, GRADES,
+  clearDirty,
 } from './core.js';
 
-/* save-load.js — v9.5: Save/Load system + Firebase cloud sync */
+/* save-load.js — v9.6: Save/Load system + Firebase cloud sync */
 
 /* ──────────────────────────────────────────────────────────────────
    SAVE / LOAD (v7.0) — 12 slot modal system
@@ -265,6 +266,7 @@ export function saveState(silent=false,targetSlot=currentSlot,forcedName=''){
     updateSlotButtons();
     if(slModalOpen){ renderSaveLoadModal(); syncSlModalButtons(); }
     saveToCloud(slot, payload);
+    clearDirty();
     if(!silent) toast(`✓ スロット${slot}にセーブしました`,'ok');
     return true;
   }catch(e){

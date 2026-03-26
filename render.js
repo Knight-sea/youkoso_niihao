@@ -22,7 +22,7 @@ import {
 import { saveState } from './save-load.js';
 
 /* ================================================================
-   render.js — Cote-OS v9.5  (Module 4 of 6)
+   render.js — Cote-OS v9.6  (Module 4 of 6)
    All page rendering: renderApp, renderPage, home, grade, class,
    profile, ranking, graduates, incoming, history, trend, export.
    ================================================================ */
@@ -388,17 +388,63 @@ function renderHistory(){
   snaps.forEach((snap,idx)=>{
     const clsCount=(snap.classPoints||[]).length;
     const stuCount=(snap.studentPP||[]).length;
+
+    /* ── Compute diffs vs next (older) snapshot ── */
+    const older=snaps[idx+1];
+    let cpDiffHtml='', ppDiffHtml='';
+    if(older){
+      const curTotalCP=(snap.classPoints||[]).reduce((a,c)=>a+c.cp,0);
+      const oldTotalCP=(older.classPoints||[]).reduce((a,c)=>a+c.cp,0);
+      const cpDiff=curTotalCP-oldTotalCP;
+      const cpSign=cpDiff>0?'+':cpDiff<0?'':'±';
+      const cpCls=cpDiff>0?'hist-diff-pos':cpDiff<0?'hist-diff-neg':'hist-diff-zero';
+      cpDiffHtml=`<span class="hist-diff ${cpCls}">CP: ${cpSign}${cpDiff.toLocaleString()}</span>`;
+
+      const oldPPMap=new Map((older.studentPP||[]).map(e=>[e.id,e.pp]));
+      let ppSum=0, ppCnt=0;
+      (snap.studentPP||[]).forEach(se=>{
+        const oldPP=oldPPMap.get(se.id);
+        if(oldPP!==undefined){ppSum+=(se.pp-oldPP);ppCnt++;}
+      });
+      if(ppCnt>0){
+        const avgDiff=Math.round(ppSum/ppCnt);
+        const ppSign=avgDiff>0?'+':avgDiff<0?'':'±';
+        const ppCl=avgDiff>0?'hist-diff-pos':avgDiff<0?'hist-diff-neg':'hist-diff-zero';
+        ppDiffHtml=`<span class="hist-diff ${ppCl}">平均PP: ${ppSign}${avgDiff.toLocaleString()}</span>`;
+      }
+    }
+
+    /* ── Top 3 CP classes ── */
+    const topCP=[...(snap.classPoints||[])].sort((a,b)=>b.cp-a.cp).slice(0,3);
+    const medals=['🥇','🥈','🥉'];
+    const topCPHtml=topCP.map((c,i)=>{
+      const grd=typeof c.grade==='number'?JP.gradeN(c.grade):'?';
+      const rnk=RANK_LABELS[c.classId]||'?';
+      return `<span class="hist-top-item">${medals[i]} ${esc(grd)}${rnk}組 <span style="color:var(--ac)">${c.cp.toLocaleString()}CP</span></span>`;
+    }).join(' ');
+
     h+=`
-      <div class="hist-row">
-        <div class="hist-row-date">Year ${snap.year} &nbsp;·&nbsp; ${MONTHS_JP[snap.month-1]}</div>
-        <div class="hist-row-idx">#${snaps.length-idx}</div>
-        <div class="hist-row-cls"><span>${clsCount}</span> クラス</div>
-        <div class="hist-row-stu"><span>${stuCount}</span> 名</div>
+      <div class="hist-row" onclick="toggleHistDetail('hist-det-${idx}')">
+        <div class="hist-row-main">
+          <div class="hist-row-date">Year ${snap.year} · ${MONTHS_JP[snap.month-1]}</div>
+          <div class="hist-row-idx">#${snaps.length-idx}</div>
+          <div class="hist-row-cls"><span>${clsCount}</span> クラス</div>
+          <div class="hist-row-stu"><span>${stuCount}</span> 名</div>
+          ${cpDiffHtml}${ppDiffHtml}
+        </div>
+        <div class="hist-detail hidden" id="hist-det-${idx}">
+          <div class="hist-detail-lbl">CP上位:</div>
+          <div class="hist-detail-top">${topCPHtml||'<span class="dim">データなし</span>'}</div>
+        </div>
       </div>`;
   });
   h+=`</div>`;
   return h;
 }
+window.toggleHistDetail=function(id){
+  const el=document.getElementById(id);
+  if(el) el.classList.toggle('hidden');
+};
 
 /* ──────────────────────────────────────────────────────────────────
    GRADE PAGE
@@ -1342,7 +1388,63 @@ window.saveProfile=function(sid){
   const prv=parseInt(document.getElementById('pf-prot')?.value); if(!isNaN(prv)) s.protectPoints=Math.max(0,prv);
   /* v7.9: specialAbility memo field removed from profile UI — field preserved in data, not overwritten */
   STATS_KEYS.forEach(k=>{const e=document.getElementById(`st-${k}`);if(e)s.stats[k]=+e.value;});
-  saveState(true); renderApp(); toast('✓ プロフィールを保存しました：'+(s.name||s.id),'ok');
+  saveState(true);
+
+  /* v9.6: Partial DOM update — refresh sidebar and radar without full re-render.
+     Falls back to renderApp() if sidebar elements are missing (defensive). */
+  const sideEl=document.querySelector('.prof-side');
+  if(sideEl){
+    /* Update sidebar text fields in-place */
+    const nameEl=sideEl.querySelector('.prof-name');
+    if(nameEl) nameEl.textContent=s.name||'(未記入)';
+    const ppEl=sideEl.querySelector('.prof-pp');
+    if(ppEl){ppEl.textContent=s.privatePoints.toLocaleString();ppEl.className='prof-pp '+(s.privatePoints>=0?'pos':'neg');}
+    const protEl=sideEl.querySelector('.prof-prot');
+    if(protEl){protEl.innerHTML=`${s.protectPoints}<span class="prof-prot-unit"> ${JP.protect}</span>`;protEl.className='prof-prot'+(s.protectPoints>0?' active':'');}
+    /* Update info table */
+    const rows=sideEl.querySelectorAll('.info-tbl tr');
+    if(rows.length>=4){
+      rows[0].querySelector('td:last-child').textContent=s.gender==='M'?JP.male:JP.female;
+      rows[1].querySelector('td:last-child').textContent=s.dob||'未設定';
+      const gradeDisp=typeof s.grade==='number'?JP.gradeN(s.grade):(s.isExpelled?JP.expelled:s.grade==='Graduate'?JP.graduate:s.grade==='Incoming'?JP.incoming:JP.active);
+      rows[2].querySelector('td:last-child').textContent=gradeDisp;
+      const clsDisp=typeof s.grade==='number'?clsName(s.grade,s.classId):'―';
+      rows[3].querySelector('td:last-child').textContent=clsDisp;
+    }
+    /* Update stat bars */
+    const pool=getSchoolRankingPool();
+    const ov=calcOverallScoreDetail(s,pool);
+    STATS_KEYS.forEach(k=>{
+      const v=s.stats[k]||1;
+      const row=sideEl.querySelector(`.sb-row:has(.sb-lbl)`);
+    });
+    /* Update overall score */
+    const ovVal=sideEl.querySelector('.ov-score-val');
+    if(ovVal) ovVal.textContent=ov.total;
+    /* Refresh stat bars fully (lightweight — only sidebar portion) */
+    const sbGrid=sideEl.querySelector('.sb-grid');
+    if(sbGrid){
+      sbGrid.innerHTML=STATS_KEYS.map(k=>{
+        const v=s.stats[k]||1;
+        return `<div class="sb-row">
+          <span class="sb-lbl">${JP[k]}</span>
+          <div class="sb-track"><div class="sb-fill" style="width:${((v-1)/14)*100}%"></div></div>
+          <span class="sb-grade ${statGradeClass(v)}">${statGradeLabel(v)}</span>
+        </div>`;
+      }).join('');
+    }
+    /* Redraw radar chart */
+    drawProfileRadar();
+    /* Update trait strip */
+    const strip=document.getElementById('trait-display-'+sid);
+    if(strip) strip.innerHTML=buildTraitTagStrip(s);
+    /* Update breadcrumb name */
+    window.updateBreadcrumb?.();
+    toast('✓ プロフィールを保存しました：'+(s.name||s.id),'ok');
+  } else {
+    /* Fallback: full re-render */
+    renderApp(); toast('✓ プロフィールを保存しました：'+(s.name||s.id),'ok');
+  }
 };
 /* v8.5: rmContract(ownerSid, idx, viewSid) — deletes contract at idx from
    ownerSid's contracts array. ownerSid may be the current student (SEND)
@@ -1396,9 +1498,9 @@ window.confirmExpel=function(sid){
   openModal(`
     <div class="m-title">退学確認</div>
     <div class="m-body">
-      <p><strong>${esc(s.name)||s.id}</strong> を退学処分にしますか？</p>
+      <p><strong>${esc(s.name)||esc(s.id)}</strong> を退学処分にしますか？</p>
       <div class="btn-row">
-        <button class="btn btn-dn" onclick="expelStudent('${sid}')">退学実行</button>
+        <button class="btn btn-dn" onclick="expelStudent('${escA(sid)}')">退学実行</button>
         <button class="btn" onclick="closeModal()">キャンセル</button>
       </div>
     </div>`);
@@ -1416,10 +1518,10 @@ window.confirmDeleteFromProfile=function(sid){
   openModal(`
     <div class="m-title">生徒削除確認</div>
     <div class="m-body">
-      <p><strong style="color:var(--rd)">${esc(s.name)||s.id}</strong> を完全に削除しますか？<br>
+      <p><strong style="color:var(--rd)">${esc(s.name)||esc(s.id)}</strong> を完全に削除しますか？<br>
          <span class="dim" style="font-size:.75rem">この操作は取り消せません。コントラクトも削除されます。</span></p>
       <div class="btn-row">
-        <button class="btn btn-dn" onclick="deleteStudentFromProfile('${sid}')">削除実行</button>
+        <button class="btn btn-dn" onclick="deleteStudentFromProfile('${escA(sid)}')">削除実行</button>
         <button class="btn" onclick="closeModal()">キャンセル</button>
       </div>
     </div>`);

@@ -1,4 +1,4 @@
-/* app.js — v9.5: Navigation, time leap, event bindings, boot sequence
+/* app.js — v9.6: Navigation, time leap, event bindings, boot sequence
    ─────────────────────────────────────────────────────────────────
    Module load order:
    1. names-data.js  — Name arrays
@@ -336,7 +336,31 @@ function bindEvents(){
   document.getElementById('modal-overlay')?.addEventListener('click', e=>{
     if(e.target.id==='modal-overlay') window.closeModal();
   });
+
+  /* ── v9.6: Event delegation on #app ──────────────────────────────
+     Reduces window pollution by routing clicks through data-action
+     attributes. Any element with data-action="xxx" will invoke the
+     registered handler. Params are read from data-* attributes.
+     New handlers should be registered in ACTION_MAP below.         */
+  document.getElementById('app')?.addEventListener('click', e=>{
+    const actionEl=e.target.closest('[data-action]');
+    if(!actionEl) return;
+    const action=actionEl.dataset.action;
+    const handler=ACTION_MAP[action];
+    if(handler) handler(actionEl, e);
+  });
 }
+
+/* ── v9.6: Action map for delegated event handling ─────────────── */
+const ACTION_MAP = {
+  'nav':         (el)=>{ navigate(el.dataset.page, JSON.parse(el.dataset.params||'{}'), el.dataset.reset==='true'); },
+  'nav-safe':    (el)=>{ navigateSafe(el.dataset.page, JSON.parse(el.dataset.params||'{}')); },
+  'go-back':     ()=>{ goBack(); },
+  'save-state':  ()=>{ saveState(); },
+  'open-sl':     ()=>{ openSaveLoadModal(); },
+  'toggle-edit': ()=>{ window.toggleEditMode(); },
+  'filter-students': ()=>{ window.filterStudents(); },
+};
 
 /* doReset — clears current slot (or guest session), navigates home */
 window.doReset=function(){

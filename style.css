@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════════════
-   Cote-OS v9.5  ·  Stylesheet  "Protobuf Persistence & Nav Refactor"
+   Cote-OS v9.6  ·  Stylesheet  "Protobuf Persistence & Nav Refactor"
    Themes: classic | light | dark
    Changes vs v8.6:
    • Data layer: protobufjs 統合 — saveState/loadState をProtobuf化。
@@ -1077,31 +1077,66 @@ body.edit-mode .hcb-dist-row{
   display:flex;flex-direction:column;gap:3px;
   margin-top:8px;
 }
+.hist-toolbar{
+  display:flex;gap:8px;margin-top:8px;justify-content:flex-end;
+}
 .hist-row{
-  display:grid;
-  grid-template-columns:180px 70px 1fr 1fr;
-  align-items:center;
-  gap:10px;
-  padding:6px 12px;
+  display:flex;flex-direction:column;
+  padding:0;
   background:var(--s1);border:1px solid var(--bd);
   transition:background var(--tr);
+  cursor:pointer;
 }
 .hist-row:hover{background:var(--s2)}
+.hist-row-main{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  padding:8px 12px;
+  flex-wrap:wrap;
+}
 .hist-row-date{
   font-family:var(--fd);font-size:.74rem;color:var(--ac);
   letter-spacing:.06em;white-space:nowrap;
 }
 .hist-row-idx{
-  font-size:.62rem;color:var(--t3);text-align:right;white-space:nowrap;
+  font-size:.62rem;color:var(--t3);white-space:nowrap;
 }
 .hist-row-cls{
   font-size:.71rem;color:var(--t1);
 }
 .hist-row-cls span{color:var(--t0)}
 .hist-row-stu{
-  font-size:.71rem;color:var(--t1);text-align:right;
+  font-size:.71rem;color:var(--t1);
 }
 .hist-row-stu span{color:var(--t0)}
+.hist-row-meta{
+  font-size:.71rem;color:var(--t1);
+}
+.hist-row-meta span{color:var(--t0)}
+.hist-diff{
+  font-family:var(--fm);font-size:.66rem;
+  padding:1px 6px;border-radius:3px;
+  white-space:nowrap;margin-left:auto;
+}
+.hist-diff-pos{color:var(--gn);background:var(--gnd)}
+.hist-diff-neg{color:var(--rd);background:var(--rdd)}
+.hist-diff-zero{color:var(--t2);background:var(--s3)}
+.hist-detail{
+  padding:6px 12px 8px;
+  border-top:1px solid var(--bd);
+  background:var(--s2);
+}
+.hist-detail-lbl{
+  font-size:.62rem;color:var(--t2);margin-bottom:3px;
+}
+.hist-detail-top{
+  display:flex;flex-wrap:wrap;gap:6px;
+}
+.hist-top-item{
+  font-size:.66rem;color:var(--t1);
+  white-space:nowrap;
+}
 .hist-empty{
   font-size:.71rem;color:var(--t3);text-align:center;padding:30px;
 }
