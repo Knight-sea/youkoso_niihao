@@ -21,11 +21,17 @@ import {
 } from './core.js';
 import { saveState } from './save-load.js';
 
-/* ================================================================
-   render.js — Cote-OS v9.6  (Module 4 of 6)
-   All page rendering: renderApp, renderPage, home, grade, class,
-   profile, ranking, graduates, incoming, history, trend, export.
-   ================================================================ */
+/* ══════════════════════════════════════════════════════════════════
+   render.js — Cote-OS v9.7（モジュール 4/5）
+   ──────────────────────────────────────────────────────────────────
+   全ページの描画を担当するファイル。
+   renderApp() がエントリーポイントで、現在のページに応じて
+   各 renderXxx() 関数を呼び出す。
+
+   【描画対象ページ】
+   ホーム / 学年 / クラス / プロフィール / ランキング /
+   クラスランキング / 卒業生 / 入学予定 / 月次履歴
+══════════════════════════════════════════════════════════════════ */
 function renderApp(){
   updateDateDisplay();
   const cur=navStack[navStack.length-1];
@@ -33,25 +39,24 @@ function renderApp(){
 }
 function updateDateDisplay(){
   const el=document.getElementById('date-display'); if(!el) return;
-  // v7.1: always show a date — default to Year 1 · 4月 when no state
+  /* 日付は常に表示する（state がなければデフォルト値） */
   if(state) el.textContent=fmtDate(state.year,state.month);
   else el.textContent=fmtDate(1,4);
-  /* v9.3: sync mobile settings sheet date display */
+  /* モバイル設定シートの日付表示も同期 */
   const mssDate = document.getElementById('mss-date-display');
   if(mssDate) mssDate.textContent = el.textContent;
 }
 function renderPage(page,params){
   const app=document.getElementById('app');
   if(!app) return;
-  /* v7.3: state is ALWAYS non-null after boot (slot 1 auto-inits; guest mode inits in memory).
-     The NO DATA path has been fully removed. */
+  /* 起動後は state は常に非null（ゲストモードでもメモリ上に初期化される） */
   if(!state){
     // Safety net only — should never occur in normal operation
     app.innerHTML='<div class="pg-hdr"><span class="pg-title" style="color:var(--t2)">読み込み中...</span></div>';
     afterRender();
     return;
   }
-  /* v7.11: remove edit-mode body class when navigating away from home */
+  /* ホーム以外に遷移するとき編集モードのbodyクラスを外す */
   if(page!=='home'){
     document.body.classList.remove('edit-mode');
   }
@@ -74,9 +79,12 @@ function renderPage(page,params){
   afterRender();
   updateBottomNav();
 }
-/* ──────────────────────────────────────────────────────────────────
-   HOME PAGE
-────────────────────────────────────────────────────────────────── */
+/* ══════════════════════════════════════════════════════════════════
+   ホーム画面
+   ──────────────────────────────────────────────────────────────────
+   6学年×5クラス=30クラスの一覧をカード形式で表示。
+   編集モードでは複数クラスを選択してPP/CP一括操作が可能。
+══════════════════════════════════════════════════════════════════ */
 function renderHome(){
   const activeCount=state.students.filter(s=>typeof s.grade==='number').length;
   const grads=state.students.filter(s=>s.grade==='Graduate').length;
@@ -84,7 +92,7 @@ function renderHome(){
   const chkCount=checkedClasses.size;
   const selInfoCls=chkCount>0?'hcb-sel-info':'hcb-sel-info none';
   const selInfoTxt=chkCount>0?`${chkCount} クラス選択中`:'0 クラス選択中';
-  /* v7.11: sync body.edit-mode class to current editMode state */
+  /* body.edit-mode クラスを editMode の現在値に同期 */
   document.body.classList.toggle('edit-mode', editMode);
 
   let h=`
@@ -147,12 +155,12 @@ function renderHome(){
 
     </div>`;
 
-  /* v9.6: Trend/Export features removed */
+  /* トレンド/エクスポート機能は削除済み */
 
-  /* Grade blocks — cls-mini cards with checkboxes + per-grade sel-bar */
+  /* 学年ブロック: チェックボックス付きクラスカード + 学年別選択バー */
   GRADES.forEach(grade=>{
     const ranked=getRanked(grade);
-    /* Count how many of this grade's 5 classes are checked */
+    /* この学年で何クラスがチェック済みか数える */
     const gradeTotalCls=ranked.length;
     const gradeChkCls=ranked.filter(c=>checkedClasses.has(`${grade}_${c.classId}`)).length;
 
@@ -203,33 +211,31 @@ function renderHome(){
   return h;
 }
 
-/* ── v7.11: Home Control Bar — Edit Mode + multi-class batch actions ──
-   editMode bool controls body.edit-mode CSS class, which shows/hides
-   .hcb-dist-row and .cls-sel-bar via CSS selectors.
-   checkedClasses (Set<"grade_classId">) is the single source of truth.
-   All actions operate on every checked class at once.
-   toggleMiniChk / hcbSelGrade update the Set and patch the DOM
-   reactively (no full renderApp) for snappy feedback.                  */
+/* ── ホーム画面コントロールバー ──────────────────────────────────
+   editMode = true のとき body.edit-mode クラスが付き、
+   PP/CP配布行とクラス選択バーが CSS で表示される。
+   checkedClasses（Set）が選択状態の唯一の情報源。
+   DOM差分更新で高速なフィードバックを実現。 */
 
-/* v7.11: toggleEditMode — toggle editMode state, sync body class and button UI */
+/* 編集モード切替: ボタンUI と body クラスを同期 */
 window.toggleEditMode=function(){
   setEditMode(!editMode);
   document.body.classList.toggle('edit-mode', editMode);
-  /* Patch the toggle button in-place for instant feedback */
+  /* トグルボタンを即座に差分更新（高速フィードバック） */
   const btn=document.querySelector('.btn-edit-mode');
   if(btn){
     btn.classList.toggle('edit-active', editMode);
     btn.textContent=editMode?'編集終了':'クラスを選択';
     btn.title=editMode?'編集モード終了':'クラスを選択して一括操作';
   }
-  /* When turning OFF: clear checked classes and re-render home cleanly */
+  /* 編集モード終了時: チェック済みクラスをクリアして再描画 */
   if(!editMode){
     checkedClasses.clear();
     renderApp();
   }
 };
 
-/* Helper: convert checkedClasses Set → Array<{grade,classId}> */
+/* ヘルパー: checkedClasses の Set を {grade, classId} 配列に変換 */
 function hcbGetCheckedClasses(){
   return Array.from(checkedClasses).map(key=>{
     const [g,c]=key.split('_').map(Number);
@@ -237,9 +243,8 @@ function hcbGetCheckedClasses(){
   }).filter(x=>!isNaN(x.grade)&&!isNaN(x.classId));
 }
 
-/* toggleMiniChk — fired by checkbox onchange inside .cls-mini.
-   Updates checkedClasses, toggles .chk-selected on the card,
-   and refreshes the #hcb-sel-info badge. No full re-render.     */
+/* クラスカードのチェック切替: checkedClasses を更新し、
+   カードの .chk-selected と選択数バッジを即座に反映（フル再描画なし） */
 window.toggleMiniChk=function(grade,classId,ev){
   ev.stopPropagation();
   const key=`${grade}_${classId}`;
@@ -251,7 +256,7 @@ window.toggleMiniChk=function(grade,classId,ev){
     checkedClasses.delete(key);
     card?.classList.remove('chk-selected');
   }
-  /* Refresh selection counter in ctrl bar */
+  /* コントロールバーの選択数カウンターを更新 */
   const info=document.getElementById('hcb-sel-info');
   if(info){
     const n=checkedClasses.size;
@@ -260,17 +265,17 @@ window.toggleMiniChk=function(grade,classId,ev){
   }
 };
 
-/* hcbSelGrade — 全選択 / 全解除 for one grade row */
+/* 学年単位の全選択/全解除 */
 window.hcbSelGrade=function(grade,select){
   CLASS_IDS.forEach(cid=>{
     const key=`${grade}_${cid}`;
     if(select) checkedClasses.add(key); else checkedClasses.delete(key);
   });
-  /* Re-render home to reflect updated checkbox states */
+  /* チェック状態の更新を反映するためホームを再描画 */
   renderApp();
 };
 
-/* hcbDistPP(sign): sign=+1 配布, sign=-1 剥奪 — all checked classes */
+/* チェック済み全クラスにPP配布(sign=+1)/剥奪(sign=-1) */
 window.hcbDistPP=function(sign){
   const classes=hcbGetCheckedClasses();
   if(!classes.length){toast('✗ クラスをチェックしてください','err');return;}
@@ -278,14 +283,14 @@ window.hcbDistPP=function(sign){
   if(isNaN(raw)||raw<=0){toast('✗ 有効なPP量を入力してください','err');return;}
   const amt=raw*sign;
   const verb=sign>0?'配布':'剥奪';
-  /* Count total affected students */
+  /* 対象となる生徒の合計数をカウント */
   let totalStu=0;
   const clsLines=classes.map(({grade,classId})=>{
     const cnt=getStudentsOf(grade,classId).filter(s=>!s.isExpelled).length;
     totalStu+=cnt;
     return `<li><span style="color:var(--t1)">${esc(clsName(grade,classId))}</span> (${cnt}名)</li>`;
   }).join('');
-  /* JSON-encode class list for execDistPP — avoids multi-arg onclick limits */
+  /* execDistPP用にクラスリストをJSONエンコード */
   const encoded=encodeURIComponent(JSON.stringify(classes));
   openModal(`
     <div class="m-title">一括PP${verb} — ${classes.length}クラス</div>
@@ -389,7 +394,7 @@ function renderHistory(){
     const clsCount=(snap.classPoints||[]).length;
     const stuCount=(snap.studentPP||[]).length;
 
-    /* ── Compute diffs vs next (older) snapshot ── */
+    /* ── 前月（古い方のスナップショット）との差分を計算 ── */
     const older=snaps[idx+1];
     let cpDiffHtml='', ppDiffHtml='';
     if(older){
@@ -414,7 +419,7 @@ function renderHistory(){
       }
     }
 
-    /* ── Top 3 CP classes ── */
+    /* ── CP上位3クラス ── */
     const topCP=[...(snap.classPoints||[])].sort((a,b)=>b.cp-a.cp).slice(0,3);
     const medals=['🥇','🥈','🥉'];
     const topCPHtml=topCP.map((c,i)=>{
@@ -446,9 +451,12 @@ window.toggleHistDetail=function(id){
   if(el) el.classList.toggle('hidden');
 };
 
-/* ──────────────────────────────────────────────────────────────────
-   GRADE PAGE
-────────────────────────────────────────────────────────────────── */
+/* ══════════════════════════════════════════════════════════════════
+   学年ページ
+   ──────────────────────────────────────────────────────────────────
+   指定学年の5クラスをCP順にランキング表示。
+   各クラスの先頭5名をプレビュー表示。
+══════════════════════════════════════════════════════════════════ */
 function renderGrade(grade){
   const ranked=getRanked(grade);
   let h=`
@@ -514,9 +522,12 @@ window.execRandomizeGrade=function(grade){
   toast(`✓ ${JP.gradeN(grade)} ランダム生成完了`,'ok',3000);
 };
 
-/* ──────────────────────────────────────────────────────────────────
-   CLASS PAGE — v7.0 (Select Mode + Swap Mode)
-────────────────────────────────────────────────────────────────── */
+/* ══════════════════════════════════════════════════════════════════
+   クラスページ
+   ──────────────────────────────────────────────────────────────────
+   選択モード: 複数生徒を選択してPP付与/剥奪/削除
+   入れ替えモード: ドラッグ&ドロップで生徒の順番を変更
+══════════════════════════════════════════════════════════════════ */
 function applyClassActiveOrder(grade,classId,orderedActive){
   const activeSet=new Set(orderedActive.map(s=>s.id));
   const rebuilt=[];
@@ -829,12 +840,11 @@ window.addStudent=function(grade,classId){
   toast(`✓ 生徒を追加しました (${s.id})`,'ok');
 };
 
-/* ──────────────────────────────────────────────────────────────────
-   SPECIAL TRAIT HELPERS — v7.8
-────────────────────────────────────────────────────────────────── */
+/* ══════════════════════════════════════════════════════════════════
+   特殊特性ヘルパー関数
+══════════════════════════════════════════════════════════════════ */
 
-/* ── v8.1: sortTraitIds — sorts trait IDs in master SPECIAL_TRAITS order.
-   Custom traits (cat==='custom') always come last, in insertion order. */
+/* 特性IDをマスターカタログ順にソート（カスタム特性は常に最後） */
 function sortTraitIds(traitIds, student){
   const masterOrder = new Map(SPECIAL_TRAITS.map((t,i)=>[t.id, i]));
   const standard = traitIds.filter(id => masterOrder.has(id))
@@ -843,7 +853,7 @@ function sortTraitIds(traitIds, student){
   return [...standard, ...custom];
 }
 
-/* Build the read-only tag strip for the profile sidebar */
+/* プロフィールサイドバー用の読み取り専用タグ表示を生成 */
 function buildTraitTagStrip(s){
   const traits = Array.isArray(s.traits) ? s.traits : [];
   if(!traits.length)
@@ -860,7 +870,7 @@ function buildTraitTagStrip(s){
   }).filter(Boolean).join('');
 }
 
-/* Build the collapsible category accordion for the profile edit panel */
+/* プロフィール編集用の折りたたみ式カテゴリアコーディオンを生成 */
 function buildTraitAccordion(s){
   const selected = new Set(Array.isArray(s.traits) ? s.traits : []);
   const sid = s.id;
@@ -926,8 +936,7 @@ function buildTraitAccordion(s){
   }).join('')+`</div>`;
 }
 
-/* Toggle a trait on a student — live-saves and reactively updates
-   only the tag strip and badge counts (no full page re-render).   */
+/* 特性のON/OFF切替: 即座にセーブし、タグ表示とバッジ数のみ部分更新 */
 window.toggleTrait=function(sid, traitId){
   const s=state.students.find(x=>x.id===sid); if(!s) return;
   if(!Array.isArray(s.traits)) s.traits=[];
@@ -935,15 +944,15 @@ window.toggleTrait=function(sid, traitId){
   if(idx>=0) s.traits.splice(idx,1);
   else        s.traits.push(traitId);
 
-  /* v8.1: auto-sort traits after every toggle */
+  /* 特性を切り替えるたびに自動ソート */
   s.traits = sortTraitIds(s.traits, s);
 
-  /* Update the sidebar tag strip reactively */
+  /* サイドバーのタグ表示をリアクティブに更新 */
   const strip=document.getElementById('trait-display-'+sid);
   if(strip) strip.innerHTML=buildTraitTagStrip(s);
 
-  /* Update the chip appearance and the category badge count */
-  /* Check standard catalogue first, then custom */
+  /* チップの見た目とカテゴリバッジの数を更新 */
+  /* 標準カタログを先に、次にカスタムをチェック */
   const def=SPECIAL_TRAITS.find(t=>t.id===traitId);
   const catKey = def ? def.cat : 'custom';
 
@@ -1004,17 +1013,17 @@ window.addCustomTrait=function(sid){
   if(!label){ toast('✗ 特性名を入力してください','err'); return; }
   if(label.length>16){ toast('✗ 特性名は16文字以内にしてください','err'); return; }
 
-  /* Prevent duplicates */
+  /* 重複防止 */
   if(!Array.isArray(s.customTraits)) s.customTraits=[];
   if(s.customTraits.some(c=>c.label===label)){
     toast('✗ 同名の特性が既に存在します','err'); return;
   }
 
-  /* Generate a unique ID */
+  /* 一意のIDを生成 */
   const id=`custom_${Date.now()}_${Math.floor(Math.random()*9999)}`;
   s.customTraits.push({id, label, cat:'custom'});
 
-  /* Auto-select the new trait */
+  /* 新しい特性を自動選択 */
   if(!Array.isArray(s.traits)) s.traits=[];
   s.traits.push(id);
   s.traits = sortTraitIds(s.traits, s);
@@ -1022,7 +1031,7 @@ window.addCustomTrait=function(sid){
   inp.value='';
   saveState(true);
 
-  /* Re-render the profile page to reflect the new chip */
+  /* 新しいチップを反映するためにプロフィールページを再描画 */
   const cur=navStack[navStack.length-1];
   if(cur&&cur.page==='profile') renderPage('profile',{sid});
   toast(`✓ カスタム特性「${label}」を追加しました`,'ok',2000);
@@ -1038,9 +1047,11 @@ window.deleteCustomTrait=function(sid, traitId){
   toast('✓ カスタム特性を削除しました','warn',1800);
 };
 
-/* ──────────────────────────────────────────────────────────────────
-   v8.3: CONTRACT HELPERS
-────────────────────────────────────────────────────────────────── */
+/* ══════════════════════════════════════════════════════════════════
+   コントラクト（契約）ヘルパー関数
+   ──────────────────────────────────────────────────────────────────
+   生徒間のPP月額送受信（コントラクト）の発行・確認・削除を管理。
+══════════════════════════════════════════════════════════════════ */
 
 /* calcMonthlyBalance(sid) — sums all active contracts involving student sid.
    Returns { income, expense, net } where:
@@ -1386,22 +1397,22 @@ window.saveProfile=function(sid){
   s.classId=+(document.getElementById('pf-cls')?.value)||0;
   const ppv=parseInt(document.getElementById('pf-pp')?.value); if(!isNaN(ppv)) s.privatePoints=ppv;
   const prv=parseInt(document.getElementById('pf-prot')?.value); if(!isNaN(prv)) s.protectPoints=Math.max(0,prv);
-  /* v7.9: specialAbility memo field removed from profile UI — field preserved in data, not overwritten */
+  /* specialAbility フィールドはUIから削除されたが、データ上は保持 */
   STATS_KEYS.forEach(k=>{const e=document.getElementById(`st-${k}`);if(e)s.stats[k]=+e.value;});
   saveState(true);
 
-  /* v9.6: Partial DOM update — refresh sidebar and radar without full re-render.
-     Falls back to renderApp() if sidebar elements are missing (defensive). */
+  /* 部分DOM更新: サイドバーとレーダーチャートのみ更新（フル再描画より高速）。
+     サイドバー要素が見つからない場合は renderApp() にフォールバック。 */
   const sideEl=document.querySelector('.prof-side');
   if(sideEl){
-    /* Update sidebar text fields in-place */
+    /* サイドバーのテキストを個別更新 */
     const nameEl=sideEl.querySelector('.prof-name');
     if(nameEl) nameEl.textContent=s.name||'(未記入)';
     const ppEl=sideEl.querySelector('.prof-pp');
     if(ppEl){ppEl.textContent=s.privatePoints.toLocaleString();ppEl.className='prof-pp '+(s.privatePoints>=0?'pos':'neg');}
     const protEl=sideEl.querySelector('.prof-prot');
     if(protEl){protEl.innerHTML=`${s.protectPoints}<span class="prof-prot-unit"> ${JP.protect}</span>`;protEl.className='prof-prot'+(s.protectPoints>0?' active':'');}
-    /* Update info table */
+    /* 情報テーブルを更新 */
     const rows=sideEl.querySelectorAll('.info-tbl tr');
     if(rows.length>=4){
       rows[0].querySelector('td:last-child').textContent=s.gender==='M'?JP.male:JP.female;
@@ -1411,17 +1422,17 @@ window.saveProfile=function(sid){
       const clsDisp=typeof s.grade==='number'?clsName(s.grade,s.classId):'―';
       rows[3].querySelector('td:last-child').textContent=clsDisp;
     }
-    /* Update stat bars */
+    /* ステータスバーを更新 */
     const pool=getSchoolRankingPool();
     const ov=calcOverallScoreDetail(s,pool);
     STATS_KEYS.forEach(k=>{
       const v=s.stats[k]||1;
       const row=sideEl.querySelector(`.sb-row:has(.sb-lbl)`);
     });
-    /* Update overall score */
+    /* 総合スコアを更新 */
     const ovVal=sideEl.querySelector('.ov-score-val');
     if(ovVal) ovVal.textContent=ov.total;
-    /* Refresh stat bars fully (lightweight — only sidebar portion) */
+    /* ステータスバーを完全再描画（サイドバー部分のみなので軽量） */
     const sbGrid=sideEl.querySelector('.sb-grid');
     if(sbGrid){
       sbGrid.innerHTML=STATS_KEYS.map(k=>{
@@ -1433,59 +1444,56 @@ window.saveProfile=function(sid){
         </div>`;
       }).join('');
     }
-    /* Redraw radar chart */
+    /* レーダーチャートを再描画 */
     drawProfileRadar();
-    /* Update trait strip */
+    /* 特性タグを更新 */
     const strip=document.getElementById('trait-display-'+sid);
     if(strip) strip.innerHTML=buildTraitTagStrip(s);
-    /* Update breadcrumb name */
+    /* パンくずリストの名前を更新 */
     window.updateBreadcrumb?.();
     toast('✓ プロフィールを保存しました：'+(s.name||s.id),'ok');
   } else {
-    /* Fallback: full re-render */
+    /* フォールバック: フル再描画 */
     renderApp(); toast('✓ プロフィールを保存しました：'+(s.name||s.id),'ok');
   }
 };
-/* v8.5: rmContract(ownerSid, idx, viewSid) — deletes contract at idx from
-   ownerSid's contracts array. ownerSid may be the current student (SEND)
-   or another student (RECV). viewSid is the profile we're viewing so we
-   navigateReplace back to it after deletion.                           */
+/* コントラクト削除: ownerSid の contracts 配列から idx 番目を削除。
+   viewSid は閲覧中のプロフィールのID（削除後にそのプロフィールに戻る） */
 window.rmContract=function(ownerSid, idx, viewSid){
   const owner=state.students.find(x=>x.id===ownerSid);
   if(owner && Array.isArray(owner.contracts)) owner.contracts.splice(idx,1);
   saveState(true);
-  /* Return to the profile we were viewing (may differ from ownerSid) */
+  /* 閲覧中のプロフィールに戻る（ownerSidと異なる場合あり） */
   const targetSid = viewSid || ownerSid;
   window.navigateReplace('profile',{sid:targetSid}); window.updateBreadcrumb();
   toast('✓ コントラクトを削除しました','ok');
 };
-/* v8.5: addContract(sid, role) — role is 'pay'|'recv', passed directly
-   by the 支払/受取 buttons. No dropdown read needed.                  */
+/* コントラクト発行: role='pay'(支払) または 'recv'(受取) */
 window.addContract=function(sid, role='pay'){
   const s=state.students.find(x=>x.id===sid); if(!s) return;
 
-  /* Read unified issuance row inputs */
+  /* 発行行の入力値を取得 */
   const ti   = (document.getElementById('ct-tgt')?.value||'').trim();
   const amt  = parseInt(document.getElementById('ct-amt')?.value);
 
-  /* Validate */
+  /* バリデーション */
   if(!ti){ toast('✗ 相手の生徒IDを入力してください','err'); return; }
   if(isNaN(amt)||amt<=0){ toast('✗ 有効なPP/月を入力してください','err'); return; }
 
-  /* Strict ID-only lookup */
+  /* IDで厳密検索 */
   const t=state.students.find(x=>x.id===ti);
   if(!t){ toast(`✗ ID「${ti}」の生徒が見つかりません`,'err'); return; }
   if(t.id===sid){ toast('✗ 自分自身にコントラクトできません','err'); return; }
 
   if(role==='pay'){
-    /* s pays t — contract on s */
+    /* s が t に支払う: s のコントラクトに追加 */
     if(!Array.isArray(s.contracts)) s.contracts=[];
     s.contracts.push({targetId:t.id, amount:amt});
     saveState(true);
     window.navigateReplace('profile',{sid});
     toast(`✓ 契約発行 → ${t.name||t.id}：${amt.toLocaleString()} PP/月（支払い）`,'ok');
   } else {
-    /* t pays s — contract on t */
+    /* t が s に支払う: t のコントラクトに追加 */
     if(!Array.isArray(t.contracts)) t.contracts=[];
     t.contracts.push({targetId:s.id, amount:amt});
     saveState(true);
@@ -1540,9 +1548,11 @@ window.deleteStudentFromProfile=function(sid){
   toast('✓ 生徒を削除しました','ok');
 };
 
-/* ──────────────────────────────────────────────────────────────────
-   RANKING PAGE — Top 3 Podium + v7 sort expansion
-────────────────────────────────────────────────────────────────── */
+/* ══════════════════════════════════════════════════════════════════
+   ランキングページ
+   ──────────────────────────────────────────────────────────────────
+   トップ3表彰台 + 全員テーブル（ソート・フィルタ・ページネーション対応）
+══════════════════════════════════════════════════════════════════ */
 const RANK_SORT_ITEMS = [
   {key:'pp',        label:'PP'},
   {key:'prp',       label:'PRP'},
@@ -1575,11 +1585,10 @@ function rankSortLabel(key){
   return it?it.label:'PP';
 }
 
-/* v9.3: dobSortKey — converts a YYYY-MM-DD string to a school-year-aware
-   sort integer. April 1st = smallest value (ranks first, i.e. "oldest"
-   in the school year). March 31st = largest value (ranks last).
-   Months 1–3 are treated as months 13–15 so the April boundary works.
-   Returns Infinity for missing/invalid dates (sorts to the bottom).    */
+/* 生年月日ソートキー: YYYY-MM-DD を学年度ベースの整数に変換
+   4月1日=最小値（学年で最年長）、3月31日=最大値（最年少）
+   1〜3月は13〜15月として扱い、4月区切りを実現。
+   日付なしの場合は Infinity（最後にソート） */
 function dobSortKey(dob){
   if(!dob) return Infinity;
   const parts = dob.split('-');
@@ -1609,9 +1618,9 @@ function rankSortValue(student,key,pool){
   }
 }
 function computeRankingBy(key='pp', filterOpts={}){
-  /* Full unfiltered pool used for overall score calculation */
+  /* 総合スコア計算用のフィルタなし全生徒プール */
   const fullPool = state.students.filter(s=>typeof s.grade==='number' && !s.isExpelled);
-  /* Apply grade / classId / gender filters for the displayed list */
+  /* 表示リスト用に学年/クラス/性別フィルタを適用 */
   let pool = fullPool;
   if(filterOpts.grade    != null) pool = pool.filter(s=>s.grade   === filterOpts.grade);
   if(filterOpts.classId  != null) pool = pool.filter(s=>s.classId === filterOpts.classId);
@@ -1639,14 +1648,11 @@ window.setRankingSort=function(key){
   renderPage('ranking',{});
 };
 
-/* ── v7.3: Ranking page — 11-column table with clickable stat headers ──
-   Columns: 順位 | 氏名 | 学年/クラス | PP | PRP | 言語 | 推論 | 記憶 | 思考 | 身体 | 精神 | 総合
-   Each stat header is clickable and updates rankingSortKey.
-   The active-sort column gets .sort-active on both th and td.
-   Mini-bar column is fully removed.
-──────────────────────────────────────────────────────────────── */
+/* ── ランキングテーブル: 12列構成 ──
+   順位 | 氏名 | 学年/組 | 誕生日 | PP | PRP | 各能力(6列) | 総合
+   各能力ヘッダーをクリックするとその項目でソートされる */
 
-/* Column definitions — maps to CSS col-* classes and sort keys */
+/* カラム定義: CSSクラスとソートキーの対応表 */
 const RNK_COLS = [
   { key:null,        label:'順位',         cls:'col-rank',  thCls:'',        tdCls:'rn',            align:'right'  },
   { key:null,        label:'氏名',         cls:'col-name',  thCls:'th-left', tdCls:'rk-nm td-left', align:'left'   },
@@ -1663,7 +1669,7 @@ const RNK_COLS = [
   { key:'overall',   label:'総合',         cls:'col-ov',    thCls:'',        tdCls:'',              align:'right'  },
 ];
 
-/* v9.3: ranking pagination + filter state */
+/* ランキング: ページネーション + フィルタの状態 */
 let rankingPage = 1;
 const RANK_PAGE_SIZE = 100;
 let rankingFilter = { grade:null, classId:null, gender:null };
@@ -1672,7 +1678,7 @@ window.setRankingPage = function(p){
   rankingPage = p;
   renderPage('ranking', {});
 };
-/* Toggle a filter value — clicking the same value again clears it */
+/* フィルタ値の切替: 同じ値をクリックするとクリアされる */
 window.setRankingFilter = function(type, value){
   if(rankingFilter[type] === value) rankingFilter[type] = null;
   else rankingFilter[type] = value;
@@ -1686,27 +1692,27 @@ window.clearRankingFilters = function(){
 };
 
 function renderRankingPage(){
-  /* Build full ranked list applying current filters */
+  /* 現在のフィルタを適用してランキングリストを構築 */
   const allRanked = computeRankingBy(rankingSortKey, rankingFilter);
-  /* Unfiltered pool for overall score & medal podium */
+  /* 総合スコアと表彰台用のフィルタなしプール */
   const pool      = state.students.filter(s=>typeof s.grade==='number' && !s.isExpelled);
   const medals    = ['🥇','🥈','🥉'];
   const valLabel  = rankSortLabel(rankingSortKey);
 
-  /* ── Pagination ── */
+  /* ── ページネーション ── */
   const totalPages = Math.max(1, Math.ceil(allRanked.length / RANK_PAGE_SIZE));
   const curPage    = Math.min(Math.max(1, rankingPage), totalPages);
   const pageStart  = (curPage - 1) * RANK_PAGE_SIZE;
   const ranked     = allRanked.slice(pageStart, pageStart + RANK_PAGE_SIZE);
 
-  /* ── Active filter summary for subtitle ── */
+  /* ── アクティブフィルタのサマリー表示用 ── */
   const activeFilters = [
     rankingFilter.grade   != null ? `${rankingFilter.grade}年生` : null,
     rankingFilter.classId != null ? `${RANK_LABELS[rankingFilter.classId]}組` : null,
     rankingFilter.gender  != null ? (rankingFilter.gender==='M'?'男':'女') : null,
   ].filter(Boolean);
 
-  /* ── Header ── */
+  /* ── ヘッダー ── */
   let h = `
     <button class="back-btn" onclick="goBack()">◀ 戻る</button>
     <div class="pg-hdr">
@@ -1714,9 +1720,9 @@ function renderRankingPage(){
       <span class="pg-sub">${allRanked.length}名 · 並び替え: ${valLabel}（降順）${activeFilters.length ? ' · ' + activeFilters.join(' / ') : ''}</span>
     </div>`;
 
-  /* ── Filter bar ── */
+  /* ── フィルタバー ── */
   h += `<div class="rnk-filter-bar">`;
-  /* Grade buttons */
+  /* 学年ボタン */
   h += `<label>学年</label><div class="rnk-filter-group">`;
   GRADES.forEach(g => {
     const act = rankingFilter.grade === g ? ' active' : '';
@@ -1804,13 +1810,13 @@ function renderRankingPage(){
 
   ranked.forEach(({rank, student:s, value})=>{
     const gd    = typeof s.grade==='number' ? JP.gradeN(s.grade) : (s.grade==='Graduate'?'卒業生':'入学予定');
-    /* v9.3: use A-E rank letter for class display in table */
+    /* テーブル内のクラス表示にA〜Eランク文字を使用 */
     const clsRank = typeof s.grade==='number' ? rankOf(s.grade, s.classId) : '―';
     const cd    = typeof s.grade==='number' ? `${clsRank}組` : '―';
     const ov    = calcOverallScore(s, pool);
     const top3  = rank <= 3 ? ' top3' : '';
 
-    /* Per-column value helper */
+    /* 列ごとの値取得ヘルパー */
     const sv = key => {
       switch(key){
         case 'pp':       return (s.privatePoints||0).toLocaleString();
@@ -1822,7 +1828,7 @@ function renderRankingPage(){
         case 'physical': return String(clampStat(s.stats?.physical));
         case 'mental':   return String(clampStat(s.stats?.mental));
         case 'overall':  return String(ov);
-        /* v9.3: dob — display raw date string, never the numeric sort key */
+        /* 誕生日: 日付文字列をそのまま表示（ソートキーではなく） */
         case 'dob':      return (s.dob && s.dob.trim()) ? s.dob : '―';
         default: return '';
       }
@@ -1853,7 +1859,7 @@ function renderRankingPage(){
 
   h += `</tbody></table></div>`;
 
-  /* ── Pagination controls (bottom) ── */
+  /* ── ページネーション操作（下部） ── */
   if(totalPages > 1){
     h += `
     <div class="rnk-pagination" style="margin-top:8px">
@@ -1866,9 +1872,10 @@ function renderRankingPage(){
   return h;
 }
 
-/* ──────────────────────────────────────────────────────────────────
-   CLASS RANKING PAGE
-────────────────────────────────────────────────────────────────── */
+/* ══════════════════════════════════════════════════════════════════
+   クラスランキングページ
+   全30クラスをCP降順で表示。
+══════════════════════════════════════════════════════════════════ */
 function renderClassRankingPage(){
   const clsRanked=computeClassRanking();
   const medals=['🥇','🥈','🥉'];
@@ -1933,9 +1940,9 @@ function renderClassRankingPage(){
   return h;
 }
 
-/* ──────────────────────────────────────────────────────────────────
-   SPECIAL PAGES (Graduates / Incoming) — v7.4
-────────────────────────────────────────────────────────────────── */
+/* ══════════════════════════════════════════════════════════════════
+   特殊ページ（卒業生 / 入学予定）
+══════════════════════════════════════════════════════════════════ */
 function renderSpecial(gradeType){
   return gradeType==='Graduate' ? renderGraduates() : renderIncoming();
 }
@@ -1943,7 +1950,7 @@ function renderSpecial(gradeType){
 /* ── v8.7: Graduates — hierarchical nav: Year selection → Class grid → Student cards ── */
 function renderGraduates(){
   const sts=state.students.filter(s=>s.grade==='Graduate');
-  /* Group by graduateYear */
+  /* 卒業年でグループ化 */
   const byYear={};
   sts.forEach(s=>{
     const yrKey = typeof s.graduateYear==='number' ? `Year ${s.graduateYear}` : '卒業年不明';
@@ -1968,7 +1975,7 @@ function renderGraduates(){
     return h;
   }
 
-  /* Year selection blocks — each year shows class mini-cards */
+  /* 年度選択ブロック: 各年度にクラスミニカードを表示 */
   sortedYears.forEach(yrKey=>{
     const cohort=byYear[yrKey];
     const yrId=yrKey.replace(/\s+/g,'-');
@@ -1976,7 +1983,7 @@ function renderGraduates(){
     const arrowChar   = isCollapsed ? '▶' : '▼';
     const bodyStyle   = isCollapsed ? 'display:none' : '';
 
-    /* Count by classId */
+    /* クラスIDごとにカウント */
     const byClass={};
     CLASS_IDS.forEach(cid=>{byClass[cid]=cohort.filter(s=>s.classId===cid);});
 
@@ -2010,9 +2017,9 @@ function renderGraduates(){
   return h;
 }
 
-/* v8.7: renderGraduateYear (unused — navigation goes directly to graduateClass) */
+/* renderGraduateYear は未使用（ナビゲーションはgraduateClassに直接遷移） */
 
-/* v8.7: renderGraduateClass — show student cards for one graduate cohort's class */
+/* 卒業コホートの1クラスの生徒カードを表示 */
 function renderGraduateClass(yrKey, classId){
   const cid = typeof classId==='string' ? parseInt(classId,10) : classId;
   const sts = state.students.filter(s=>
@@ -2052,7 +2059,7 @@ window.toggleYrSel=function(yrId, type){
   }
 };
 window.toggleCohort=function(id){
-  /* Legacy cohort toggle — kept for any old references */
+  /* レガシーコホート切替（旧参照用に残存） */
   const body =document.getElementById('cohort-body-'+id);
   const block=document.getElementById('cohort-'+id);
   if(!body||!block) return;
@@ -2067,7 +2074,7 @@ window.toggleCohort=function(id){
   }
 };
 
-/* v8.7: shared s-card renderer for graduates and incoming class views */
+/* 卒業生/入学予定者の共通カードレンダラー */
 function renderGradIncCards(students){
   if(!students.length)
     return `<div class="dim" style="grid-column:1/-1;padding:8px;font-size:.7rem">生徒なし</div>`;
@@ -2172,12 +2179,12 @@ function renderIncoming(){
   return h;
 }
 
-/* v8.7: renderIncomingCohort — cohort overview (unused in default nav flow) */
+/* コホート概要（デフォルトのナビフローでは未使用） */
 function renderIncomingCohort(cg){
   return renderIncomingClassView(cg, null);
 }
 
-/* v8.7: renderIncomingClassView — student cards for one incoming cohort's class */
+/* 入学予定コホートの1クラスの生徒カードを表示 */
 function renderIncomingClassView(cg, classId){
   const cgNum = typeof cg==='string' ? parseInt(cg,10) : cg;
   const cid   = (classId !== null && classId !== undefined)
@@ -2204,7 +2211,7 @@ function renderIncomingClassView(cg, classId){
   return h;
 }
 
-/* Legacy single-student add — kept for backward compat */
+/* レガシー: 単一生徒追加（後方互換のため残存） */
 window.addIncoming=function(){
   const cg=nextIncomingCohortGrade();
   const pfx=String(cg).padStart(3,'0');
@@ -2221,22 +2228,23 @@ window.addIncoming=function(){
   saveState(true); renderApp(); toast('✓ 入学予定を追加しました: '+id,'ok');
 };
 
-/* ──────────────────────────────────────────────────────────────────
-   CUSTOM UI CONFIRM / ALERT — v7.3
-   Replaces window.confirm and window.alert throughout the app.
+/* ══════════════════════════════════════════════════════════════════
+   カスタム確認/アラートダイアログ
+   ──────────────────────────────────────────────────────────────────
+   window.confirm / window.alert の代わりに使うカスタムモーダル。
 
    uiConfirm({
-     title   : string,               — modal header text
-     body    : string (HTML allowed),— modal body text
-     variant : 'info'|'warn'|'danger', — colour scheme
-     okLabel : string,               — confirm button label
-     cancelLabel? : string,          — cancel button label (omit to hide)
-     onOk    : function,             — called when OK is pressed
-     onCancel? : function,           — called when Cancel / X is pressed
+     title       : 文字列,            — モーダルヘッダーのテキスト
+     body        : 文字列(HTML可),    — モーダル本文
+     variant     : 'info'|'warn'|'danger', — 色のバリエーション
+     okLabel     : 文字列,            — 確認ボタンのラベル
+     cancelLabel : 文字列(省略可),    — キャンセルボタンのラベル
+     onOk        : 関数,              — 確認時のコールバック
+     onCancel    : 関数(省略可),      — キャンセル時のコールバック
    });
 
-   uiAlert({ title, body, variant, okLabel }) — confirm-only variant
-────────────────────────────────────────────────────────────────── */
+   uiAlert({ title, body, variant, okLabel }) — 確認のみ（キャンセルなし）
+══════════════════════════════════════════════════════════════════ */
 function uiConfirm({title='確認',body='',variant='info',okLabel='確認',cancelLabel='キャンセル',onOk,onCancel}={}){
   const box   = document.getElementById('uic-box');
   const ov    = document.getElementById('uic-overlay');
@@ -2284,11 +2292,13 @@ function openModal(html){
 }
 window.closeModal=function(){ document.getElementById('modal-overlay').classList.add('hidden'); };
 
-/* ──────────────────────────────────────────────────────────────────
-   POST-RENDER
-────────────────────────────────────────────────────────────────── */
+/* ══════════════════════════════════════════════════════════════════
+   描画後処理
+   ──────────────────────────────────────────────────────────────────
+   ページ描画後にレーダーチャート描画やスワップモード初期化などを行う。
+══════════════════════════════════════════════════════════════════ */
 function afterRender(){
-  /* v7.9: pf-sa/sa-ct binding removed — specialAbility memo section deleted */
+  /* 描画後の後処理 */
   const cur=navStack[navStack.length-1];
   if(cur?.page==='profile'){
     drawProfileRadar();
@@ -2299,7 +2309,7 @@ function afterRender(){
 
 }
 
-/* ── v9.6: clsMiniClick — edit mode card click handler ──────────── */
+/* ── クラスカードのクリック: 編集モード時はチェック切替、通常時はクラスページへ遷移 ── */
 window.clsMiniClick = function(grade, classId) {
   if (editMode) {
     const key = `${grade}_${classId}`;
@@ -2317,10 +2327,10 @@ window.clsMiniClick = function(grade, classId) {
   }
 };
 
-/* ── v9.6: ES module exports for app.js / save-load.js ─────────── */
+/* ── ESモジュールのエクスポート（app.js / save-load.js から利用） ── */
 export { renderApp, renderPage, updateDateDisplay, uiConfirm, uiAlert, openModal };
 
-/* ── v9.6: window bindings ──────────────────────────────────────── */
+/* ── HTML内のonclickから呼び出せるようwindowに公開 ── */
 window.goBack          = function(){ /* delegated to app.js after load */ };
 window.renderApp       = renderApp;
 window.updateDateDisplay = updateDateDisplay;

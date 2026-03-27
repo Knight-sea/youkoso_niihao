@@ -15,30 +15,41 @@ import {
   clearDirty,
 } from './core.js';
 
-/* save-load.js — v9.6: Save/Load system + Firebase cloud sync */
+/* ══════════════════════════════════════════════════════════════════
+   save-load.js — Cote-OS v9.7
+   ──────────────────────────────────────────────────────────────────
+   セーブ/ロードシステム + Firebase クラウド同期
 
-/* ──────────────────────────────────────────────────────────────────
-   SAVE / LOAD (v7.0) — 12 slot modal system
-   v8.7: Protobuf binary persistence layer
-   ─────────────────────────────────────────────────────────────────
-   Binary format:
-     • State is mapped to GameSave proto (from proto_bundle.js / $protobuf)
-     • Encoded binary is base64-stored in localStorage under the same key
-     • Prefix magic: "PB87:" marks a binary slot; absence = legacy JSON
-     • On load, legacy JSON is auto-migrated and re-saved as binary
-   Student proto mapping:
-     id, lastName/firstName (split on ' '), gender, grade (numeric only),
-     classId, stats (hp=language,mp=reasoning,str=memory,vit=thinking,
-     dex=physical,agi=mental), traits[]
-   Non-proto fields (isExpelled, protectPoints, privatePoints, dob,
-     specialAbility, contracts, customTraits, cohortGrade, graduateYear,
-     slotName, year, month, history, classes) are stored as a JSON
-     sidecar in a second localStorage key (slotKey(n)+'_meta') to avoid
-     losing any data. The proto only stores the core student identity
-     and stats for efficiency; the meta key retains everything else.
-   This hybrid approach ensures zero data loss while demonstrating
-   the protobuf integration in the hot-path save/load cycle.
-────────────────────────────────────────────────────────────────── */
+   【データ保存フォーマット】
+   ・GZ92: スキーマ圧縮 + gzip（現行フォーマット）
+   ・GZ91: 旧 gzip フォーマット（読み込み互換のみ）
+   ・PB87: 旧 Protobuf フォーマット（meta sidecar から読む）
+   ・素のJSON: 最古のフォーマット（フォールバック）
+
+   【クラウド同期】
+   Firebase Authentication + Firestore を使用。
+   ログイン時に自動的にクラウドからデータを取得/送信する。
+══════════════════════════════════════════════════════════════════ */
+
+/* ══════════════════════════════════════════════════════════════════
+   セーブ/ロード: 12スロットモーダルシステム
+   ──────────────────────────────────────────────────────────────────
+   【保存形式の歴史】
+   ・素のJSON → PB87(Protobuf) → GZ91(gzip) → GZ92(スキーマ圧縮+gzip)
+   ・ロード時は全フォーマットを自動判別して読み込む
+   ・保存は常に最新の GZ92 フォーマットで行う
+
+   【GZ92 スキーマ圧縮の仕組み】
+   JSONのキー名を全て除去し、固定順序の配列に変換することで
+   JSONサイズを約65〜75%削減。gzip と合わせて元の約10〜15%まで圧縮。
+
+   【生徒1人のパック配列レイアウト（固定14要素 + オプション2要素）】
+   [0] id, [1] name, [2] gender(0=男/1=女), [3] dob,
+   [4] grade, [5] classId, [6] privatePoints, [7] protectPoints,
+   [8] isExpelled(0/1), [9] specialAbility,
+   [10] stats[6個], [11] traits[], [12] customTraits[], [13] contracts[],
+   [14] cohortGrade(省略可), [15] graduateYear(省略可)
+══════════════════════════════════════════════════════════════════ */
 
 /* ── v9.2: スキーマ圧縮 + gzip (fflate) ──────────────────────────
    フォーマット: "GZ92:" + Base64(gzip(UTF-8 JSON of packed state))
@@ -74,7 +85,7 @@ import {
      (履歴は含まない — ローカル保持のみ)
 ────────────────────────────────────────────────────────────────── */
 
-/* Base64 ↔ Uint8Array 変換 */
+/* Base64 ⇔ Uint8Array 変換ユーティリティ */
 function _u8ToB64(u8){
   let s=''; u8.forEach(b=>{ s+=String.fromCharCode(b); }); return btoa(s);
 }

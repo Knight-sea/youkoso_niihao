@@ -1,12 +1,16 @@
-/* app.js — v9.6: Navigation, time leap, event bindings, boot sequence
-   ─────────────────────────────────────────────────────────────────
-   Module load order:
-   1. names-data.js  — Name arrays
-   2. core.js         — Constants, state, utilities
-   3. save-load.js    — Save/Load + Firebase
-   4. render.js       — All rendering
-   5. app.js          — This file (navigation, events, boot)
-   ───────────────────────────────────────────────────────────────── */
+/* ══════════════════════════════════════════════════════════════════
+   app.js — Cote-OS v9.7
+   ──────────────────────────────────────────────────────────────────
+   アプリのエントリーポイント。ナビゲーション、月次進行、
+   イベントバインド、起動処理を担当する。
+
+   【モジュール読み込み順序】
+   1. names-data.js  — 名前配列データ
+   2. core.js         — 定数・状態・ユーティリティ
+   3. save-load.js    — セーブ/ロード + Firebase
+   4. render.js       — 全画面の描画
+   5. app.js          — ★このファイル（ナビゲーション・イベント・起動）
+══════════════════════════════════════════════════════════════════ */
 
 import {
   GRADES, CLASS_IDS, RANK_LABELS, MONTHS_JP, JP, APP_VER, HISTORY_MAX,
@@ -34,9 +38,12 @@ import {
 import { renderApp, renderPage, updateDateDisplay, uiConfirm } from './render.js';
 
 
-/* ──────────────────────────────────────────────────────────────────
-   TIME LEAP
-────────────────────────────────────────────────────────────────── */
+/* ══════════════════════════════════════════════════════════════════
+   月次進行（タイムリープ）
+   ──────────────────────────────────────────────────────────────────
+   advanceMonth() … 次月へ進む（3月なら進級処理も実行）
+   revertMonth()  … 履歴から前月に戻す
+══════════════════════════════════════════════════════════════════ */
 function contractSums(sid){
   const self=state.students.find(s=>s.id===sid); if(!self) return{gains:0,losses:0};
   const losses=self.contracts.reduce((a,c)=>a+c.amount,0);
@@ -63,23 +70,23 @@ function advanceMonth(){
   saveState(true); renderApp(); toast(`⏩ ${fmtDate(state.year,state.month)} へ進みました`);
 }
 function doGradeUp(){
-  // Stamp graduateYear before grade changes
+  /* 学年変更前に卒業年を記録 */
   state.students.forEach(s=>{
     if(s.grade===6){
       s.grade='Graduate';
-      s.graduateYear=state.year; // v7.4: archive year for cohort grouping
+      s.graduateYear=state.year; /* 卒業年を記録（コホートグループ用） */
     }
   });
   for(let g=5;g>=1;g--) state.students.forEach(s=>{if(s.grade===g)s.grade=g+1;});
 
-  // v7.4: Promote Incoming → Grade 1, assigning fresh Grade-1 IDs
-  // cohortGrade is cleared after promotion (no longer needed)
+  /* 入学予定 → 1年生に昇格（新しい1年生用IDを割り当て） */
+  /* 昇格後は cohortGrade を削除（不要になるため） */
   const hadIncoming = state.students.some(s=>s.grade==='Incoming');
   state.students.forEach(s=>{
     if(s.grade==='Incoming'){
       s.grade=1;
       delete s.cohortGrade;
-      // Re-generate ID under new grade-1 prefix
+      /* 新しい1年生プレフィックスでIDを再生成 */
       s.id=genStudentId(1);
     }
   });
@@ -92,9 +99,8 @@ function doGradeUp(){
   CLASS_IDS.forEach(id=>kept.push(blankClass(1,id,RANK_LABELS[id])));
   state.classes=kept;
 
-  /* v7.9: Auto-fill — if no Incoming cohort was prepared, generate
-     200 EMPTY Grade-1 slots (IDs assigned, all other fields blank).
-     No randomiseGrade call — slots are left for manual/random fill.  */
+  /* 自動補充: 入学予定者がいない場合、200名の空枠を1年生に作成。
+     ランダム生成は行わず、手動/ランダム入力用の空枠のみ。 */
   if(!hadIncoming){
     CLASS_IDS.forEach(cid=>{
       for(let i=0;i<40;i++) state.students.push(blankStudent(1,cid));
@@ -120,9 +126,9 @@ function undoGradeUp(snap){
   });
 }
 
-/* ──────────────────────────────────────────────────────────────────
-   GEAR MENU
-────────────────────────────────────────────────────────────────── */
+/* ══════════════════════════════════════════════════════════════════
+   ギアメニュー（設定トレイ）
+══════════════════════════════════════════════════════════════════ */
 let gearOpen     = false;
 let themeFlyOpen = false;
 
@@ -162,12 +168,16 @@ function closeThemeFly(){
   document.getElementById('btn-theme')?.classList.remove('open');
 }
 
-/* ──────────────────────────────────────────────────────────────────
-   NAVIGATION
-────────────────────────────────────────────────────────────────── */
-/* v8.5: navigate — deduplicate consecutive same-page pushes.
-   If the top of the stack is already the same page+params, replace
-   instead of push (prevents duplicate profile entries from card clicks). */
+/* ══════════════════════════════════════════════════════════════════
+   ナビゲーション
+   ──────────────────────────────────────────────────────────────────
+   navStack（ナビスタック）でページ遷移履歴を管理。
+   navigate()       … 新しいページをスタックに追加
+   navigateReplace() … スタック最上位を置き換え
+   goBack()         … スタックを1つ戻る
+══════════════════════════════════════════════════════════════════ */
+/* ナビゲーション関数: 連続した同一ページへの遷移を防止
+   スタックの先頭が同じページ+パラメータなら push ではなく replace する */
 function navigate(page,params={},reset=false){
   if(reset) setNavStack([]);
   const top=navStack[navStack.length-1];
@@ -232,11 +242,13 @@ function updateBreadcrumb(){
   ).join('<span class="bc-sep">›</span>');
 }
 
-/* ──────────────────────────────────────────────────────────────────
-   EVENT BINDINGS
-────────────────────────────────────────────────────────────────── */
+/* ══════════════════════════════════════════════════════════════════
+   イベントバインド
+   ──────────────────────────────────────────────────────────────────
+   DOM要素にイベントリスナーを登録する。起動時に1回だけ実行。
+══════════════════════════════════════════════════════════════════ */
 function bindEvents(){
-  /* Time navigation */
+  /* 月ナビゲーション */
   document.getElementById('btn-prev')?.addEventListener('click', revertMonth);
   document.getElementById('btn-next')?.addEventListener('click', advanceMonth);
   document.addEventListener('keydown', e=>{
@@ -246,22 +258,22 @@ function bindEvents(){
     if(e.key==='s'){e.preventDefault();saveState();}
   });
 
-  /* Gear toggle — ONLY the gear button opens/closes; clicking elsewhere does NOT close it */
+  /* ギアメニュー開閉: ギアボタンのみで操作（外側クリックでは閉じない） */
   document.getElementById('gear-btn')?.addEventListener('click', e=>{
     e.stopPropagation(); toggleGear();
   });
 
-  /* Tray swallows its own clicks */
+  /* トレイ内のクリックは外に伝播させない */
   document.getElementById('gear-tray')?.addEventListener('click', e=>{
     e.stopPropagation();
   });
 
-  /* History — no tray close */
+  /* 履歴ボタン */
   document.getElementById('btn-history')?.addEventListener('click', e=>{
     e.stopPropagation(); navigateSafe('history',{});
   });
 
-  /* Theme flyout */
+  /* テーマフライアウト */
   document.getElementById('btn-theme')?.addEventListener('click', e=>{
     e.stopPropagation(); toggleThemeFly(e);
   });
@@ -272,7 +284,7 @@ function bindEvents(){
     });
   });
 
-  /* Save/Load modal + BGM */
+  /* セーブ/ロードモーダル + BGM */
   document.getElementById('btn-save')?.addEventListener('click', e=>{
     e.stopPropagation();
     openSaveLoadModal();
@@ -282,7 +294,7 @@ function bindEvents(){
     toggleBGM();
   });
 
-  /* v7.5: volume slider — syncs SoundCloud widget + green fill bar */
+  /* 音量スライダー: SoundCloudウィジェットと緑バーに同期 */
   document.getElementById('bgm-volume')?.addEventListener('input', function(){
     const vol = parseInt(this.value, 10) / 100;
     if(bgmReady && bgmWidget){
@@ -291,9 +303,7 @@ function bindEvents(){
     syncVolFill();
   });
 
-  /* v7.5: mouseleave/mouseenter on #bgm-hitbox — reliable open/close.
-     .vol-open lives on #bgm-hitbox itself (bgm-column removed in v7.5).
-     The CSS ::after bridge prevents premature mouseleave mid-transition. */
+  /* BGMヒットボックスのマウスイベント: 音量スライダーの開閉制御 */
   document.getElementById('bgm-hitbox')?.addEventListener('mouseleave', ()=>{
     const hitbox = document.getElementById('bgm-hitbox');
     if(hitbox && bgmEnabled) hitbox.classList.remove('vol-open');
@@ -303,7 +313,7 @@ function bindEvents(){
     if(hitbox && bgmEnabled) hitbox.classList.add('vol-open');
   });
 
-  /* v7.3: uic-overlay — cancel on backdrop click or Escape */
+  /* カスタム確認ダイアログ: 背景クリックまたはEscでキャンセル */
   document.getElementById('uic-overlay')?.addEventListener('click', e=>{
     if(e.target.id==='uic-overlay'){
       document.getElementById('uic-btn-cancel')?.click();
@@ -323,25 +333,25 @@ function bindEvents(){
   });
   bindSaveLoadModalControls();
 
-  /* v8.6: Firebase Login / Logout button handlers */
+  /* Firebaseログイン/ログアウトボタンのハンドラ */
   bindFirebaseControls();
 
-  /* v9.6: Related Sites button */
+  /* 関連サイトボタン */
   document.getElementById('btn-related')?.addEventListener('click', e=>{
     e.stopPropagation(); openRelatedSitesModal();
   });
 
-  /* Modal close */
+  /* モーダル閉じるボタン */
   document.getElementById('modal-x')?.addEventListener('click', ()=>window.closeModal());
   document.getElementById('modal-overlay')?.addEventListener('click', e=>{
     if(e.target.id==='modal-overlay') window.closeModal();
   });
 
-  /* ── v9.6: Event delegation on #app ──────────────────────────────
-     Reduces window pollution by routing clicks through data-action
-     attributes. Any element with data-action="xxx" will invoke the
-     registered handler. Params are read from data-* attributes.
-     New handlers should be registered in ACTION_MAP below.         */
+  /* ── イベント委譲システム ──────────────────────────────────────
+     #app 要素上の単一のclickリスナーで data-action 属性を読み取り、
+     ACTION_MAP に登録されたハンドラを実行する仕組み。
+     これにより window への関数登録（グローバル汚染）を削減できる。
+     新しいハンドラは下の ACTION_MAP に追加するだけでOK。 */
   document.getElementById('app')?.addEventListener('click', e=>{
     const actionEl=e.target.closest('[data-action]');
     if(!actionEl) return;
@@ -351,7 +361,7 @@ function bindEvents(){
   });
 }
 
-/* ── v9.6: Action map for delegated event handling ─────────────── */
+/* ── イベント委譲用アクションマップ ── */
 const ACTION_MAP = {
   'nav':         (el)=>{ navigate(el.dataset.page, JSON.parse(el.dataset.params||'{}'), el.dataset.reset==='true'); },
   'nav-safe':    (el)=>{ navigateSafe(el.dataset.page, JSON.parse(el.dataset.params||'{}')); },
@@ -362,11 +372,11 @@ const ACTION_MAP = {
   'filter-students': ()=>{ window.filterStudents(); },
 };
 
-/* doReset — clears current slot (or guest session), navigates home */
+/* データリセット: 現在のスロット（またはゲストセッション）を初期化してホームへ */
 window.doReset=function(){
   closeModal();
   if(isGuestMode){
-    // Guest: just regenerate blank data in memory
+    /* ゲストモード: メモリ上のデータを再生成 */
     setState(newState()); generateInitialData();
     setSelectMode(false); setSwapMode(false); setSelectedIds(new Set()); setNavStack([]);
     navigate('home',{},true);
@@ -379,7 +389,7 @@ window.doReset=function(){
   }
 };
 
-/* Global references */
+/* グローバル参照: HTML内のonclickから呼び出せるようwindowに公開 */
 window.navigate            = navigate;
 window.navigateBack        = goBack;
 window.goBack              = goBack;
@@ -392,20 +402,24 @@ window.exportAllSlots      = exportAllSlots;
 window.triggerImportDialog = triggerImportDialog;
 window.saveState           = saveState;
 
-/* ──────────────────────────────────────────────────────────────────
-   BOOT
-────────────────────────────────────────────────────────────────── */
+/* ══════════════════════════════════════════════════════════════════
+   起動処理
+   ──────────────────────────────────────────────────────────────────
+   boot() → finishBoot() の順で初期化を行う。
+   ゲストモード（スロット0）でデフォルト起動し、1,200名の
+   空データを生成してホーム画面を表示する。
+══════════════════════════════════════════════════════════════════ */
 function showLoader(msg){
   const el=document.createElement('div'); el.id='loading';
   el.innerHTML=`<div class="ld-logo">COTE-OS</div><div class="ld-txt">${msg}</div><div class="ld-sub">しばらくお待ちください...</div>`;
   document.body.appendChild(el); return el;
 }
 
-/* ──────────────────────────────────────────────────────────────────
-   MOBILE BOTTOM NAV & SETTINGS SHEET  (v9.3 mobile redesign)
-────────────────────────────────────────────────────────────────── */
+/* ══════════════════════════════════════════════════════════════════
+   モバイル: ボトムナビゲーション & 設定シート
+══════════════════════════════════════════════════════════════════ */
 
-/* updateBottomNav — highlight the active tab based on current page */
+/* 現在のページに応じてボトムナビのアクティブタブをハイライト */
 function updateBottomNav(){
   const cur = navStack[navStack.length - 1];
   const page = cur ? cur.page : 'home';
@@ -429,25 +443,25 @@ function updateBottomNav(){
   document.getElementById(activeId)?.classList.add('bn-active');
 }
 
-/* toggleMobileSettings / closeMobileSettings */
+/* モバイル設定シートの開閉 */
 function toggleMobileSettings(){
   const ov = document.getElementById('mobile-settings-overlay');
   if(!ov) return;
   const isOpen = ov.classList.contains('visible');
   if(isOpen){ closeMobileSettings(); }
   else {
-    // sync date display
+    /* 日付表示を同期 */
     const dd = document.getElementById('date-display');
     const mssDate = document.getElementById('mss-date-display');
     if(dd && mssDate) mssDate.textContent = dd.textContent;
-    // sync theme buttons
+    /* テーマボタンを同期 */
     const curTheme = document.documentElement.getAttribute('data-theme') || 'classic';
     document.querySelectorAll('.mss-theme-btn').forEach(b => {
       b.classList.toggle('mss-theme-active', b.dataset.theme === curTheme);
     });
-    // sync bgm toggle
+    /* BGMトグルを同期 */
     syncMssBgmBtn();
-    // sync volume slider
+    /* 音量スライダーを同期 */
     const vol = document.getElementById('bgm-volume');
     const mssVol = document.getElementById('mss-bgm-volume');
     const mssVal = document.getElementById('mss-vol-val');
@@ -474,7 +488,7 @@ function syncMssBgmBtn(){
 }
 window.syncMssBgmBtn = syncMssBgmBtn;
 
-/* syncMssVolume — mirror mss slider → main bgm-volume slider */
+/* モバイル音量スライダーの値をメインスライダーに同期 */
 function syncMssVolume(val){
   const mainVol = document.getElementById('bgm-volume');
   const mssVal  = document.getElementById('mss-vol-val');
@@ -484,9 +498,9 @@ function syncMssVolume(val){
 window.syncMssVolume = syncMssVolume;
 
 
-/* ──────────────────────────────────────────────────────────────────
-   RELATED SITES MODAL — v9.6
-────────────────────────────────────────────────────────────────── */
+/* ══════════════════════════════════════════════════════════════════
+   関連サイトモーダル
+══════════════════════════════════════════════════════════════════ */
 function openRelatedSitesModal(){
   document.getElementById('rel-overlay')?.classList.remove('hidden');
   closeGear();
@@ -497,17 +511,17 @@ function closeRelatedSitesModal(){
 window.openRelatedSitesModal  = openRelatedSitesModal;
 window.closeRelatedSitesModal = closeRelatedSitesModal;
 
-/* v7.6: boot — Guest Mode (slot 0) by default, but immediately
-   calls generateInitialData() so the Home screen is populated
-   with 1,200 blank students on first load. Slot 1–12 data is
-   preserved in localStorage and accessible via the Save modal. */
+/* 起動関数: ゲストモード（スロット0）でデフォルト起動。
+   generateInitialData() で1,200名の空データを即座に生成し、
+   ホーム画面がすぐ表示されるようにする。
+   スロット1〜12のデータはlocalStorageに保存され、セーブモーダルからアクセス可能。 */
 function boot(){
   loadTheme();
   initBGM();
   setCurrentSlot(0);
   setIsGuestMode(true);
   setState(newState());
-  generateInitialData();   /* populate 1,200 blank students for guest session */
+  generateInitialData();   /* ゲストセッション用に1,200名の空データを生成 */
   finishBoot();
 }
 function finishBoot(){
@@ -522,10 +536,8 @@ function finishBoot(){
   navigate('home',{},true);
 }
 
-/* v8.0: updateMobileMode — detects portrait orientation or narrow viewport
-   (≤768px) and toggles 'mobile-mode' class on <body>. CSS uses this class
-   to activate all mobile-specific layout rules (@media queries are also
-   present as a complementary approach for viewport-width-only triggers).   */
+/* モバイルモード判定: 縦向きまたは幅768px以下で body に mobile-mode クラスを付与。
+   CSSはこのクラスを使ってモバイル専用レイアウトを適用する。 */
 function updateMobileMode(){
   const narrow = window.innerWidth <= 768;
   const portrait = window.matchMedia('(orientation: portrait)').matches;

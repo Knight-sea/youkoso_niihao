@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Cote-OS v9.6</title>
+  <title>Cote-OS v9.7</title>
   <link rel="icon" href="images/favicon.ico" />
   <link rel="preconnect" href="https://fonts.googleapis.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&family=Noto+Sans+JP:wght@300;400;500;700&display=swap" rel="stylesheet" />
@@ -17,7 +17,7 @@
   <!-- 左: flex:1 -->
   <div id="tb-left">
     <span id="logo">COTE<span class="ac">OS</span></span>
-    <span id="ver">v9.6</span>
+    <span id="ver">v9.7</span>
     <nav id="breadcrumb" aria-label="パンくずリスト"></nav>
   </div>
 
@@ -38,7 +38,7 @@
       <!-- トレイ: .open時に左へスライド -->
       <div id="gear-tray" aria-hidden="true">
 
-        <!-- v9.6: 関連サイトボタン -->
+        <!-- 関連サイトボタン（v9.6で追加） -->
         <button id="btn-related" class="gt-btn rel-btn" title="関連サイト">関連サイト</button>
 
         <!-- テーマフライアウト -->
@@ -243,17 +243,17 @@
   window.fbSetDoc          = setDoc;
   window.fbOnAuthChanged   = (cb) => onAuthStateChanged(auth, cb);
 
-  console.log("Firebase v9.6 initialized — Cote-OS Cloud Link ready.");
+  console.log("Firebase v9.7 initialized — Cote-OS Cloud Link ready.");
 </script>
 
 <script src="https://w.soundcloud.com/player/api.js"></script>
 <!-- v9.1: fflate — gzip圧縮ライブラリ (クラウド保存の容量削減) -->
 <script src="https://cdn.jsdelivr.net/npm/fflate@0.8.2/umd/index.js"></script>
 
-<!-- v9.6: ES Modules — app.js is the single entry point -->
+<!-- ESモジュール: app.js がエントリーポイント -->
 <script type="module" src="app.js"></script>
 
-<!-- v9.6: 関連サイトモーダル -->
+<!-- 関連サイトモーダル -->
 <div id="rel-overlay" class="hidden" role="dialog" aria-modal="true" aria-labelledby="rel-title"
      onclick="if(event.target===this)window.closeRelatedSitesModal()">
   <div id="rel-box">
